@@ -2,8 +2,8 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.5: Restauração completa de recursos e estabilização do acesso à IA Local (Ollama).
+ * @fileOverview TERMINAL QUANT V3.5 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
+ * Restauração completa de recursos e estabilização do acesso à IA Local (Ollama).
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -89,19 +89,27 @@ export function useAIQuantTerminalV3(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     
-    // REFS PARA DADOS DE ALTA FREQUÊNCIA (Evitar re-render loops)
+    // REFS PARA DADOS DE ALTA FREQUÊNCIA (Blindagem de Re-render)
     const priceTicksRef = useRef(priceTicks);
     const operationsLogRef = useRef(operationsLog);
 
     useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
 
-    // OLLAMA CONFIG - Sincronização robusta
-    const ollamaConfig = useMemo(() => {
-        if (typeof window === 'undefined') return null;
-        const saved = localStorage.getItem('ollamaConfig');
-        if (saved) return JSON.parse(saved) as OllamaConfig;
-        return null;
+    // OLLAMA CONFIG - Restauração do estado reativo
+    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('ollamaConfig');
+            if (saved) {
+                try {
+                    setOllamaConfig(JSON.parse(saved) as OllamaConfig);
+                } catch (e) {
+                    console.error("Error parsing ollamaConfig", e);
+                }
+            }
+        }
     }, []);
 
     const addLog = useCallback((message: string, type: string = 'info') => {
@@ -109,14 +117,25 @@ export function useAIQuantTerminalV3(
     }, []);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
-        if (typeof window === 'undefined' || !ollamaConfig) return;
-        const next = { ...ollamaConfig, ...updates };
-        localStorage.setItem('ollamaConfig', JSON.stringify(next));
-        window.location.reload(); // Recarrega para garantir que o useMemo pegue o novo valor
-    }, [ollamaConfig]);
+        if (typeof window === 'undefined') return;
+        setOllamaConfig(prev => {
+            const current = prev || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
+            const next = { ...current, ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+        toast({ title: "Configuração Atualizada", description: "As preferências do Ollama foram salvas." });
+    }, [toast]);
 
     const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) return;
+        if (!ollamaConfig?.baseUrl) {
+            toast({ 
+                title: "Gateway não configurado", 
+                description: "Vá para as Configurações e insira a URL do Ollama.",
+                variant: "destructive"
+            });
+            return;
+        }
         try {
             const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
             const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
@@ -127,12 +146,20 @@ export function useAIQuantTerminalV3(
                 const data = await response.json();
                 const models = data.models || [];
                 setAvailableModels(models);
-                toast({ title: "Sincronização OK", description: `${models.length} modelos detectados na VRAM.` });
+                if (!ollamaConfig.model && models.length > 0) updateOllamaConfig({ model: models[0].name });
+                toast({ title: "Modelos Carregados", description: `${models.length} modelos detectados na VRAM.` });
+            } else {
+                throw new Error(`Status ${response.status}`);
             }
         } catch (e: any) {
             addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
+            toast({ title: "Erro na IA Local", description: "Verifique se o Ollama está rodando e se a URL está correta.", variant: "destructive" });
         }
-    }, [ollamaConfig, addLog, toast]);
+    }, [ollamaConfig, updateOllamaConfig, addLog, toast]);
+
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl && availableModels.length === 0) fetchAvailableModels();
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels, availableModels.length]);
 
     // ESTATÍSTICAS DE SESSÃO V3
     const sessionStats = useMemo(() => {
