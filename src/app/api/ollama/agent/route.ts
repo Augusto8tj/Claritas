@@ -1,5 +1,36 @@
 import { NextResponse } from 'next/server';
 
+const VALID_CONTRACTS = ['OPTIONS', 'ACCUMULATORS', 'MULTIPLIERS'];
+const VALID_ACTIONS = ['CALL', 'PUT', 'HOLD'];
+
+/**
+ * Sanitiza a opinião da IA para garantir que respeite os enums do sistema.
+ */
+function sanitizeOpinion(raw: any, symbol: string): any {
+    let action = String(raw.action || 'HOLD').toUpperCase();
+    if (action === 'RISE') action = 'CALL';
+    if (action === 'FALL') action = 'PUT';
+    
+    if (!VALID_ACTIONS.includes(action)) {
+        console.warn(`[Agent API] action inválida recebida: "${raw.action}" para ${symbol}. Forçando HOLD.`);
+        action = 'HOLD';
+    }
+
+    let contract = String(raw.recommendedContract || '').toUpperCase();
+    
+    // Auto-correção para casos onde a IA confunde a ação com o tipo de contrato
+    if (contract === 'CALL' || contract === 'PUT' || contract === 'RISE' || contract === 'FALL' || contract === 'HOLD' || contract === symbol.toUpperCase()) {
+        contract = 'OPTIONS';
+    }
+
+    if (!VALID_CONTRACTS.includes(contract)) {
+        console.warn(`[Agent API] recommendedContract inválido recebido: "${raw.recommendedContract}" para ${symbol}. Forçando OPTIONS.`);
+        contract = 'OPTIONS';
+    }
+
+    return { ...raw, action, recommendedContract: contract };
+}
+
 export async function POST(req: Request) {
   try {
     const { systemPrompt, marketSnapshot, config } = await req.json();
@@ -11,7 +42,6 @@ export async function POST(req: Request) {
     const url = config.baseUrl.replace(/\/+$/, '') + '/api/generate';
     const authHeader = config.apiKey ? `Bearer ${config.apiKey}` : '';
 
-    // PROMPT REFORÇADO COM SCHEMA EXPLÍCITO PARA DIAGNÓSTICO
     const prompt = `
       ${systemPrompt}
       
@@ -19,10 +49,19 @@ export async function POST(req: Request) {
       ${JSON.stringify(marketSnapshot, null, 2)}
       
       REGRAS DE RESPOSTA:
-      - Responda OBRIGATORIAMENTE apenas em JSON válido.
-      - Não inclua markdown (como \`\`\`json) ou explicações fora do objeto.
-      - Campos obrigatórios: "action" (CALL/PUT/HOLD), "confidence" (0-100), "recommendedContract", "reasoning", "vetoTriggered" (boolean).
-      - Seja ULTRA-CONCISO para economizar tokens.
+
+      Responda OBRIGATORIAMENTE apenas em JSON válido.
+      Não inclua markdown (como \`\`\`json) ou explicações fora do objeto.
+      Campos obrigatórios e seus valores EXATOS permitidos:
+      "action": EXATAMENTE um de "CALL", "PUT", "HOLD" (nunca outro valor).
+      "confidence": número inteiro de 0 a 100.
+      "recommendedContract": EXATAMENTE um de "OPTIONS", "ACCUMULATORS", "MULTIPLIERS"
+      (NUNCA o nome do ativo, NUNCA "CALL"/"PUT"/"HOLD" — este campo descreve o TIPO
+      de contrato, não a direção da operação).
+      "reasoning": string curta.
+      "vetoTriggered": boolean.
+      Exemplo de resposta válida: {"action":"CALL","confidence":78,"recommendedContract":"MULTIPLIERS","reasoning":"RSI em sobrevenda com volume crescente.","vetoTriggered":false}
+      Seja ULTRA-CONCISO para economizar tokens.
     `;
 
     console.log(`[Agent API] Iniciando requisição para: ${url} (Modelo: ${config.model})`);
@@ -40,7 +79,7 @@ export async function POST(req: Request) {
         stream: false,
         format: "json",
         options: {
-          temperature: 0.1 // Reduzido para maior consistência no formato JSON
+          temperature: 0.1
         }
       })
     });
@@ -54,18 +93,17 @@ export async function POST(req: Request) {
     const data = await response.json();
     let content = data.response;
     
-    // DIAGNÓSTICO 1: Resposta crua do Ollama
     console.log(`[Agent API] RESPOSTA CRUA DO OLLAMA (${config.model}):`, content);
 
-    // Limpeza de Markdown redundante (alguns modelos ignoram o parâmetro format: json)
     content = content.replace(/```json|```/g, "").trim();
     
-    let parsedOpinion = {};
+    let parsedOpinion: any = {};
     try {
         parsedOpinion = JSON.parse(content);
+        // SANITIZAÇÃO (CORREÇÃO 2)
+        parsedOpinion = sanitizeOpinion(parsedOpinion, marketSnapshot.symbol);
         console.log(`[Agent API] Sucesso no parse da opinião:`, parsedOpinion);
     } catch (parseError: any) {
-        // DIAGNÓSTICO 2: Falha detalhada no parse
         console.error(`[Agent API] FALHA CRÍTICA NO PARSE DO JSON!`);
         console.error(`Texto que falhou: "${content}"`);
         console.error(`Erro técnico:`, parseError.message);

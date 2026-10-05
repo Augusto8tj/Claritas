@@ -23,7 +23,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, t
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useAIQuantTerminalV3, type AllowedContractsV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
+import { useAIQuantTerminalV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -32,6 +32,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { AllowedContractsV3, AllowedActionsV3 } from "@/features/trading/types/council";
 
 function TerminalV3Content() {
     const { 
@@ -46,7 +47,9 @@ function TerminalV3Content() {
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, 
         timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
-        allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
+        allowedActions, setAllowedActions,
+        allowedContracts, setAllowedContracts, 
+        maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
         updateOllamaConfig
@@ -165,8 +168,8 @@ function TerminalV3Content() {
                                         {status?.isQualified && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {status?.lastAction === 'RISE' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
-                                         status?.lastAction === 'FALL' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                        {status?.lastAction === 'RISE' || status?.lastAction === 'CALL' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
+                                         status?.lastAction === 'FALL' || status?.lastAction === 'PUT' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
                                          <Minus className="h-4 w-4 text-muted-foreground" />}
                                         <span className="text-sm font-black">{status?.lastAction || 'SCAN'}</span>
                                     </div>
@@ -261,26 +264,51 @@ function TerminalV3Content() {
                                 </div>
                             </div>
 
-                            <div className="space-y-3 p-3 rounded-lg border border-purple-200 bg-card/50">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                    <Layers className="h-3 w-3" /> Contratos Permitidos
-                                </Label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    {Object.keys(allowedContracts).map((contract) => (
-                                        <div key={contract} className="flex items-center space-x-2">
-                                            <Checkbox 
-                                                id={`contract-${contract}`} 
-                                                checked={allowedContracts[contract as keyof AllowedContractsV3]}
-                                                onCheckedChange={(checked) => {
-                                                    setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
-                                                }}
-                                                disabled={isAutoMode}
-                                            />
-                                            <Label htmlFor={`contract-${contract}`} className="text-[10px] font-medium leading-none cursor-pointer">
-                                                {contract.replace('_', '/')}
-                                            </Label>
-                                        </div>
-                                    ))}
+                            <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
+                                <div className="space-y-3">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <TrendingUp className="h-3 w-3" /> Ações Permitidas
+                                    </Label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {Object.keys(allowedActions).map((action) => (
+                                            <div key={action} className="flex items-center space-x-2">
+                                                <Checkbox 
+                                                    id={`action-${action}`} 
+                                                    checked={allowedActions[action as keyof AllowedActionsV3]}
+                                                    onCheckedChange={(checked) => {
+                                                        setAllowedActions(prev => ({ ...prev, [action]: !!checked }));
+                                                    }}
+                                                    disabled={isAutoMode}
+                                                />
+                                                <Label htmlFor={`action-${action}`} className="text-[10px] font-medium leading-none cursor-pointer">
+                                                    {action}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <Separator />
+                                <div className="space-y-3">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                        <Layers className="h-3 w-3" /> Categorias Permitidas
+                                    </Label>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {Object.keys(allowedContracts).map((contract) => (
+                                            <div key={contract} className="flex items-center space-x-2">
+                                                <Checkbox 
+                                                    id={`contract-${contract}`} 
+                                                    checked={allowedContracts[contract as keyof AllowedContractsV3]}
+                                                    onCheckedChange={(checked) => {
+                                                        setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
+                                                    }}
+                                                    disabled={isAutoMode}
+                                                />
+                                                <Label htmlFor={`contract-${contract}`} className="text-[10px] font-medium leading-none cursor-pointer">
+                                                    {contract}
+                                                </Label>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
 

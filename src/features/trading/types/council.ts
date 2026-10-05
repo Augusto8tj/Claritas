@@ -1,7 +1,7 @@
 export interface TradePostMortem {
   id: string;
   timestamp: number;
-  contract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'CALL' | 'PUT';
+  contract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
   result: 'WIN' | 'LOSS';
   pnl: number;
   rsi: number;
@@ -18,7 +18,7 @@ export interface TradeMemoryBuffer {
 export interface AgentOpinion {
   agentName: 'MOMENTUM' | 'RISK_CRITIC' | 'ARCHIVIST';
   action: 'CALL' | 'PUT' | 'HOLD';
-  recommendedContract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'CALL' | 'PUT';
+  recommendedContract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
   confidence: number;
   reasoning: string;
   vetoTriggered?: boolean;
@@ -37,7 +37,7 @@ export interface CouncilTelemetry {
 
 export interface CouncilDecision {
   finalAction: 'CALL' | 'PUT' | 'HOLD';
-  recommendedContract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'CALL' | 'PUT';
+  recommendedContract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
   stakeRatio: number;
   consensusConfidence: number;
   opinions: AgentOpinion[];
@@ -50,11 +50,29 @@ export interface CouncilDecision {
 }
 
 /**
+ * Permissões granulares de ações (direção).
+ */
+export interface AllowedActionsV3 {
+  'CALL': boolean;
+  'PUT': boolean;
+}
+
+/**
+ * Categorias de contrato permitidas.
+ */
+export interface AllowedContractsV3 {
+  'OPTIONS': boolean;
+  'ACCUMULATORS': boolean;
+  'MULTIPLIERS': boolean;
+}
+
+/**
  * Permissões granulares de execução por ativo.
  */
 export interface AssetExecutionPermission {
   symbol: string;
-  allowedContracts: ('ACCUMULATORS' | 'MULTIPLIERS' | 'CALL' | 'PUT')[];
+  allowedContracts: ('ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS')[];
+  allowedActions: ('CALL' | 'PUT')[];
   maxStake: number;
   enabled: boolean;
 }

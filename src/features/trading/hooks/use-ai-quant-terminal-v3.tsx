@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -16,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil } from '../services/quant-council-engine';
-import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, PortfolioRiskState } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 
 export interface RadarAssetStatus {
@@ -73,10 +72,13 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // GESTÃO FINANCEIRA
-    const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
+    // GESTÃO FINANCEIRA (CORREÇÃO 3 - Separação Ações/Contratos)
+    const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({
         'CALL': true,
-        'PUT': true,
+        'PUT': true
+    });
+    const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
+        'OPTIONS': true,
         'ACCUMULATORS': true,
         'MULTIPLIERS': true
     });
@@ -126,7 +128,6 @@ export function useAIQuantTerminalV3(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog, activeSymbol]);
 
-    // CORREÇÃO 4 — Corrigir corrida de hidratação do ollamaConfig
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
     useEffect(() => {
         const saved = localStorage.getItem('ollamaConfig');
@@ -178,7 +179,6 @@ export function useAIQuantTerminalV3(
 
     // ANÁLISE POR SÍMBOLO (ESTÁVEL)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
-        // CORREÇÃO 2 — Logar explicitamente cada condição do guard em runAnalysisForSymbol
         if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado (isConnected=false).`, 'warning'); return; }
         if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig é null. Verifique localStorage/configuração.`, 'warning'); return; }
         if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning'); return; }
@@ -189,7 +189,12 @@ export function useAIQuantTerminalV3(
         
         try {
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
+            
+            // CORREÇÃO 4 - Diagnóstico de Indicadores
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
+            if (isFocused) {
+                addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators?.rsi}, bbw=${indicators?.bbw}, adx=${indicators?.adx}, candles=${candles.length}`, 'info');
+            }
             
             const snapshot = {
                 symbol, price: currentPrice, rsi: indicators?.rsi, bbw: indicators?.bbw,
@@ -204,14 +209,17 @@ export function useAIQuantTerminalV3(
                 lockedSymbols: new Set()
             };
 
-            const assetPermissions = {
-                symbol, enabled: true, maxStake: stakeValue * 2,
-                allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof AllowedContractsV3]) as any[]
+            // CORREÇÃO 3 - Populando apenas categorias e ações separadamente
+            const assetPermissions: AssetExecutionPermission = {
+                symbol, 
+                enabled: true, 
+                maxStake: stakeValue * 2,
+                allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
+                allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            // CORREÇÃO 3 — Logar o resultado crú da decisão, incluindo executedVia
             addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}`, 'decision');
 
             if (isFocused) {
@@ -257,7 +265,7 @@ export function useAIQuantTerminalV3(
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
             throw err;
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
     // FILA SEQUENCIAL E SCHEDULING (Hardware Safe)
     const runMultiAssetCycle = useCallback(async () => {
@@ -414,7 +422,9 @@ export function useAIQuantTerminalV3(
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
-        allowedContracts, setAllowedContracts, maxConcurrentTrades, setMaxConcurrentTrades,
+        allowedActions, setAllowedActions,
+        allowedContracts, setAllowedContracts, 
+        maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, 
         watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,

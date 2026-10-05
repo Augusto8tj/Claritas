@@ -1,4 +1,3 @@
-
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
@@ -25,9 +24,14 @@ function validateExecutionGate(
     return { allowed: false, reason: "Bloqueado: Execução desativada para este ativo." };
   }
 
-  // 3. Contrato Permitido
-  if (!permissions.allowedContracts.includes(decision.recommendedContract as any)) {
-    return { allowed: false, reason: `Bloqueado: Contrato ${decision.recommendedContract} não permitido para ${symbol}.` };
+  // 3. Categoria de Contrato Permitida
+  if (!permissions.allowedContracts.includes(decision.recommendedContract)) {
+    return { allowed: false, reason: `Bloqueado: Categoria ${decision.recommendedContract} não permitida para ${symbol}.` };
+  }
+
+  // 3.1 Ação Direcional Permitida
+  if (!permissions.allowedActions.includes(decision.finalAction as any)) {
+    return { allowed: false, reason: `Bloqueado: Ação ${decision.finalAction} não permitida para ${symbol}.` };
   }
 
   // 4. Limites de Portfólio
@@ -92,7 +96,7 @@ export async function runQuantCouncil(
       const endTime = performance.now();
       return {
         finalAction: 'HOLD',
-        recommendedContract: 'CALL',
+        recommendedContract: 'OPTIONS',
         stakeRatio: 0,
         consensusConfidence: critic.confidence,
         opinions,
@@ -129,7 +133,7 @@ export async function runQuantCouncil(
     }
     return {
       finalAction: 'HOLD',
-      recommendedContract: 'CALL',
+      recommendedContract: 'OPTIONS',
       stakeRatio: 0,
       consensusConfidence: 0,
       opinions: [],
@@ -197,7 +201,7 @@ async function fetchAgentAnalysis(
     return { 
       agentName,
       action: (opinion.action || 'HOLD').toUpperCase() as any,
-      recommendedContract: (opinion.recommendedContract || 'CALL').toUpperCase() as any,
+      recommendedContract: (opinion.recommendedContract || 'OPTIONS').toUpperCase() as any,
       confidence: Number(opinion.confidence) || 0,
       reasoning: opinion.reasoning || 'Sem justificativa.',
       vetoTriggered: !!opinion.vetoTriggered,
@@ -250,7 +254,7 @@ function synthesizeChairmanDecision(
 
   return {
     finalAction: action,
-    recommendedContract: opinions.find(o => o.action === action)?.recommendedContract || 'CALL',
+    recommendedContract: (opinions.find(o => o.action === action)?.recommendedContract || 'OPTIONS') as any,
     stakeRatio: action !== 'HOLD' ? 0.25 * entropyPenalty : 0,
     consensusConfidence: Math.round(maxScore / Math.max(1, opinions.length)),
     opinions,
@@ -268,7 +272,7 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
 
   return {
     finalAction: action,
-    recommendedContract: 'CALL',
+    recommendedContract: 'OPTIONS',
     stakeRatio: action !== 'HOLD' ? 0.10 : 0,
     consensusConfidence: 60,
     opinions: [],
