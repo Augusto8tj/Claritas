@@ -79,7 +79,7 @@ export function useAIQuantTerminalV3(
     const [dailyBalance, setDailyBalance] = useState(10.0);
     const [dailyTarget, setDailyTarget] = useState(5.0);
 
-    // REFS PARA ESTABILIDADE (CORREÇÃO CRÍTICA: ITEM 1 & 4)
+    // REFS PARA ESTABILIDADE
     const chartDataRef = useRef(chartData);
     const multiAssetCandlesRef = useRef(multiAssetCandles);
     const watchedSymbolsRef = useRef(watchedSymbols);
@@ -105,6 +105,20 @@ export function useAIQuantTerminalV3(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
+
+    // ESTATÍSTICAS DA SESSÃO (CORREÇÃO DO REFERENCE ERROR)
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && 
+            (op.initiator === 'Conselho_V3' || op.initiator === 'Conselho') && 
+            op.asset === activeSymbol
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : null;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate, total };
+    }, [operationsLog, activeSymbol]);
 
     // OLLAMA CONFIG
     const ollamaConfig = useMemo(() => {
@@ -225,7 +239,7 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
-    // CORREÇÃO CRÍTICA: FILA SEQUENCIAL E SCHEDULING (ITEM 1, 2, 3, 5)
+    // FILA SEQUENCIAL E SCHEDULING (Hardware Safe)
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || !isConnected || !ollamaConfig) return;
         executionLockRef.current = true;
@@ -235,14 +249,11 @@ export function useAIQuantTerminalV3(
             const currentActive = activeSymbolRef.current;
             const currentInterval = analysisIntervalRef.current;
             
-            // 1. Identifica ativos que precisam de varredura (V3.6 Logic)
             const dueSymbols = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
             if (dueSymbols.length === 0) return;
 
-            // 2. Priorização: Ativo em foco sempre primeiro
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
-            // 3. Processamento SEQUENCIAL (Concurrency 1 - Hardware Safe)
             for (const symbol of dueSymbols) {
                 const isFocused = symbol === currentActive;
                 const candles = isFocused ? chartDataRef.current : multiAssetCandlesRef.current[symbol];
@@ -260,7 +271,6 @@ export function useAIQuantTerminalV3(
                     const callEnd = Date.now();
                     const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
                     
-                    // 4. Agendamento Half-Cycle (Respeitando a config do usuário)
                     const nextInterval = isFocused ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
                     
@@ -272,17 +282,15 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, ollamaConfig, runAnalysisForSymbol, addLog]);
 
-    // Scanner fixo de 5s para verificar a fila de ativos "due"
     useEffect(() => {
         const scanner = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(scanner);
     }, [runMultiAssetCycle]);
 
-    // Gatilho imediato para ativo focado (Unificado)
     useEffect(() => {
         if (activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
             const nextRun = scheduleRef.current[activeSymbol] || 0;
-            if (Date.now() >= nextRun - 2000) { // Pequena folga para agilidade
+            if (Date.now() >= nextRun - 2000) {
                 runMultiAssetCycle();
             }
         }
@@ -308,7 +316,6 @@ export function useAIQuantTerminalV3(
         setIsChatLoading(true);
 
         try {
-            // Aguarda o hardware liberar se estiver em análise de radar
             while (executionLockRef.current) {
                 await new Promise(r => setTimeout(r, 500));
             }
