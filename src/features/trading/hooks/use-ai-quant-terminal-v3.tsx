@@ -1,8 +1,9 @@
+
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.1: Integração do Radar de Background V2.5 com a inteligência multi-persona V3.
+ * V3.2: Protocolo de Ativação Tática via Chat e Execução Polimórfica.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -144,7 +145,7 @@ export function useAIQuantTerminalV3(
     }, [operationsLog]);
 
     // MONITORAMENTO MULTI-ATIVO (Surgical Port from V2.5)
-    const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[]) => {
+    const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
         
         const isFocused = symbol === activeSymbol;
@@ -193,8 +194,10 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            // Lógica de Execução Multi-Ativo (REAL OU SOMBRA)
-            if ((isAutoMode || isShadowMode) && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65) {
+            // LÓGICA DE EXECUÇÃO (AUTOPILOT OU TRIGGER MANUAL VIA CHAT)
+            const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65);
+
+            if (shouldExecute && decision.finalAction !== 'HOLD') {
                 const hasOpenTrade = operationsLog.some(op => op.asset === symbol && op.status === 'pending');
 
                 if (!hasOpenTrade) {
@@ -213,11 +216,17 @@ export function useAIQuantTerminalV3(
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
+                        const initiator = isManualTrigger ? 'Manual' : 'Conselho_V3';
                         await executeTrade(
                             finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
-                            15, 's', 'Conselho_V3', `V3_${decision.executedVia}`, extraProposalParams
+                            15, 's', initiator as any, `V3_${decision.executedVia}`, extraProposalParams
                         );
-                        if (isFocused) addLog(`[EXEC] Ordem V3 disparada para ${symbol}`, 'execution');
+                        
+                        addLog(`[EXEC] Ordem ${initiator} disparada para ${symbol} via ${decision.executedVia}`, 'execution');
+                        
+                        if (isManualTrigger) {
+                            toast({ title: "🎯 Ordem Tática Executada", description: `${symbol}: ${decision.finalAction} via Chat.` });
+                        }
                     }
                 }
             }
@@ -225,7 +234,7 @@ export function useAIQuantTerminalV3(
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, operationsLog, activeSymbol, priceTicks, executeTrade, addLog, stakeValue, assetPermissions, portfolioRisk]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, operationsLog, activeSymbol, priceTicks, executeTrade, addLog, stakeValue, assetPermissions, portfolioRisk, toast]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current) return;
@@ -299,9 +308,9 @@ export function useAIQuantTerminalV3(
             RADAR TÁTICO:
             ${radarDetails}
 
-            INSTRUÇÃO DE EXECUÇÃO:
-            - Se o usuário der uma ordem direta de compra/venda, você DEVE responder confirmando e incluir exatamente esta tag no final da resposta: [SOLICITAR_EXECUCAO:ATIVO] (substitua ATIVO pelo símbolo correto, ex: 1HZ10V).
-            - Nunca simule a execução apenas com texto sem usar a tag.
+            INSTRUÇÃO DE EXECUÇÃO (CRÍTICA):
+            - Se o usuário der uma ordem direta de compra/venda (ex: "faça a compra", "execute no ativo X"), você DEVE obrigatoriamente responder confirmando e incluir exatamente esta tag no final da resposta: [SOLICITAR_EXECUCAO:ATIVO] (substitua ATIVO pelo símbolo correto, ex: 1HZ10V).
+            - Nunca diga que realizou a compra se não incluir a tag [SOLICITAR_EXECUCAO:...]. Sem a tag, o robô não executará nada.
             
             ${memoryContext}
             SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
@@ -323,9 +332,11 @@ export function useAIQuantTerminalV3(
                     
                     if (targetCandles && targetCandles.length >= 30) {
                         addLog(`Chat autorizou execução tática em ${requestedSymbol}. Disparando motor...`, 'decision');
-                        await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[]);
+                        // DISPARA EXECUÇÃO FORÇADA (isManualTrigger = true)
+                        await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
                     } else {
                         addLog(`Falha ao armar ordem via Chat: Ativo ${requestedSymbol} sem dados suficientes.`, 'error');
+                        toast({ title: "Erro de Dados", description: `Ativo ${requestedSymbol} ainda está sincronizando dados.`, variant: "destructive" });
                     }
                 }
             }
