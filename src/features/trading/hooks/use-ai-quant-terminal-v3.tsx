@@ -3,13 +3,14 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.5: Monitoramento autônomo total, Memória Segmentada e Ativação Tática Universal.
+ * V3.2: Correção cirúrgica de re-renderização e processamento paralelo de background.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
+import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
@@ -53,7 +54,7 @@ export function useAIQuantTerminalV3(
     const { user } = useAuth();
     const { toast } = useToast();
 
-    // ESTADOS DE CONTROLE CANÔNICOS V3
+    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
@@ -68,7 +69,7 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // GESTÃO FINANCEIRA E CONTRATOS
+    // GESTÃO FINANCEIRA
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
         'CALL': true,
         'PUT': true,
@@ -91,6 +92,13 @@ export function useAIQuantTerminalV3(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    // REFS PARA DADOS DE ALTA FREQUÊNCIA (Correção do Item 1)
+    const priceTicksRef = useRef(priceTicks);
+    const operationsLogRef = useRef(operationsLog);
+
+    useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
+    useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
 
     const addLog = useCallback((message: string, type: string = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
@@ -145,7 +153,6 @@ export function useAIQuantTerminalV3(
         if (ollamaConfig?.baseUrl && availableModels.length === 0) fetchAvailableModels();
     }, [ollamaConfig?.baseUrl, fetchAvailableModels, availableModels.length]);
 
-    // ESTATÍSTICAS DE SESSÃO V3
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && (op.initiator === 'Conselho_V3' || op.strategy?.startsWith('V3_'))
@@ -160,79 +167,60 @@ export function useAIQuantTerminalV3(
         };
     }, [operationsLog]);
 
-    // ATUALIZAÇÃO DE MEMÓRIA (Apenas para o Ativo em Foco na UI)
     useEffect(() => {
         if (user && activeSymbol) TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
     }, [user, activeSymbol]);
 
-    // MONITORAMENTO MULTI-ATIVO AUTÔNOMO
+    // ANÁLISE POR SÍMBOLO (Correção das dependências - Item 1 & 2)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
         
         const isFocused = symbol === activeSymbol;
-        const currentPrice = isFocused ? priceTicks[priceTicks.length - 1]?.price : candles[candles.length - 1].close;
+        const currentPrice = isFocused ? priceTicksRef.current[priceTicksRef.current.length - 1]?.price : candles[candles.length - 1].close;
         
         try {
-            // 1. Coletar Memória Específica do Ativo
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
-            
-            // 2. Preparar Snapshot
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
-                symbol: symbol,
-                price: currentPrice,
-                rsi: indicators?.rsi,
-                bbw: indicators?.bbw,
+                symbol, price: currentPrice, rsi: indicators?.rsi, bbw: indicators?.bbw,
                 trend: indicators?.adx! > 25 ? 'Trending' : 'Ranging'
             };
 
-            // 3. Governança de Portfólio
             const portfolioState: PortfolioRiskState = {
-                openPositions: operationsLog.filter(op => op.status === 'pending').length,
+                openPositions: operationsLogRef.current.filter(op => op.status === 'pending').length,
                 maxConcurrentPositions: maxConcurrentTrades,
-                totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
+                totalExposure: operationsLogRef.current.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
                 maxTotalExposure: dailyBalance,
-                lockedSymbols: new Set() // Símbolos bloqueados neste ciclo (vazio para análise)
+                lockedSymbols: new Set()
             };
 
             const assetPermissions = {
-                symbol,
-                allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof AllowedContractsV3]) as any[],
-                maxStake: stakeValue * 2,
-                enabled: true
+                symbol, enabled: true, maxStake: stakeValue * 2,
+                allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof AllowedContractsV3]) as any[]
             };
 
-            // 4. Invocação do Conselho
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
             if (isFocused) {
                 setLastDecision(decision);
                 setTelemetry(decision.telemetry);
-                setTimeToNextAnalysis(analysisInterval); // Reseta cronômetro visual
+                addLog(`[DECISÃO] ${symbol}: ${decision.finalAction} (${decision.consensusConfidence}%)`, 'decision');
             }
 
-            // 5. Atualização de Estado do Radar para este símbolo
             setRadarStatus(prev => ({
                 ...prev,
                 [symbol]: {
-                    symbol,
-                    lastAction: decision.finalAction,
-                    lastPrice: currentPrice,
-                    confidence: decision.consensusConfidence,
-                    timestamp: Date.now(),
-                    isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
-                    executedVia: decision.executedVia,
-                    opinions: decision.opinions,
-                    recommendedContract: decision.recommendedContract,
+                    symbol, lastAction: decision.finalAction, lastPrice: currentPrice, confidence: decision.consensusConfidence,
+                    timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
+                    executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
                     holdReason: decision.holdReason
                 }
             }));
 
-            // 6. Lógica de Execução (Real ou Sombra)
             const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65);
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                const hasSameContractOpen = operationsLog.some(op => 
+                const hasSameContractOpen = operationsLogRef.current.some(op => 
                     op.asset === symbol && op.status === 'pending' && op.contractType === decision.recommendedContract
                 );
 
@@ -242,71 +230,69 @@ export function useAIQuantTerminalV3(
                         toast({ title: `🧪 Simulação V3 (${symbol})`, description: `${decision.finalAction} via ${decision.recommendedContract}` });
                     } else {
                         let finalContractType = 'CALL';
-                        let extraProposalParams: Record<string, any> = {};
-
                         switch (decision.recommendedContract) {
                             case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
-                            case 'MULTIPLIERS': 
-                                finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; 
-                                extraProposalParams = { multiplier: 400 }; 
-                                break;
+                            case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
                         const initiator = isManualTrigger ? 'Manual' : 'Conselho_V3';
-                        await executeTrade(
-                            finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any,
-                            15, 's', initiator as any, `V3_${decision.executedVia}`, extraProposalParams
-                        );
-                        
+                        await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', initiator as any, `V3_${decision.executedVia}`);
                         addLog(`[EXEC] ${initiator}: ${symbol} ${decision.finalAction}`, 'execution');
-                        if (!isFocused) {
-                            toast({ title: `🎯 Execução em Background`, description: `${symbol}: ${decision.finalAction} disparado pelo Radar.` });
-                        }
                     }
                 }
             }
-
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, operationsLog, activeSymbol, priceTicks, executeTrade, addLog, stakeValue, toast, analysisInterval]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, activeSymbol, executeTrade, addLog, stakeValue, toast]);
 
+    // CICLO MULTI-ATIVO (Correção do Item 3 & 4)
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current) return;
         executionLockRef.current = true;
 
-        const now = Date.now();
-        // Filtra símbolos que precisam de análise (individualmente)
-        const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+        try {
+            const now = Date.now();
+            const dueSymbols = watchedSymbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+            
+            if (dueSymbols.length === 0) return;
 
-        for (const symbol of dueSymbols) {
-            const candles = symbol === activeSymbol ? chartData : (multiAssetCandles[symbol] as CandleData[]);
-            if (candles && candles.length >= 30) {
-                // Análise sequencial para não sobrecarregar Ollama
-                await runAnalysisForSymbol(symbol, candles);
-                // Define o próximo ciclo baseado no intervalo definido (Half-Cycle para background)
-                const interval = symbol === activeSymbol ? analysisInterval : (analysisInterval * 0.5);
-                scheduleRef.current[symbol] = now + (interval * 1000); 
+            // Ativo em foco tem prioridade (Execução síncrona)
+            if (dueSymbols.includes(activeSymbol!)) {
+                await runAnalysisForSymbol(activeSymbol!, chartData);
+                scheduleRef.current[activeSymbol!] = Date.now() + (analysisInterval * 1000);
             }
-        }
 
-        executionLockRef.current = false;
+            // Ativos em background (Execução paralela controlada)
+            const backgroundSymbols = dueSymbols.filter(s => s !== activeSymbol);
+            if (backgroundSymbols.length > 0) {
+                await Promise.all(backgroundSymbols.map(async (symbol) => {
+                    const candles = multiAssetCandles[symbol];
+                    if (candles && candles.length >= 30) {
+                        await runAnalysisForSymbol(symbol, candles);
+                        scheduleRef.current[symbol] = Date.now() + (analysisInterval * 500); // Background roda no Half-Cycle
+                    }
+                }));
+            }
+        } finally {
+            executionLockRef.current = false;
+        }
     }, [watchedSymbols, activeSymbol, chartData, multiAssetCandles, analysisInterval, runAnalysisForSymbol]);
 
-    // CICLO DE VARREDURA AGRESSIVO (5s) - verifica o agendamento de todos os ativos
+    // SCANNER DE INTERVALO ESTÁVEL
     useEffect(() => {
         if (!isAutoMode && !isShadowMode) return;
         const scanner = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(scanner);
     }, [isAutoMode, isShadowMode, runMultiAssetCycle]);
 
-    // Gatilho imediato ao trocar de ativo
+    // TRIGGER IMEDIATO AO MUDAR ATIVO (Correção do Item 5)
     useEffect(() => {
-        if (isConnected && activeSymbol && chartData.length >= 30) {
+        if (isConnected && activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
             runAnalysisForSymbol(activeSymbol, chartData);
         }
-    }, [activeSymbol, isConnected, chartData.length]);
+    }, [activeSymbol, isConnected, chartData.length, runAnalysisForSymbol]);
 
     const resetSession = async () => {
         setIsAutoMode(false);
@@ -336,13 +322,9 @@ export function useAIQuantTerminalV3(
 
             const systemPrompt = `VOCÊ É UM ANALISTA NO LABORATÓRIO V3.0 (COUNCIL EDITION).
             ESTRUTURA: CHAIRMAN (Líder), MOMENTUM, RISK CRITIC, ARCHIVIST.
-            
-            RADAR TÁTICO MULTI-ATIVO:
+            RADAR:
             ${radarDetails}
-
-            INSTRUÇÃO DE EXECUÇÃO UNIVERSAL:
-            - Se o usuário pedir para executar em QUALQUER ativo (ex: "compre no 1HZ10V"), você DEVE obrigatoriamente responder confirmando e incluir exatamente esta tag: [SOLICITAR_EXECUCAO:SYMBOL] (substitua SYMBOL pelo ativo).
-            
+            INSTRUÇÃO: Se pedir para executar (ex: "compre no 1HZ10V"), inclua a tag: [SOLICITAR_EXECUCAO:SYMBOL]
             ${memoryContext}
             SEU PAPEL: ${targetAgent}. Responda de forma técnica em PT-BR.`;
 
@@ -359,7 +341,6 @@ export function useAIQuantTerminalV3(
                 if (executionTag && executionTag[1]) {
                     const requestedSymbol = executionTag[1].trim();
                     const targetCandles = requestedSymbol === activeSymbol ? chartData : multiAssetCandles[requestedSymbol];
-                    
                     if (targetCandles && targetCandles.length >= 30) {
                         addLog(`Chat autorizou execução tática em ${requestedSymbol}.`, 'decision');
                         await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
@@ -373,7 +354,6 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    // Cronômetro visual do Ativo em Foco
     useEffect(() => {
         const timer = setInterval(() => {
             setTimeToNextAnalysis(prev => prev <= 1 ? analysisInterval : prev - 1);
