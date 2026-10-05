@@ -92,12 +92,6 @@ function TerminalContentV2() {
     const [showResetConfirm, setShowResetConfirm] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        if (chatScrollRef.current) {
-            chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [chatMessages]);
-
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
@@ -415,10 +409,10 @@ function TerminalContentV2() {
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-4">
                                     {chatMessages.map((msg, i) => (
-                                        <div key={i} className={cn(
+                                        <div className={cn(
                                             "flex items-start gap-2 max-w-[85%]",
                                             msg.role === 'user' ? "ml-auto flex-row-reverse" : ""
-                                        )}>
+                                        )} key={i}>
                                             <Badge variant="outline" className="h-6 w-6 rounded-full p-0 flex items-center justify-center shrink-0">
                                                 {msg.role === 'user' ? 'U' : 'C'}
                                             </Badge>
@@ -556,16 +550,14 @@ function TerminalContentV2() {
                         <CardContent className="p-0">
                             <ScrollArea className="h-48 p-4 text-[10px] leading-relaxed">
                                 {reasoningLog.map((log, i) => (
-                                    <div key={i} className="mb-1 border-l-2 border-border pl-2">
+                                    <div className="mb-1 border-l-2 border-border pl-2" key={i}>
                                         <span className="text-muted-foreground/60">[{log.time}]</span>{' '}
                                         <span className={cn(
                                             "font-medium",
                                             log.type === 'decision' ? "text-primary font-bold" : 
                                             log.type === 'execution' ? "text-green-600 font-bold" : 
                                             log.type === 'radar' ? "text-blue-500" : "text-muted-foreground"
-                                        )}>
-                                            {log.message}
-                                        </span>
+                                        )}>{log.message}</span>
                                     </div>
                                 ))}
                             </ScrollArea>

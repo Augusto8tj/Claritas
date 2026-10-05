@@ -1,3 +1,4 @@
+
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -55,12 +56,6 @@ function TerminalV3Content() {
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const chatScrollRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (chatScrollRef.current) {
-            chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [chatMessages]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -461,7 +456,6 @@ function TerminalV3Content() {
                                             <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
                                         </div>
                                     )}
-                                    <div ref={chatScrollRef} />
                                 </div>
                             </ScrollArea>
                         </CardContent>

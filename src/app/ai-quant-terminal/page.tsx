@@ -1,3 +1,4 @@
+
 // src/app/ai-quant-terminal/page.tsx
 'use client';
 
@@ -54,12 +55,6 @@ function TerminalContent() {
     const [chatInput, setChatInput] = useState('');
     const [showRealAccountConfirm, setShowRealAccountConfirm] = useState(false);
     const chatScrollRef = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        if (chatScrollRef.current) {
-            chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
-        }
-    }, [chatMessages]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -352,7 +347,7 @@ function TerminalContent() {
                     </Card>
                 </div>
 
-                {/* COLUNA CENTRAL: VISUALIZAÇÃO E DECISÃO */}
+                {/* COLUNA CENTRAL: GRÁFICO E CHAT */}
                 <div className="lg:col-span-2 space-y-6">
                     <Card className="bg-card/50 border-border shadow-sm min-h-[450px]">
                         <CardHeader className="flex flex-row items-center justify-between">

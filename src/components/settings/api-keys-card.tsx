@@ -135,10 +135,6 @@ export function ApiKeysCard() {
     }
   }, [ollamaForm, user]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, loading]);
-
   const handleDerivSubmit = async (type: AccountType) => {
     setLoading(type);
     const token = derivForm.getValues(type === 'demo' ? 'demoToken' : 'realToken');
