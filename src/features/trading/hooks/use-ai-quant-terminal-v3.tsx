@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -29,6 +30,11 @@ export interface RadarAssetStatus {
     opinions: AgentOpinion[];
     recommendedContract?: string;
     holdReason?: string;
+    indicators?: {
+        rsi: number;
+        bbw: number;
+        adx: number;
+    };
 }
 
 export interface ChatMessage {
@@ -106,7 +112,7 @@ export function useAIQuantTerminalV3(
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
-    // ESTATÍSTICAS DA SESSÃO (CORREÇÃO DO REFERENCE ERROR)
+    // ESTATÍSTICAS DA SESSÃO
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && 
@@ -210,7 +216,12 @@ export function useAIQuantTerminalV3(
                     symbol, lastAction: decision.finalAction, lastPrice: currentPrice, confidence: decision.consensusConfidence,
                     timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
                     executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
-                    holdReason: decision.holdReason
+                    holdReason: decision.holdReason,
+                    indicators: {
+                        rsi: indicators?.rsi || 50,
+                        bbw: indicators?.bbw || 0,
+                        adx: indicators?.adx || 0
+                    }
                 }
             }));
 
@@ -324,20 +335,25 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
-                return `- Ativo: ${sym} | Status: ${status?.lastAction || 'AGUARDANDO PRIMEIRA VARREDURA'} | Confiança: ${status?.confidence || 0}% | Contrato Sugerido: ${status?.recommendedContract || 'Análise Pendente'}`;
+                const price = status?.lastPrice ? status.lastPrice.toFixed(4) : 'Sincronizando...';
+                const rsi = status?.indicators?.rsi ? status.indicators.rsi.toFixed(1) : '--';
+                const action = status?.lastAction || 'AGUARDANDO';
+                return `- Ativo: ${sym} | PREÇO ATUAL: ${price} | RSI: ${rsi} | Status: ${action} | Confiança: ${status?.confidence || 0}% | Contrato: ${status?.recommendedContract || 'Análise Pendente'}`;
             }).join('\n');
 
             const systemPrompt = `VOCÊ É O CONSELHO TÁTICO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
             ATUAÇÃO: Você monitora diversos ativos simultaneamente em fila sequencial.
             
-            ESTADO ATUAL DO RADAR (DADOS EM TEMPO REAL):
+            DADOS DE MERCADO EM TEMPO REAL (ORDENADOS POR ATIVO):
             ${radarDetails}
             
             ${memoryContext}
             
-            SUA MISSÃO:
-            1. Responda de forma clara, técnica e fundamentada em português.
-            2. EXECUÇÃO TÁTICA: Se o usuário der ordem clara, inclua obrigatoriamente no final: [SOLICITAR_EXECUCAO:SYMBOL]`;
+            INSTRUÇÕES CRÍTICAS PARA RESPOSTA:
+            1. SEMPRE use os PREÇOS REAIS listados acima para responder perguntas sobre valores. Não invente especificações como "10V" se o preço real estiver disponível.
+            2. Responda de forma clara, técnica e fundamentada em português do Brasil.
+            3. Cite nominalmente os ativos e seus valores para dar segurança ao operador.
+            4. EXECUÇÃO TÁTICA: Se o usuário der ordem clara de compra ou venda (ex: "faça a compra"), responda confirmando e inclua obrigatoriamente no final da resposta: [SOLICITAR_EXECUCAO:SYMBOL]`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -360,6 +376,13 @@ export function useAIQuantTerminalV3(
             }
         } catch (error: any) {
             addLog(`Falha no chat: ${error.message}`, 'error');
+            setChatMessages(prev => [...prev, { 
+                role: 'assistant', 
+                content: `Erro de Conexão: ${error.message}. Verifique se o Ollama está rodando no gateway configurado.`, 
+                time: new Date().toLocaleTimeString(),
+                agentName: 'SISTEMA',
+                isError: true 
+            }]);
         } finally {
             executionLockRef.current = false;
             setIsChatLoading(false);
