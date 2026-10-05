@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.0 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.2: Correção cirúrgica de re-renderização e processamento paralelo de background.
+ * V3.5: Restauração completa de recursos e estabilização do acesso à IA Local (Ollama).
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -15,7 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil } from '../services/quant-council-engine';
-import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, PortfolioRiskState } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, PortfolioRiskState } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 
 export interface RadarAssetStatus {
@@ -31,13 +31,6 @@ export interface RadarAssetStatus {
     holdReason?: string;
 }
 
-export type AllowedContractsV3 = {
-    'CALL': boolean;
-    'PUT': boolean;
-    'ACCUMULATORS': boolean;
-    'MULTIPLIERS': boolean;
-};
-
 export interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
@@ -50,11 +43,15 @@ export function useAIQuantTerminalV3(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance, watchedSymbols, setWatchedSymbols, multiAssetCandles, clearActiveContracts, accountType, setAccountType } = useDerivApi();
+    const { 
+        isConnected, executeTrade, operationsLog, accountBalance, 
+        watchedSymbols, setWatchedSymbols, multiAssetCandles, 
+        clearActiveContracts, accountType, setAccountType 
+    } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
-    // ESTADOS DE CONTROLE
+    // ESTADOS DE CONTROLE CANÔNICOS V3
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
@@ -69,7 +66,7 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // GESTÃO FINANCEIRA
+    // GESTÃO FINANCEIRA E CONTRATOS
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({
         'CALL': true,
         'PUT': true,
@@ -91,42 +88,32 @@ export function useAIQuantTerminalV3(
     
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
-    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
-
-    // REFS PARA DADOS DE ALTA FREQUÊNCIA (Correção do Item 1)
+    
+    // REFS PARA DADOS DE ALTA FREQUÊNCIA (Evitar re-render loops)
     const priceTicksRef = useRef(priceTicks);
     const operationsLogRef = useRef(operationsLog);
 
     useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
 
+    // OLLAMA CONFIG - Sincronização robusta
+    const ollamaConfig = useMemo(() => {
+        if (typeof window === 'undefined') return null;
+        const saved = localStorage.getItem('ollamaConfig');
+        if (saved) return JSON.parse(saved) as OllamaConfig;
+        return null;
+    }, []);
+
     const addLog = useCallback((message: string, type: string = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('ollamaConfig');
-            if (saved) {
-                try {
-                    setOllamaConfig(JSON.parse(saved) as OllamaConfig);
-                } catch (e) {
-                    console.error("Error parsing ollamaConfig", e);
-                }
-            }
-        }
-    }, []);
-
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
-        if (typeof window === 'undefined') return;
-        setOllamaConfig(prev => {
-            const current = prev || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
-            const next = { ...current, ...updates };
-            localStorage.setItem('ollamaConfig', JSON.stringify(next));
-            return next;
-        });
-        toast({ title: "Configuração Atualizada", description: "As preferências do Ollama foram salvas." });
-    }, [toast]);
+        if (typeof window === 'undefined' || !ollamaConfig) return;
+        const next = { ...ollamaConfig, ...updates };
+        localStorage.setItem('ollamaConfig', JSON.stringify(next));
+        window.location.reload(); // Recarrega para garantir que o useMemo pegue o novo valor
+    }, [ollamaConfig]);
 
     const fetchAvailableModels = useCallback(async () => {
         if (!ollamaConfig?.baseUrl) return;
@@ -140,19 +127,14 @@ export function useAIQuantTerminalV3(
                 const data = await response.json();
                 const models = data.models || [];
                 setAvailableModels(models);
-                if (!ollamaConfig.model && models.length > 0) {
-                    updateOllamaConfig({ model: models[0].name });
-                }
+                toast({ title: "Sincronização OK", description: `${models.length} modelos detectados na VRAM.` });
             }
         } catch (e: any) {
             addLog(`Falha na conexão com Ollama: ${e.message}`, 'error');
         }
-    }, [ollamaConfig, updateOllamaConfig, addLog]);
+    }, [ollamaConfig, addLog, toast]);
 
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl && availableModels.length === 0) fetchAvailableModels();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels, availableModels.length]);
-
+    // ESTATÍSTICAS DE SESSÃO V3
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && (op.initiator === 'Conselho_V3' || op.strategy?.startsWith('V3_'))
@@ -171,7 +153,7 @@ export function useAIQuantTerminalV3(
         if (user && activeSymbol) TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
     }, [user, activeSymbol]);
 
-    // ANÁLISE POR SÍMBOLO (Correção das dependências - Item 1 & 2)
+    // ANÁLISE POR SÍMBOLO (Monitoramento Ativo)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
         if (!isConnected || !ollamaConfig || candles.length < 30 || !user) return;
         
@@ -183,7 +165,7 @@ export function useAIQuantTerminalV3(
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             const snapshot = {
                 symbol, price: currentPrice, rsi: indicators?.rsi, bbw: indicators?.bbw,
-                trend: indicators?.adx! > 25 ? 'Trending' : 'Ranging'
+                trend: (indicators?.adx || 0) > 25 ? 'Trending' : 'Ranging'
             };
 
             const portfolioState: PortfolioRiskState = {
@@ -247,7 +229,6 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, maxConcurrentTrades, dailyBalance, activeSymbol, executeTrade, addLog, stakeValue, toast]);
 
-    // CICLO MULTI-ATIVO (Correção do Item 3 & 4)
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current) return;
         executionLockRef.current = true;
@@ -258,13 +239,13 @@ export function useAIQuantTerminalV3(
             
             if (dueSymbols.length === 0) return;
 
-            // Ativo em foco tem prioridade (Execução síncrona)
+            // Ativo em foco tem prioridade
             if (dueSymbols.includes(activeSymbol!)) {
                 await runAnalysisForSymbol(activeSymbol!, chartData);
                 scheduleRef.current[activeSymbol!] = Date.now() + (analysisInterval * 1000);
             }
 
-            // Ativos em background (Execução paralela controlada)
+            // Ativos em background
             const backgroundSymbols = dueSymbols.filter(s => s !== activeSymbol);
             if (backgroundSymbols.length > 0) {
                 await Promise.all(backgroundSymbols.map(async (symbol) => {
@@ -287,7 +268,7 @@ export function useAIQuantTerminalV3(
         return () => clearInterval(scanner);
     }, [isAutoMode, isShadowMode, runMultiAssetCycle]);
 
-    // TRIGGER IMEDIATO AO MUDAR ATIVO (Correção do Item 5)
+    // TRIGGER IMEDIATO AO MUDAR ATIVO
     useEffect(() => {
         if (isConnected && activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
             runAnalysisForSymbol(activeSymbol, chartData);
