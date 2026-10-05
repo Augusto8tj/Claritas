@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -108,14 +107,79 @@ export function useAIQuantTerminalV3(
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
     }, []);
 
+    // Carrega configuração inicial do Ollama
     useEffect(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('ollamaConfig');
             if (saved) {
-                try { setOllamaConfig(JSON.parse(saved) as OllamaConfig); } catch (e) {}
+                try { 
+                    const config = JSON.parse(saved) as OllamaConfig;
+                    setOllamaConfig(config); 
+                } catch (e) {
+                    console.error("Error parsing ollamaConfig", e);
+                }
             }
         }
     }, []);
+
+    // Função para buscar modelos disponíveis no Ollama local
+    const fetchAvailableModels = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+            };
+            if (ollamaConfig.apiKey) {
+                headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            }
+
+            const response = await fetch(url, { headers });
+            if (response.ok) {
+                const data = await response.json();
+                const models = data.models || [];
+                setAvailableModels(models);
+                
+                // Se não tiver modelo selecionado, pega o primeiro da lista
+                if (!ollamaConfig.model && models.length > 0) {
+                    const nextConfig = { ...ollamaConfig, model: models[0].name };
+                    setOllamaConfig(nextConfig);
+                    localStorage.setItem('ollamaConfig', JSON.stringify(nextConfig));
+                }
+                
+                toast({ 
+                    title: "Hardware Node Sincronizado", 
+                    description: `${models.length} modelos detectados na sua VRAM.` 
+                });
+            } else {
+                throw new Error(`Erro HTTP ${response.status}`);
+            }
+        } catch (e: any) {
+            addLog(`Falha ao sincronizar Hardware Node: ${e.message}`, 'error');
+            toast({ 
+                variant: "destructive",
+                title: "Falha na Sincronização", 
+                description: "Não foi possível conectar ao gateway do Ollama. Verifique a URL nas Configurações." 
+            });
+        }
+    }, [ollamaConfig, addLog, toast]);
+
+    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
+        setOllamaConfig(prev => {
+            const next = prev ? { ...prev, ...updates } : { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m', ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+    }, []);
+
+    // Busca modelos automaticamente se a URL estiver presente
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl && availableModels.length === 0) {
+            fetchAvailableModels();
+        }
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels, availableModels.length]);
 
     // Atualiza o estado do portfólio baseado no log de operações e limites diários
     useEffect(() => {
@@ -143,6 +207,10 @@ export function useAIQuantTerminalV3(
             total: finishedTrades.length 
         };
     }, [operationsLog]);
+
+    useEffect(() => {
+        if (user) TradeMemoryManager.getBuffer(user.uid).then(setMemoryBuffer);
+    }, [user]);
 
     // MONITORAMENTO MULTI-ATIVO (Surgical Port from V2.5)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
@@ -365,8 +433,8 @@ export function useAIQuantTerminalV3(
         telemetry,
         ollamaConfig,
         availableModels,
-        updateOllamaConfig: (cfg: any) => setOllamaConfig(c => ({...c, ...cfg})),
-        fetchAvailableModels: () => {},
+        updateOllamaConfig,
+        fetchAvailableModels,
         setAccountType,
         accountType
     };
