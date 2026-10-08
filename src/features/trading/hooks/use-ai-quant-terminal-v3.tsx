@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -56,7 +55,7 @@ export function useAIQuantTerminalV3(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData // FONTE DE CANDLES OHLC 1M DO ATIVO FOCO
+        botCandleData 
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -112,6 +111,21 @@ export function useAIQuantTerminalV3(
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
     useEffect(() => { botCandleDataRef.current = botCandleData; }, [botCandleData]);
 
+    // OLLAMA CONFIG VIA STATE + EFFECT (CORREÇÃO 4)
+    const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
+    useEffect(() => {
+        const saved = localStorage.getItem('ollamaConfig');
+        if (saved) {
+            try {
+                setOllamaConfigState(JSON.parse(saved) as OllamaConfig);
+            } catch (e) {
+                setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `Erro ao parsear ollamaConfig do localStorage: ${e}`, type: 'error' }, ...prev]);
+            }
+        } else {
+            setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `[INIT] Nenhuma configuração Ollama encontrada no localStorage.`, type: 'warning' }, ...prev]);
+        }
+    }, []);
+
     // HELPER: Fonte única de candles OHLC 1m para todos os ativos
     const getCandlesFor = (symbol: string): CandleData[] => {
         const multi = multiAssetCandlesRef.current[symbol];
@@ -129,19 +143,16 @@ export function useAIQuantTerminalV3(
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
-    const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
-    useEffect(() => {
-        const saved = localStorage.getItem('ollamaConfig');
-        if (saved) {
-            try {
-                setOllamaConfigState(JSON.parse(saved) as OllamaConfig);
-            } catch (e) {
-                setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `Erro ao parsear ollamaConfig do localStorage: ${e}`, type: 'error' }, ...prev]);
-            }
-        } else {
-            setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `[INIT] Nenhuma configuração Ollama encontrada no localStorage.`, type: 'warning' }, ...prev]);
-        }
-    }, []);
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op =>
+            op.status !== 'pending' && (op.initiator === 'Conselho' || op.initiator === 'Conselho_V3') && op.asset === activeSymbol
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : null;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate, total };
+    }, [operationsLog, activeSymbol]);
 
     const addLog = useCallback((message: string, type: string = 'info') => {
         setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message, type }, ...prev].slice(0, 50));
@@ -180,6 +191,7 @@ export function useAIQuantTerminalV3(
 
     // ANÁLISE POR SÍMBOLO (ESTÁVEL)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
+        // LOGS EXPLICITOS DE GUARDS (CORREÇÃO 2)
         if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado (isConnected=false).`, 'warning'); return; }
         if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig é null. Verifique localStorage/configuração.`, 'warning'); return; }
         if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning'); return; }
@@ -191,16 +203,18 @@ export function useAIQuantTerminalV3(
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
-            // GUARDA DE QUALIDADE: Nunca enviar snapshot vazio ou inválido ao LLM
+            // GUARDA DE QUALIDADE (CORREÇÃO 5)
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
                 addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
                 return;
             }
 
+            // LOG INDICATORS (CORREÇÃO 6)
             if (isFocused) {
                 addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}, candles=${candles.length}`, 'info');
             }
             
+            // PREÇO ATUAL (CORREÇÃO 4)
             const currentPrice = isFocused 
                 ? (priceTicksRef.current[priceTicksRef.current.length - 1]?.price ?? candles[candles.length - 1]?.close)
                 : candles[candles.length - 1].close;
@@ -228,6 +242,7 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
+            // LOG DECISION (CORREÇÃO 3)
             addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}, votes=${decision.debugVotes}, hold=${decision.holdReason ?? '-'}`, 'decision');
 
             if (isFocused) {
@@ -258,6 +273,7 @@ export function useAIQuantTerminalV3(
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} via ${decision.recommendedContract}`, 'radar');
                     } else {
+                        // MAP TRADE DIRECTION (CORREÇÃO 2)
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         
                         let finalContractType = 'CALL';
@@ -267,6 +283,7 @@ export function useAIQuantTerminalV3(
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
+                        // DURAÇÃO ADAPTATIVA (CORREÇÃO 3)
                         const adxValue = indicators.adx || 20;
                         const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
@@ -279,6 +296,8 @@ export function useAIQuantTerminalV3(
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
             throw err;
+        } finally {
+            executionLockRef.current = false;
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
@@ -289,6 +308,7 @@ export function useAIQuantTerminalV3(
 
         const startTime = Date.now();
         try {
+            // CORREÇÃO 1: FOCO FORA DA WATCHLIST
             const currentActive = activeSymbolRef.current;
             const currentInterval = analysisIntervalRef.current;
             
@@ -302,6 +322,7 @@ export function useAIQuantTerminalV3(
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
+                // CORREÇÃO 3: GET CANDLES FOR
                 const candles = getCandlesFor(symbol);
                 
                 if (candles && candles.length >= 30) {
@@ -370,6 +391,7 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
+                // CORREÇÃO 3: USAR GETCANDLESFOR NO CHAT
                 const candles = getCandlesFor(sym);
                 
                 let price = "Sincronizando...";
