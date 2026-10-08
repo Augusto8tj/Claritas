@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
@@ -120,10 +121,8 @@ export function useAIQuantTerminalV3(
             try {
                 setOllamaConfigState(JSON.parse(saved) as OllamaConfig);
             } catch (e) {
-                setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `Erro ao parsear ollamaConfig do localStorage: ${e}`, type: 'error' }, ...prev]);
+                console.error("Erro ao parsear ollamaConfig:", e);
             }
-        } else {
-            setReasoningLog(prev => [{ time: new Date().toLocaleTimeString(), message: `[INIT] Nenhuma configuração Ollama encontrada no localStorage.`, type: 'warning' }, ...prev]);
         }
     }, []);
 
@@ -204,12 +203,12 @@ export function useAIQuantTerminalV3(
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
-                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos.`, 'warning');
                 return;
             }
 
             if (isFocused) {
-                addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}, candles=${candles.length}`, 'info');
+                addLog(`[METRICS] ${symbol}: rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}`, 'info');
             }
             
             const currentPrice = isFocused 
@@ -239,9 +238,11 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, votes=${decision.debugVotes} hold=${decision.holdReason ?? '-'}`, 'decision');
-
             if (isFocused) {
+                addLog(`[COUNCIL] ${symbol}: Action=${decision.finalAction} | Votes=[${decision.debugVotes}] | Entropy=${decision.telemetry.consensusEntropy.toFixed(2)} | Latency=${decision.t2tLatencyMs}ms`, 'decision');
+                if (decision.finalAction === 'HOLD' && decision.holdReason) {
+                    addLog(`[REJECTED] ${symbol}: ${decision.holdReason}`, 'warning');
+                }
                 setLastDecision(decision);
                 setTelemetry(decision.telemetry);
             }
@@ -287,9 +288,9 @@ export function useAIQuantTerminalV3(
                     }
                 }
             }
-        } catch (err: any) {
-            if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
-            throw err;
+        } catch (error: any) {
+            if (isFocused) addLog(`Erro em ${symbol}: ${error.message}`, 'error');
+            throw error;
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
@@ -309,23 +310,32 @@ export function useAIQuantTerminalV3(
             
             if (dueSymbols.length === 0) return;
 
+            // Prioriza o ativo em foco
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
                 const candles = getCandlesFor(symbol);
                 if (candles && candles.length >= 30) {
+                    // Reserva antecipada do agendamento para evitar duplicatas
                     const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = Date.now() + nextInterval * 1000;
 
                     try {
                         await runAnalysisForSymbol(symbol, candles as CandleData[]);
-                    } catch (e: any) {}
+                    } catch (e: any) {
+                        // O erro já é logado em runAnalysisForSymbol
+                    }
                 }
+            }
+            
+            const callEnd = Date.now();
+            if (currentActive && dueSymbols.includes(currentActive)) {
+                addLog(`[HARDWARE] Ciclo de Radar concluído em ${callEnd - startTime}ms.`, 'info');
             }
         } finally {
             executionLockRef.current = false;
         }
-    }, [isConnected, ollamaConfig, runAnalysisForSymbol]);
+    }, [isConnected, ollamaConfig, runAnalysisForSymbol, addLog]);
 
     useEffect(() => {
         const scanner = setInterval(runMultiAssetCycle, 5000);
