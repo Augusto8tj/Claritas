@@ -446,12 +446,10 @@ export function useDerivApiV2State() {
 
         const contractsRes: any = await makeRequest({ contracts_for: symbol });
         if (contractsRes.error) {
-            // Se o erro for devido ao fechamento da conexão, não disparar erro fatal
             if (contractsRes.error.message === 'WS Closed' || contractsRes.error.code === 'NotConnected') return;
             throw new Error(contractsRes.error.message);
         }
         
-        // Guard para troca rápida de ativos
         if (activeSymbolRef.current !== symbol) return;
 
         const available: any[] = contractsRes.contracts_for?.available || [];
@@ -515,7 +513,7 @@ export function useDerivApiV2State() {
         if (botSubResponse.error && botSubResponse.error.code !== 'AlreadySubscribed') {
             if (botSubResponse.error.code === 'Timeout') {
                 console.warn(`[Bot Sub] Timeout para ${symbol}. Operação pode ficar lenta.`);
-            } else if (botSubResponse.error.message === 'WS Closed') {
+            } else if (botSubResponse.error.message === 'WS Closed' || botSubResponse.error.code === 'NotConnected') {
                 return;
             } else {
                 throw new Error(`Bot Sub: ${botSubResponse.error.message}`);
@@ -570,7 +568,7 @@ export function useDerivApiV2State() {
         if (uiSubResponse.error && uiSubResponse.error.code !== 'AlreadySubscribed') {
             if (uiSubResponse.error.code === 'Timeout') {
                 console.warn(`[Market Data] Timeout na subscrição UI para ${symbol}. Mantendo dados estáticos.`);
-            } else if (uiSubResponse.error.message === 'WS Closed') {
+            } else if (uiSubResponse.error.message === 'WS Closed' || uiSubResponse.error.code === 'NotConnected') {
                 return;
             } else {
                 throw new Error(`UI Sub: ${uiSubResponse.error.message}`);
