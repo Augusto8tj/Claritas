@@ -432,7 +432,7 @@ export function useAIQuantTerminalV3(
                     const requestedSymbol = executionTag[1].trim();
                     const targetCandles = getCandlesFor(requestedSymbol);
                     if (targetCandles && targetCandles.length >= 30) {
-                        addLog(`Chat autorizou execução tática em ${requestedSymbol}.`, 'decision');
+                        addLog(`Chat autorizou execution tática em ${requestedSymbol}.`, 'decision');
                         await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
                     }
                 }
