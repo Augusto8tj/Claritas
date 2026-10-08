@@ -2,7 +2,12 @@ import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, Ass
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-const CONTRACT_SELECTION_GUIDE = `Contrato: BBW baixo→ACCUMULATORS | ADX>30→MULTIPLIERS | padrão→OPTIONS.`;
+const CONTRACT_SELECTION_GUIDE = `
+REGRAS RÍGIDAS DE CONTRATO (PROIBIDO INVERTER):
+1. ACCUMULATORS: Use APENAS com BBW BAIXO (<0.8). É para estabilidade. Sugerir em volatilidade alta é ERRO CRÍTICO.
+2. MULTIPLIERS: Use com ADX ALTO (>30) e tendência definida. É para movimentos direcionais fortes.
+3. OPTIONS: Use em volatilidade moderada ou quando houver dúvida.
+`;
 
 const AGENT_TIMEOUT_MS = 15000; 
 
@@ -162,7 +167,8 @@ export async function runQuantCouncil(
       executionMode: 'SHADOW',
       t2tLatencyMs: Math.round(endTime - startTime),
       telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-      holdReason: "Failover bloqueado para background asset."
+      holdReason: "Failover bloqueado para background asset.",
+      debugVotes: "FAIL"
     };
   }
 }
@@ -195,9 +201,9 @@ async function fetchAgentAnalysis(
   const start = performance.now();
   
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. MISSÃO: Identificar força de explosão e velocidade de ticks. ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. MISSÃO: Encontrar motivos para o trade FALHAR. Ao recomendar um contrato, prefira a categoria mais CONSERVADORA disponível para o cenário. ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. MISSÃO: Comparar o estado atual com o histórico de vitórias/derrotas. Priorize a categoria de contrato que teve MELHOR desempenho histórico no buffer de memória para este ativo. ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão e velocidade. ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. Encontre motivos para o trade FALHAR. ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare com o histórico no buffer. ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -272,7 +278,7 @@ function synthesizeChairmanDecision(
   const threshold = opinions.length >= 2 ? 140 : 85; 
   const action = callScore > putScore && maxScore > threshold ? 'CALL' : putScore > callScore && maxScore > threshold ? 'PUT' : 'HOLD';
 
-  const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
+  const debugVotes = opinions.map(o => `${o.agentName.charAt(0).toUpperCase()}:${o.action}/${o.confidence}`).join(' ');
 
   return {
     finalAction: action,
@@ -304,6 +310,6 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
     zenThought: "IA Instável. Operando por motor estocástico de emergência.",
-    debugVotes: `MATH:RSI=${rsi}`
+    debugVotes: `MATH:RSI=${Math.round(rsi)}`
   };
 }

@@ -1,4 +1,4 @@
-
+// src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
@@ -239,7 +239,7 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, via=${decision.executedVia}, votes=${decision.debugVotes}, hold=${decision.holdReason ?? '-'}`, 'decision');
+            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, votes=${decision.debugVotes} hold=${decision.holdReason ?? '-'}`, 'decision');
 
             if (isFocused) {
                 setLastDecision(decision);
@@ -398,7 +398,9 @@ export function useAIQuantTerminalV3(
             1. ANALISE OS NÚMEROS: Se RSI < 30 em 1m, é uma oportunidade real de COMPRA. Se RSI > 70, é VENDA.
             2. NÃO SEJA GENÉRICO: Use os preços reais e RSIs citados abaixo para justificar cada frase. Nunca diga que indicadores estão "normais" se eles estiverem em extremos.
             3. PERSONAS DO CONSELHO: Quando perguntado sobre membros, diferencie o viés do analista 'Momentum' (busca explosão) e do 'Risk Critic' (defensivo).
-            4. CATEGORIAS DE CONTRATO: Se o BBW estiver baixo, cite 'Accumulators'. Se o ADX estiver alto, cite 'Multipliers'.
+            4. CATEGORIAS DE CONTRATO (REGRAS MATEMÁTICAS):
+               - ACCUMULATORS: Use APENAS com volatilidade BAIXA (BBW < 0.8). Jamais use em alta oscilação.
+               - MULTIPLIERS: Use com tendência FORTE (ADX > 30).
             5. COMANDO DE EXECUÇÃO: Se o usuário ordenar execução (ex: "compre"), analise o risco e responda com [SOLICITAR_EXECUCAO:SYMBOL] no final se aprovar.
 
             DADOS DE MERCADO EM TEMPO REAL:
