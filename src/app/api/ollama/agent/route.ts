@@ -74,6 +74,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
       },
+      signal: AbortSignal.timeout(13000),
       body: JSON.stringify({
         model: config.model,
         prompt: prompt,
@@ -130,6 +131,10 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError') {
+        console.error('[Agent API] Timeout aguardando o Ollama (13s)');
+        return NextResponse.json({ error: 'timeout' }, { status: 504 });
+    }
     console.error('[Agent API Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

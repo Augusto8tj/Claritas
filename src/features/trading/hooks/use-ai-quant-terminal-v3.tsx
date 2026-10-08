@@ -296,8 +296,6 @@ export function useAIQuantTerminalV3(
         } catch (err: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${err.message}`, 'error');
             throw err;
-        } finally {
-            executionLockRef.current = false;
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
@@ -329,6 +327,10 @@ export function useAIQuantTerminalV3(
                     const callStart = Date.now();
                     addLog(`[HARDWARE] >>> INÍCIO INFERÊNCIA: ${symbol} (${symbol === currentActive ? 'FOCO' : 'BACKGROUND'})`, 'info');
                     
+                    // CORREÇÃO: Reservar agendamento antes da análise para evitar ciclos sobrepostos
+                    const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
+                    scheduleRef.current[symbol] = Date.now() + nextInterval * 1000;
+
                     try {
                         await runAnalysisForSymbol(symbol, candles as CandleData[]);
                     } catch (e: any) {
@@ -338,7 +340,7 @@ export function useAIQuantTerminalV3(
                     const callEnd = Date.now();
                     const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
                     
-                    const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
+                    // Mantendo o recálculo preciso após o fim da chamada
                     scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
                     
                     addLog(`[HARDWARE] <<< FIM INFERÊNCIA: ${symbol} (T=${durationSec}s). Próxima análise em ${nextInterval}s.`, 'info');
