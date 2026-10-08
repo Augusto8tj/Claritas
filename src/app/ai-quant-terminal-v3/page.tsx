@@ -171,6 +171,7 @@ function TerminalV3Content() {
                                 <div 
                                     key={symbol} 
                                     onClick={() => setActiveSymbol(symbol)}
+                                    title={`${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
                                     className={cn(
                                         "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                         symbol === activeSymbol ? "bg-purple-600 border-purple-600 text-white shadow-md" : "bg-card border-border hover:border-purple-400",

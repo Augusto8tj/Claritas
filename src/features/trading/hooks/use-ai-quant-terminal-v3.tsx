@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -30,6 +29,7 @@ export interface RadarAssetStatus {
     opinions: AgentOpinion[];
     recommendedContract?: string;
     holdReason?: string;
+    debugVotes?: string;
     indicators?: {
         rsi: number;
         bbw: number;
@@ -219,7 +219,7 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}`, 'decision');
+            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}, votes=${decision.debugVotes}, hold=${decision.holdReason ?? '-'}`, 'decision');
 
             if (isFocused) {
                 setLastDecision(decision);
@@ -232,7 +232,7 @@ export function useAIQuantTerminalV3(
                     symbol, lastAction: decision.finalAction, lastPrice: currentPrice, confidence: decision.consensusConfidence,
                     timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
                     executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
-                    holdReason: decision.holdReason,
+                    holdReason: decision.holdReason, debugVotes: decision.debugVotes,
                     indicators: {
                         rsi: indicators?.rsi || 50,
                         bbw: indicators?.bbw || 0,
@@ -249,7 +249,6 @@ export function useAIQuantTerminalV3(
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} via ${decision.recommendedContract}`, 'radar');
                     } else {
-                        // CORREÇÃO 2: Mapeamento explícito de direção
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         
                         let finalContractType = 'CALL';
@@ -259,7 +258,6 @@ export function useAIQuantTerminalV3(
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
-                        // CORREÇÃO 3: Duração adaptativa baseada em ADX apenas para OPTIONS
                         const adxValue = indicators?.adx || 20;
                         const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
@@ -285,7 +283,6 @@ export function useAIQuantTerminalV3(
             const currentActive = activeSymbolRef.current;
             const currentInterval = analysisIntervalRef.current;
             
-            // CORREÇÃO 1 — Garantir análise do ativo em foco mesmo fora da watchlist
             const watchListDue = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
             const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
             const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
@@ -312,7 +309,6 @@ export function useAIQuantTerminalV3(
                     const callEnd = Date.now();
                     const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
                     
-                    // Half-Cycle Scheduling: Background analisa a cada 50% do intervalo, foco no intervalo cheio
                     const nextInterval = isFocused ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
                     
@@ -366,25 +362,40 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
-                const price = status?.lastPrice ? status.lastPrice.toFixed(4) : 'Sincronizando...';
-                const rsi = status?.indicators?.rsi ? status.indicators.rsi.toFixed(1) : '--';
-                const action = status?.lastAction || 'AGUARDANDO';
-                return `- Ativo: ${sym} | PREÇO ATUAL: ${price} | RSI: ${rsi} | Status: ${action} | Confiança: ${status?.confidence || 0}% | Contrato: ${status?.recommendedContract || 'Análise Pendente'}`;
+                const candles = sym === activeSymbolRef.current ? chartDataRef.current : multiAssetCandlesRef.current[sym];
+                
+                let price = "Sincronizando...";
+                let rsiValue = "--";
+                
+                if (candles && candles.length > 0) {
+                    const lastCandle = candles[candles.length - 1];
+                    const priceValue = (lastCandle as CandleData).close ?? (lastCandle as TickData).price;
+                    price = priceValue ? priceValue.toFixed(4) : "N/D";
+                    
+                    if (status?.indicators?.rsi) {
+                        rsiValue = status.indicators.rsi.toFixed(1);
+                    }
+                }
+
+                const action = status?.lastAction || 'SCAN';
+                const confidence = status?.confidence || 0;
+                const contract = status?.recommendedContract || 'Análise Pendente';
+                
+                return `- Ativo: ${sym} | Preço atual: ${price} | RSI: ${rsiValue} | Status: ${action} | Confiança: ${confidence}% | Contrato: ${contract}`;
             }).join('\n');
 
             const systemPrompt = `VOCÊ É O CONSELHO TÁTICO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
-            ATUAÇÃO: Você monitora diversos ativos simultaneamente em fila sequencial.
             
-            DADOS DE MERCADO EM TEMPO REAL (ORDENADOS POR ATIVO):
+            DADOS DE MERCADO EM TEMPO REAL:
             ${radarDetails}
             
             ${memoryContext}
             
             INSTRUÇÕES CRÍTICAS PARA RESPOSTA:
-            1. SEMPRE use os PREÇOS REAIS listados acima para responder perguntas sobre valores. Não invente especificações como "10V" se o preço real estiver disponível.
-            2. Responda de forma clara, técnica e fundamentada em português do Brasil.
-            3. Cite nominalmente os ativos e seus valores para dar segurança ao operador.
-            4. EXECUÇÃO TÁTICA: Se o usuário der ordem clara de compra ou venda (ex: "faça a compra"), responda confirmando e inclua obrigatoriamente no final da resposta: [SOLICITAR_EXECUCAO:SYMBOL]`;
+            1. Use os PREÇOS REAIS e o RSI listados acima para fundamentar suas opiniões técnicas.
+            2. NUNCA diga que é um "modelo de linguagem" ou que não tem opiniões. Você é um analista quantitativo sênior.
+            3. Responda de forma clara, técnica e fundamentada em português do Brasil.
+            4. Se o usuário der uma ordem clara (ex: "faça a compra"), responda confirmando e inclua: [SOLICITAR_EXECUCAO:SYMBOL]`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -409,7 +420,7 @@ export function useAIQuantTerminalV3(
             addLog(`Falha no chat: ${error.message}`, 'error');
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', 
-                content: `Erro de Conexão: ${error.message}. Verifique se o Ollama está rodando no gateway configurado.`, 
+                content: `Erro de Conexão: ${error.message}. Verifique o hardware local.`, 
                 time: new Date().toLocaleTimeString(),
                 agentName: 'SISTEMA',
                 isError: true 

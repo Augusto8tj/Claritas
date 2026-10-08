@@ -64,6 +64,7 @@ export async function POST(req: Request) {
       Seja ULTRA-CONCISO para economizar tokens.
     `;
 
+    console.log(`[Agent API] Tamanho do prompt: ${prompt.length} caracteres.`);
     console.log(`[Agent API] Iniciando requisição para: ${url} (Modelo: ${config.model})`);
 
     const response = await fetch(url, {
@@ -79,7 +80,8 @@ export async function POST(req: Request) {
         stream: false,
         format: "json",
         options: {
-          temperature: 0.1
+          temperature: 0.1,
+          num_predict: 300
         }
       })
     });
@@ -100,7 +102,7 @@ export async function POST(req: Request) {
     let parsedOpinion: any = {};
     try {
         parsedOpinion = JSON.parse(content);
-        // SANITIZAÇÃO (CORREÇÃO 2)
+        // SANITIZAÇÃO
         parsedOpinion = sanitizeOpinion(parsedOpinion, marketSnapshot.symbol);
         console.log(`[Agent API] Sucesso no parse da opinião:`, parsedOpinion);
     } catch (parseError: any) {

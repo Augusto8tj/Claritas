@@ -2,6 +2,8 @@ import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, Ass
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
+const CONTRACT_SELECTION_GUIDE = `Contrato: BBW baixo→ACCUMULATORS | ADX>30→MULTIPLIERS | padrão→OPTIONS.`;
+
 const AGENT_TIMEOUT_MS = 15000; 
 
 /**
@@ -60,6 +62,18 @@ function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
   return -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log2(p) : sum, 0) / 1.58; 
 }
 
+function selectBestContract(opinions: AgentOpinion[], winningAction: string): 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS' {
+    const contractScores: Record<string, number> = { OPTIONS: 0, ACCUMULATORS: 0, MULTIPLIERS: 0 };
+    opinions
+        .filter(o => o.action === winningAction)
+        .forEach(o => {
+            const weight = o.agentName === 'ARCHIVIST' ? 1.2 : 1.0; 
+            contractScores[o.recommendedContract] = (contractScores[o.recommendedContract] || 0) + (o.confidence * weight);
+        });
+    const best = Object.entries(contractScores).sort((a, b) => b[1] - a[1])[0];
+    return (best && best[1] > 0 ? best[0] : 'OPTIONS') as any;
+}
+
 /**
  * Executa o Conselho V3 com Governança Multi-Ativo.
  */
@@ -83,9 +97,14 @@ export async function runQuantCouncil(
     const results = await Promise.allSettled(agentPromises);
     
     const opinions: AgentOpinion[] = [];
-    results.forEach(res => {
+    results.forEach((res, i) => {
+        const agentName = agents[i];
         if (res.status === 'fulfilled' && res.value) {
-            opinions.push(res.value);
+            const op = res.value;
+            console.log(`[Agent ${agentName}] action=${op.action}, confidence=${op.confidence}%, contract=${op.recommendedContract}, veto=${op.vetoTriggered}`);
+            opinions.push(op);
+        } else {
+            console.log(`[Agent ${agentName}] FAILED: ${res.status === 'rejected' ? res.reason : 'null value'}`);
         }
     });
 
@@ -94,6 +113,7 @@ export async function runQuantCouncil(
     const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
     if (critic?.vetoTriggered && critic.confidence > 70) {
       const endTime = performance.now();
+      const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
       return {
         finalAction: 'HOLD',
         recommendedContract: 'OPTIONS',
@@ -105,7 +125,8 @@ export async function runQuantCouncil(
         t2tLatencyMs: Math.round(endTime - startTime),
         telemetry: generateTelemetry(opinions, startTime, endTime),
         zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
-        holdReason: `VETO_RISK: ${critic.reasoning}`
+        holdReason: `VETO_RISK: ${critic.reasoning}`,
+        debugVotes
       };
     }
 
@@ -160,7 +181,6 @@ async function fetchAgentWithTimeout(
         clearTimeout(timeoutId);
         return opinion;
     } catch (e) {
-        console.warn(`[Agent ${agentName}] Fetch failed:`, e);
         return null;
     }
 }
@@ -175,9 +195,9 @@ async function fetchAgentAnalysis(
   const start = performance.now();
   
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. MISSÃO: Identificar força de explosão e velocidade de ticks.`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. MISSÃO: Encontrar motivos para o trade FALHAR.`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. MISSÃO: Comparar o estado atual com o histórico de vitórias/derrotas.`
+    MOMENTUM: `Você é o analista 'Quant Momentum'. MISSÃO: Identificar força de explosão e velocidade de ticks. ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. MISSÃO: Encontrar motivos para o trade FALHAR. Ao recomendar um contrato, prefira a categoria mais CONSERVADORA disponível para o cenário. ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. MISSÃO: Comparar o estado atual com o histórico de vitórias/derrotas. Priorize a categoria de contrato que teve MELHOR desempenho histórico no buffer de memória para este ativo. ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -252,9 +272,11 @@ function synthesizeChairmanDecision(
   const threshold = opinions.length >= 2 ? 140 : 85; 
   const action = callScore > putScore && maxScore > threshold ? 'CALL' : putScore > callScore && maxScore > threshold ? 'PUT' : 'HOLD';
 
+  const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
+
   return {
     finalAction: action,
-    recommendedContract: (opinions.find(o => o.action === action)?.recommendedContract || 'OPTIONS') as any,
+    recommendedContract: selectBestContract(opinions, action),
     stakeRatio: action !== 'HOLD' ? 0.25 * entropyPenalty : 0,
     consensusConfidence: Math.round(maxScore / Math.max(1, opinions.length)),
     opinions,
@@ -262,7 +284,8 @@ function synthesizeChairmanDecision(
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
-    zenThought: action === 'HOLD' ? "O conselho está dividido. O silêncio é a melhor estratégia." : "Convergência detectada entre especialistas."
+    zenThought: action === 'HOLD' ? "O conselho está dividido. O silêncio é a melhor estratégia." : "Convergência detectada entre especialistas.",
+    debugVotes
   };
 }
 
@@ -280,6 +303,7 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
-    zenThought: "IA Instável. Operando por motor estocástico de emergência."
+    zenThought: "IA Instável. Operando por motor estocástico de emergência.",
+    debugVotes: `MATH:RSI=${rsi}`
   };
 }
