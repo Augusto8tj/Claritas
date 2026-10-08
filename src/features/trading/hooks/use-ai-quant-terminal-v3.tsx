@@ -1,9 +1,11 @@
+
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.6 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
  * V3.6: Fila Sequencial de Inferência (Hardware-Safe), Agendamento Half-Cycle
  * e Estabilidade via Refs para evitar over-rendering.
+ * CORREÇÃO: Uso de botCandleData (OHLC 1m) para análise técnica em vez de chartData.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -53,7 +55,8 @@ export function useAIQuantTerminalV3(
     const { 
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
-        clearActiveContracts, accountType, setAccountType 
+        clearActiveContracts, accountType, setAccountType,
+        botCandleData // FONTE DE CANDLES OHLC 1M DO ATIVO FOCO
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -98,6 +101,7 @@ export function useAIQuantTerminalV3(
     const operationsLogRef = useRef(operationsLog);
     const scheduleRef = useRef<Record<string, number>>({});
     const executionLockRef = useRef(false);
+    const botCandleDataRef = useRef(botCandleData);
 
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { multiAssetCandlesRef.current = multiAssetCandles; }, [multiAssetCandles]);
@@ -106,6 +110,16 @@ export function useAIQuantTerminalV3(
     useEffect(() => { analysisIntervalRef.current = analysisInterval; }, [analysisInterval]);
     useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
+    useEffect(() => { botCandleDataRef.current = botCandleData; }, [botCandleData]);
+
+    // HELPER: Fonte única de candles OHLC 1m para todos os ativos
+    const getCandlesFor = (symbol: string): CandleData[] => {
+        const multi = multiAssetCandlesRef.current[symbol];
+        if (multi && multi.length >= 30) return multi as CandleData[];
+        if (symbol === activeSymbolRef.current && botCandleDataRef.current.length >= 30)
+            return botCandleDataRef.current;
+        return (multi ?? []) as CandleData[];
+    };
 
     // RADAR E MEMÓRIA
     const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
@@ -114,20 +128,6 @@ export function useAIQuantTerminalV3(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
-
-    // ESTATÍSTICAS DA SESSÃO
-    const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && 
-            (op.initiator === 'Conselho_V3' || op.initiator === 'Conselho') && 
-            op.asset === activeSymbol
-        );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
-        const total = finishedTrades.length;
-        const winRate = total > 0 ? (wins / total) * 100 : null;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
-        return { pnl: Number(pnl) || 0, winRate, total };
-    }, [operationsLog, activeSymbol]);
 
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
     useEffect(() => {
@@ -186,19 +186,28 @@ export function useAIQuantTerminalV3(
         if (!user) { addLog(`[SKIP] ${symbol}: usuário não autenticado (user=null).`, 'warning'); return; }
         
         const isFocused = symbol === activeSymbolRef.current;
-        const currentPrice = isFocused ? priceTicksRef.current[priceTicksRef.current.length - 1]?.price : candles[candles.length - 1].close;
         
         try {
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
+            // GUARDA DE QUALIDADE: Nunca enviar snapshot vazio ou inválido ao LLM
+            if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
+                return;
+            }
+
             if (isFocused) {
-                addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators?.rsi}, bbw=${indicators?.bbw}, adx=${indicators?.adx}, candles=${candles.length}`, 'info');
+                addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}, candles=${candles.length}`, 'info');
             }
             
+            const currentPrice = isFocused 
+                ? (priceTicksRef.current[priceTicksRef.current.length - 1]?.price ?? candles[candles.length - 1]?.close)
+                : candles[candles.length - 1].close;
+
             const snapshot = {
-                symbol, price: currentPrice, rsi: indicators?.rsi, bbw: indicators?.bbw,
-                trend: (indicators?.adx || 0) > 25 ? 'Trending' : 'Ranging'
+                symbol, price: currentPrice, rsi: indicators.rsi, bbw: indicators.bbw,
+                trend: (indicators.adx || 0) > 25 ? 'Trending' : 'Ranging'
             };
 
             const portfolioState: PortfolioRiskState = {
@@ -234,9 +243,9 @@ export function useAIQuantTerminalV3(
                     executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
                     holdReason: decision.holdReason, debugVotes: decision.debugVotes,
                     indicators: {
-                        rsi: indicators?.rsi || 50,
-                        bbw: indicators?.bbw || 0,
-                        adx: indicators?.adx || 0
+                        rsi: indicators.rsi || 50,
+                        bbw: indicators.bbw || 0,
+                        adx: indicators.adx || 0
                     }
                 }
             }));
@@ -258,7 +267,7 @@ export function useAIQuantTerminalV3(
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
-                        const adxValue = indicators?.adx || 20;
+                        const adxValue = indicators.adx || 20;
                         const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
 
@@ -293,12 +302,11 @@ export function useAIQuantTerminalV3(
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
-                const isFocused = symbol === currentActive;
-                const candles = isFocused ? chartDataRef.current : multiAssetCandlesRef.current[symbol];
+                const candles = getCandlesFor(symbol);
                 
                 if (candles && candles.length >= 30) {
                     const callStart = Date.now();
-                    addLog(`[HARDWARE] >>> INÍCIO INFERÊNCIA: ${symbol} (${isFocused ? 'FOCO' : 'BACKGROUND'})`, 'info');
+                    addLog(`[HARDWARE] >>> INÍCIO INFERÊNCIA: ${symbol} (${symbol === currentActive ? 'FOCO' : 'BACKGROUND'})`, 'info');
                     
                     try {
                         await runAnalysisForSymbol(symbol, candles as CandleData[]);
@@ -309,7 +317,7 @@ export function useAIQuantTerminalV3(
                     const callEnd = Date.now();
                     const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
                     
-                    const nextInterval = isFocused ? currentInterval : Math.max(currentInterval * 0.5, 10);
+                    const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
                     
                     addLog(`[HARDWARE] <<< FIM INFERÊNCIA: ${symbol} (T=${durationSec}s). Próxima análise em ${nextInterval}s.`, 'info');
@@ -326,13 +334,13 @@ export function useAIQuantTerminalV3(
     }, [runMultiAssetCycle]);
 
     useEffect(() => {
-        if (activeSymbol && chartData.length >= 30 && !executionLockRef.current) {
+        if (activeSymbol && botCandleData.length >= 30 && !executionLockRef.current) {
             const nextRun = scheduleRef.current[activeSymbol] || 0;
             if (Date.now() >= nextRun - 2000) {
                 runMultiAssetCycle();
             }
         }
-    }, [activeSymbol, chartData.length, runMultiAssetCycle]);
+    }, [activeSymbol, botCandleData.length, runMultiAssetCycle]);
 
     const resetSession = async () => {
         setIsAutoMode(false);
@@ -362,14 +370,14 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
-                const candles = sym === activeSymbolRef.current ? chartDataRef.current : multiAssetCandlesRef.current[sym];
+                const candles = getCandlesFor(sym);
                 
                 let price = "Sincronizando...";
                 let rsiValue = "--";
                 
                 if (candles && candles.length > 0) {
                     const lastCandle = candles[candles.length - 1];
-                    const priceValue = (lastCandle as CandleData).close ?? (lastCandle as TickData).price;
+                    const priceValue = lastCandle.close ?? lastCandle.price;
                     price = priceValue ? priceValue.toFixed(4) : "N/D";
                     
                     if (status?.indicators?.rsi) {
@@ -409,7 +417,7 @@ export function useAIQuantTerminalV3(
                 const executionTag = assistantContent.match(/\[SOLICITAR_EXECUCAO:(.*?)\]/);
                 if (executionTag && executionTag[1]) {
                     const requestedSymbol = executionTag[1].trim();
-                    const targetCandles = requestedSymbol === activeSymbolRef.current ? chartDataRef.current : multiAssetCandlesRef.current[requestedSymbol];
+                    const targetCandles = getCandlesFor(requestedSymbol);
                     if (targetCandles && targetCandles.length >= 30) {
                         addLog(`Chat autorizou execução tática em ${requestedSymbol}.`, 'decision');
                         await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
@@ -448,7 +456,7 @@ export function useAIQuantTerminalV3(
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, 
         watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runAnalysisForSymbol(activeSymbolRef.current!, chartDataRef.current, true),
+        executeManualDecision: () => lastDecision && runAnalysisForSymbol(activeSymbolRef.current!, getCandlesFor(activeSymbolRef.current!), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         setAccountType, accountType
     };
