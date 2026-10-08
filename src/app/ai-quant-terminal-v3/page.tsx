@@ -58,6 +58,20 @@ function TerminalV3Content() {
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
+    
+    // Referência para auto-scroll
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = useCallback(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, []);
+
+    // Auto-scroll quando chegam mensagens ou muda o estado de carregamento
+    useEffect(() => {
+        scrollToBottom();
+    }, [chatMessages, isChatLoading, scrollToBottom]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -490,7 +504,7 @@ function TerminalV3Content() {
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
-                                <div className="space-y-4">
+                                <div className="space-y-4 pb-4">
                                     {chatMessages.length === 0 && (
                                         <div className="text-center py-10 opacity-30">
                                             <Brain className="h-10 w-10 mx-auto mb-2 text-purple-600"/>
@@ -512,10 +526,12 @@ function TerminalV3Content() {
                                         </div>
                                     ))}
                                     {isChatLoading && (
-                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse font-mono">
+                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse font-mono p-3">
                                             <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
                                         </div>
                                     )}
+                                    {/* Âncora para auto-scroll */}
+                                    <div ref={messagesEndRef} />
                                 </div>
                             </ScrollArea>
                         </CardContent>
