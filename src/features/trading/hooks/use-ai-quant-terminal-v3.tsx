@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -111,7 +112,7 @@ export function useAIQuantTerminalV3(
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
     useEffect(() => { botCandleDataRef.current = botCandleData; }, [botCandleData]);
 
-    // OLLAMA CONFIG VIA STATE + EFFECT (CORREÇÃO 4)
+    // OLLAMA CONFIG VIA STATE + EFFECT
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
     useEffect(() => {
         const saved = localStorage.getItem('ollamaConfig');
@@ -238,7 +239,7 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, via=${decision.executedVia}, votes=${decision.debugVotes}`, 'decision');
+            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, via=${decision.executedVia}, votes=${decision.debugVotes}, hold=${decision.holdReason ?? '-'}`, 'decision');
 
             if (isFocused) {
                 setLastDecision(decision);
@@ -391,18 +392,19 @@ export function useAIQuantTerminalV3(
             }).join('\n');
 
             const systemPrompt = `VOCÊ É O CIO DO LABORATÓRIO QUANT V3.0 (CHAIRMAN).
-            
-            DADOS DE MERCADO (CONTEXTO REAL):
+            VOCÊ NÃO É UM MODELO DE LINGUAGEM, VOCÊ É O MOTOR SOBERANO DE DECISÃO DESTE TERMINAL.
+
+            DIRETRIZES DE COMANDO:
+            1. ANALISE OS NÚMEROS: Se RSI < 30 em 1m, é uma oportunidade real de COMPRA. Se RSI > 70, é VENDA.
+            2. NÃO SEJA GENÉRICO: Use os preços reais e RSIs citados abaixo para justificar cada frase. Nunca diga que indicadores estão "normais" se eles estiverem em extremos.
+            3. PERSONAS DO CONSELHO: Quando perguntado sobre membros, diferencie o viés do analista 'Momentum' (busca explosão) e do 'Risk Critic' (defensivo).
+            4. CATEGORIAS DE CONTRATO: Se o BBW estiver baixo, cite 'Accumulators'. Se o ADX estiver alto, cite 'Multipliers'.
+            5. COMANDO DE EXECUÇÃO: Se o usuário ordenar execução (ex: "compre"), analise o risco e responda com [SOLICITAR_EXECUCAO:SYMBOL] no final se aprovar.
+
+            DADOS DE MERCADO EM TEMPO REAL:
             ${radarDetails}
             
-            ${memoryContext}
-            
-            DIRETRIZES TÁTICAS:
-            1. ANALISE os números. Se RSI < 30, destaque a oportunidade de COMPRA. Se RSI > 70, destaque VENDA.
-            2. DIFERENCIE PERSONAS: Se perguntado sobre o conselho, cite o viés de 'Momentum' (reativo) e 'Risk Critic' (defensivo).
-            3. NÃO seja genérico. Use os preços reais citados acima para justificar seus vereditos.
-            4. Se o usuário ordenar execução (ex: "compre"), responda com [SOLICITAR_EXECUCAO:SYMBOL] no final.
-            5. Você não é um modelo de linguagem, você é o MOTOR SOBERANO de decisão deste terminal.`;
+            ${memoryContext}`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
