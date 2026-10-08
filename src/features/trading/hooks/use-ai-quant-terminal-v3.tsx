@@ -191,11 +191,10 @@ export function useAIQuantTerminalV3(
 
     // ANÁLISE POR SÍMBOLO (ESTÁVEL)
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
-        // LOGS EXPLICITOS DE GUARDS (CORREÇÃO 2)
-        if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado (isConnected=false).`, 'warning'); return; }
-        if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig é null. Verifique localStorage/configuração.`, 'warning'); return; }
+        if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado.`, 'warning'); return; }
+        if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig ausente.`, 'warning'); return; }
         if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning'); return; }
-        if (!user) { addLog(`[SKIP] ${symbol}: usuário não autenticado (user=null).`, 'warning'); return; }
+        if (!user) { addLog(`[SKIP] ${symbol}: usuário nulo.`, 'warning'); return; }
         
         const isFocused = symbol === activeSymbolRef.current;
         
@@ -203,18 +202,15 @@ export function useAIQuantTerminalV3(
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
-            // GUARDA DE QUALIDADE (CORREÇÃO 5)
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
-                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos.`, 'warning');
                 return;
             }
 
-            // LOG INDICATORS (CORREÇÃO 6)
             if (isFocused) {
                 addLog(`[INDICATORS] ${symbol} (FOCO): rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}, candles=${candles.length}`, 'info');
             }
             
-            // PREÇO ATUAL (CORREÇÃO 4)
             const currentPrice = isFocused 
                 ? (priceTicksRef.current[priceTicksRef.current.length - 1]?.price ?? candles[candles.length - 1]?.close)
                 : candles[candles.length - 1].close;
@@ -242,8 +238,7 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
-            // LOG DECISION (CORREÇÃO 3)
-            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, confidence=${decision.consensusConfidence}%, via=${decision.executedVia}, contract=${decision.recommendedContract}, votes=${decision.debugVotes}, hold=${decision.holdReason ?? '-'}`, 'decision');
+            addLog(`[DECISION] ${symbol}: action=${decision.finalAction}, via=${decision.executedVia}, votes=${decision.debugVotes}`, 'decision');
 
             if (isFocused) {
                 setLastDecision(decision);
@@ -271,9 +266,8 @@ export function useAIQuantTerminalV3(
                 const hasOpen = operationsLogRef.current.some(op => op.asset === symbol && op.status === 'pending');
                 if (!hasOpen) {
                     if (isShadowMode) {
-                        addLog(`[SHADOW] ${symbol}: ${decision.finalAction} via ${decision.recommendedContract}`, 'radar');
+                        addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar');
                     } else {
-                        // MAP TRADE DIRECTION (CORREÇÃO 2)
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         
                         let finalContractType = 'CALL';
@@ -283,13 +277,12 @@ export function useAIQuantTerminalV3(
                             default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                         }
 
-                        // DURAÇÃO ADAPTATIVA (CORREÇÃO 3)
                         const adxValue = indicators.adx || 20;
                         const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
 
                         await executeTrade(finalContractType, stakeValue, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
-                        addLog(`[EXEC] ${symbol} ${decision.finalAction} via ${decision.recommendedContract} (Dur: ${finalDuration}s)`, 'execution');
+                        addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado (Dur: ${finalDuration}s)`, 'execution');
                     }
                 }
             }
@@ -306,7 +299,6 @@ export function useAIQuantTerminalV3(
 
         const startTime = Date.now();
         try {
-            // CORREÇÃO 1: FOCO FORA DA WATCHLIST
             const currentActive = activeSymbolRef.current;
             const currentInterval = analysisIntervalRef.current;
             
@@ -314,42 +306,25 @@ export function useAIQuantTerminalV3(
             const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
             const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
             
-            addLog(`[SCAN] Verificando ciclo. Watchlist: [${watchedSymbolsRef.current.join(', ')}]. Foco: ${currentActive}. Due: [${dueSymbols.join(', ')}]`, 'info');
             if (dueSymbols.length === 0) return;
 
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
-                // CORREÇÃO 3: GET CANDLES FOR
                 const candles = getCandlesFor(symbol);
-                
                 if (candles && candles.length >= 30) {
-                    const callStart = Date.now();
-                    addLog(`[HARDWARE] >>> INÍCIO INFERÊNCIA: ${symbol} (${symbol === currentActive ? 'FOCO' : 'BACKGROUND'})`, 'info');
-                    
-                    // CORREÇÃO: Reservar agendamento antes da análise para evitar ciclos sobrepostos
                     const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = Date.now() + nextInterval * 1000;
 
                     try {
                         await runAnalysisForSymbol(symbol, candles as CandleData[]);
-                    } catch (e: any) {
-                        addLog(`Falha na análise de ${symbol}: ${e.message}`, 'error');
-                    }
-
-                    const callEnd = Date.now();
-                    const durationSec = ((callEnd - callStart) / 1000).toFixed(2);
-                    
-                    // Mantendo o recálculo preciso após o fim da chamada
-                    scheduleRef.current[symbol] = callEnd + (nextInterval * 1000);
-                    
-                    addLog(`[HARDWARE] <<< FIM INFERÊNCIA: ${symbol} (T=${durationSec}s). Próxima análise em ${nextInterval}s.`, 'info');
+                    } catch (e: any) {}
                 }
             }
         } finally {
             executionLockRef.current = false;
         }
-    }, [isConnected, ollamaConfig, runAnalysisForSymbol, addLog]);
+    }, [isConnected, ollamaConfig, runAnalysisForSymbol]);
 
     useEffect(() => {
         const scanner = setInterval(runMultiAssetCycle, 5000);
@@ -393,7 +368,6 @@ export function useAIQuantTerminalV3(
             const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
             const radarDetails = watchedSymbolsRef.current.map(sym => {
                 const status = radarStatus[sym];
-                // CORREÇÃO 3: USAR GETCANDLESFOR NO CHAT
                 const candles = getCandlesFor(sym);
                 
                 let price = "Sincronizando...";
@@ -411,23 +385,24 @@ export function useAIQuantTerminalV3(
 
                 const action = status?.lastAction || 'SCAN';
                 const confidence = status?.confidence || 0;
-                const contract = status?.recommendedContract || 'Análise Pendente';
+                const contract = status?.recommendedContract || 'N/A';
                 
-                return `- Ativo: ${sym} | Preço atual: ${price} | RSI: ${rsiValue} | Status: ${action} | Confiança: ${confidence}% | Contrato: ${contract}`;
+                return `- Ativo: ${sym} | Preço: ${price} | RSI: ${rsiValue} | Status: ${action} | Conf: ${confidence}% | Contrato: ${contract}`;
             }).join('\n');
 
-            const systemPrompt = `VOCÊ É O CONSELHO TÁTICO DO LABORATÓRIO V3.0 (COUNCIL EDITION).
+            const systemPrompt = `VOCÊ É O CIO DO LABORATÓRIO QUANT V3.0 (CHAIRMAN).
             
-            DADOS DE MERCADO EM TEMPO REAL:
+            DADOS DE MERCADO (CONTEXTO REAL):
             ${radarDetails}
             
             ${memoryContext}
             
-            INSTRUÇÕES CRÍTICAS PARA RESPOSTA:
-            1. Use os PREÇOS REAIS e o RSI listados acima para fundamentar suas opiniões técnicas.
-            2. NUNCA diga que é um "modelo de linguagem" ou que não tem opiniões. Você é um analista quantitativo sênior.
-            3. Responda de forma clara, técnica e fundamentada em português do Brasil.
-            4. Se o usuário der uma ordem clara (ex: "faça a compra"), responda confirmando e inclua: [SOLICITAR_EXECUCAO:SYMBOL]`;
+            DIRETRIZES TÁTICAS:
+            1. ANALISE os números. Se RSI < 30, destaque a oportunidade de COMPRA. Se RSI > 70, destaque VENDA.
+            2. DIFERENCIE PERSONAS: Se perguntado sobre o conselho, cite o viés de 'Momentum' (reativo) e 'Risk Critic' (defensivo).
+            3. NÃO seja genérico. Use os preços reais citados acima para justificar seus vereditos.
+            4. Se o usuário ordenar execução (ex: "compre"), responda com [SOLICITAR_EXECUCAO:SYMBOL] no final.
+            5. Você não é um modelo de linguagem, você é o MOTOR SOBERANO de decisão deste terminal.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -452,7 +427,7 @@ export function useAIQuantTerminalV3(
             addLog(`Falha no chat: ${error.message}`, 'error');
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', 
-                content: `Erro de Conexão: ${error.message}. Verifique o hardware local.`, 
+                content: `Erro de Hardware: ${error.message}.`, 
                 time: new Date().toLocaleTimeString(),
                 agentName: 'SISTEMA',
                 isError: true 
