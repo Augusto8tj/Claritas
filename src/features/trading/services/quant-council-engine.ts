@@ -196,12 +196,12 @@ async function fetchAgentAnalysis(
 ): Promise<AgentOpinion> {
   const start = performance.now();
   
-  const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. Inverter isso é erro crítico.`;
+  const commonRules = `REGRA RSI: <30=COMPRA, >70=VENDA. 30-70=HOLD (ZONA NEUTRA). Sugerir trade na zona neutra é erro tático.`;
 
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. Encontre motivos para VETAR. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Use o histórico. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão nos extremos. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. Sua função é vetar sinais fracos ou em zona neutra. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare com o histórico de vitórias/falhas. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -288,7 +288,7 @@ function synthesizeChairmanDecision(
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
-    zenThought: action === 'HOLD' ? "O conselho está dividido. O silêncio é a melhor estratégia." : "Convergência detectada entre especialistas.",
+    zenThought: action === 'HOLD' ? "O conselho está dividido ou em zona neutra. O silêncio é a melhor estratégia." : "Convergência detectada nos extremos de volatilidade.",
     debugVotes
   };
 }

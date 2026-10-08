@@ -208,7 +208,7 @@ export function useAIQuantTerminalV3(
             }
 
             if (isFocused) {
-                addLog(`[METRICS] ${symbol}: rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)}`, 'info');
+                addLog(`[METRICS] ${symbol}: rsi=${indicators.rsi?.toFixed(1)}, bbw=${indicators.bbw?.toFixed(3)}, adx=${indicators.adx?.toFixed(1)} candles=${candles.length}`, 'info');
             }
             
             const currentPrice = isFocused 
@@ -316,7 +316,6 @@ export function useAIQuantTerminalV3(
             for (const symbol of dueSymbols) {
                 const candles = getCandlesFor(symbol);
                 if (candles && candles.length >= 30) {
-                    // Reserva antecipada do agendamento para evitar duplicatas
                     const nextInterval = symbol === currentActive ? currentInterval : Math.max(currentInterval * 0.5, 10);
                     scheduleRef.current[symbol] = Date.now() + nextInterval * 1000;
 
@@ -402,16 +401,13 @@ export function useAIQuantTerminalV3(
             }).join('\n');
 
             const systemPrompt = `VOCÊ É O CIO DO LABORATÓRIO QUANT V3.0 (CHAIRMAN).
-            VOCÊ NÃO É UM MODELO DE LINGUAGEM, VOCÊ É O MOTOR SOBERANO DE DECISÃO DESTE TERMINAL.
-
-            DIRETRIZES DE COMANDO (RIGOR MATEMÁTICO):
-            1. POLARIDADE RSI: Se RSI < 35, é SOBREVENDA (Possível COMPRA). Se RSI > 65, é SOBRECOMPRA (Possível VENDA). Inverter isso é ERRO CRÍTICO.
-            2. NÃO SEJA GENÉRICO: Use os preços e RSIs reais abaixo. Nunca diga "limites normais" se o RSI estiver fora de 40-60.
-            3. PERSONAS: Diferencie o viés do analista 'Momentum' (busca explosão) e do 'Risk Critic' (defensivo/veto).
-            4. CATEGORIAS DE CONTRATO:
-               - ACCUMULATORS: Use APENAS com volatilidade BAIXA (BBW < 0.8). Jamais use em alta oscilação.
-               - MULTIPLIERS: Use com tendência FORTE (ADX > 30).
-            5. EXECUÇÃO: Se o usuário ordenar (ex: "compre"), responda com [SOLICITAR_EXECUCAO:SYMBOL] no final se o risco permitir.
+            PNL DA SESSÃO ATIVA: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) ?? '--'}%
+            
+            DIRETRIZES TÁTICAS (RIGOR MATEMÁTICO):
+            1. ZONAS DE RSI: 30-70 é ZONA DE HOLD. <30 é COMPRA, >70 é VENDA. Não sugira trades fora das extremidades.
+            2. PERSONAS: Diferencie o 'Momentum' (busca força) do 'Risk Critic' (busca falhas).
+            3. INSTRUMENTOS: BBW baixo (<0.8) exige ACCUMULATORS. ADX alto (>30) exige MULTIPLIERS.
+            4. DADOS REAIS: Use os valores exatos de RSI e Preço abaixo. Não invente "limites normais" se o dado for extremo.
 
             DADOS DE MERCADO EM TEMPO REAL:
             ${radarDetails}
