@@ -2,12 +2,7 @@ import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, Ass
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
 
-const CONTRACT_SELECTION_GUIDE = `
-REGRAS RÍGIDAS DE CONTRATO (PROIBIDO INVERTER):
-1. ACCUMULATORS: Use APENAS com BBW BAIXO (<0.8). É para estabilidade. Sugerir em volatilidade alta é ERRO CRÍTICO.
-2. MULTIPLIERS: Use com ADX ALTO (>30) e tendência definida. É para movimentos direcionais fortes.
-3. OPTIONS: Use em volatilidade moderada ou quando houver dúvida.
-`;
+const CONTRACT_SELECTION_GUIDE = `Contrato: BBW baixo→ACCUMULATORS | ADX>30→MULTIPLIERS | padrão→OPTIONS.`;
 
 const AGENT_TIMEOUT_MS = 15000; 
 
@@ -200,10 +195,12 @@ async function fetchAgentAnalysis(
 ): Promise<AgentOpinion> {
   const start = performance.now();
   
+  const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. Inverter isso é erro crítico.`;
+
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão e velocidade. ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. Encontre motivos para o trade FALHAR. ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare com o histórico no buffer. ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. Encontre motivos para VETAR. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Use o histórico. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
