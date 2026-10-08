@@ -353,11 +353,15 @@ function TerminalV3Content() {
                                         </SelectTrigger>
                                         <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
                                             {v3.availableModels && v3.availableModels.length > 0 ? (
-                                                v3.availableModels.map((m: any) => (
-                                                    <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
-                                                        {m.name}
-                                                    </SelectItem>
-                                                ))
+                                                v3.availableModels
+                                                    .filter((model: any, index: number, self: any[]) => 
+                                                        index === self.findIndex((m) => m.name === model.name)
+                                                    )
+                                                    .map((m: any) => (
+                                                        <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
+                                                            {m.name}
+                                                        </SelectItem>
+                                                    ))
                                             ) : (
                                                 <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
                                             )}
