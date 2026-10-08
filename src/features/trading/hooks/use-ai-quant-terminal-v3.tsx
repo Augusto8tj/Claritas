@@ -204,7 +204,7 @@ export function useAIQuantTerminalV3(
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
-                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos.`, 'warning');
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
                 return;
             }
 

@@ -49,6 +49,7 @@ export async function POST(req: Request) {
       ${JSON.stringify(marketSnapshot, null, 2)}
       
       REGRAS DE RESPOSTA:
+      1. POLARIDADE RSI: RSI < 35 é SOBREVENDA (Possível CALL). RSI > 65 é SOBRECOMPRA (Possível PUT). Sugerir o oposto é ERRO CRÍTICO.
 
       Responda OBRIGATORIAMENTE apenas em JSON válido.
       Não inclua markdown (como \`\`\`json) ou explicações fora do objeto.
