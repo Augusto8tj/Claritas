@@ -1,7 +1,9 @@
-
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import type { OllamaConfig } from '@/lib/types';
+
+export const MIN_EXEC_CONFIDENCE = 65;
+const RISK_DAMPING = 250;
 
 const CONTRACT_SELECTION_GUIDE = `Contrato: BBW baixo→ACCUMULATORS | ADX>30→MULTIPLIERS | padrão→OPTIONS.`;
 
@@ -43,7 +45,8 @@ function validateExecutionGate(
   }
 
   // 5. Exposição Total
-  const estimatedNewExposure = portfolio.totalExposure + 1.0; // Stake base de laboratório
+  const plannedStake = portfolio.plannedStake ?? 1.0;
+  const estimatedNewExposure = portfolio.totalExposure + plannedStake;
   if (estimatedNewExposure > portfolio.maxTotalExposure) {
     return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure}) excederia o limite diário ($${portfolio.maxTotalExposure}).` };
   }
@@ -92,6 +95,7 @@ export async function runQuantCouncil(
 
   try {
     const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
+    const hasMemory = (memoryBuffer.wins.length + memoryBuffer.losses.length) > 0;
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
 
     const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext, config));
@@ -131,7 +135,7 @@ export async function runQuantCouncil(
       };
     }
 
-    const decision = synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime);
+    const decision = synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, hasMemory);
 
     // GOVERNANÇA: Se houver intenção de execução, passamos pelo GATE institucional
     if (decision.finalAction !== 'HOLD' && portfolio && permissions) {
@@ -200,8 +204,8 @@ async function fetchAgentAnalysis(
 
   const systemPrompts = {
     MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão nos extremos. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. Sua função é vetar sinais fracos ou em zona neutra. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare com o histórico de vitórias/falhas. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. Sua função é vetar sinais fracos ou em zona neutra. confidence = quão forte é sua recomendação de EVITAR o trade. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare com o histórico de vitórias/falhas. Se o histórico estiver vazio, responda action HOLD, confidence 0, reasoning 'sem histórico'. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -256,39 +260,70 @@ function synthesizeChairmanDecision(
   opinions: AgentOpinion[],
   snapshot: any,
   isShadowMode: boolean,
-  startTime: number
+  startTime: number,
+  hasMemory: boolean
 ): CouncilDecision {
   const endTime = performance.now();
   const telemetry = generateTelemetry(opinions, startTime, endTime);
 
   let callScore = 0;
   let putScore = 0;
+  let totalWeights = 0;
 
   opinions.forEach(op => {
-    const weight = op.agentName === 'ARCHIVIST' ? 1.2 : 1.0;
-    if (op.action === 'CALL') callScore += op.confidence * weight;
-    if (op.action === 'PUT') putScore += op.confidence * weight;
+    if (op.agentName === 'MOMENTUM') {
+      totalWeights += 1.0;
+      if (op.action === 'CALL') callScore += op.confidence * 1.0;
+      if (op.action === 'PUT') putScore += op.confidence * 1.0;
+    } else if (op.agentName === 'ARCHIVIST' && hasMemory) {
+      totalWeights += 1.2;
+      if (op.action === 'CALL') callScore += op.confidence * 1.2;
+      if (op.action === 'PUT') putScore += op.confidence * 1.2;
+    }
   });
 
-  const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
-  const maxScore = Math.max(callScore, putScore) * entropyPenalty;
-  
-  const threshold = opinions.length >= 2 ? 140 : 85; 
-  const action = callScore > putScore && maxScore > threshold ? 'CALL' : putScore > callScore && maxScore > threshold ? 'PUT' : 'HOLD';
+  if (totalWeights === 0) {
+    return {
+      finalAction: 'HOLD',
+      recommendedContract: 'OPTIONS',
+      stakeRatio: 0,
+      consensusConfidence: 0,
+      opinions,
+      executedVia: 'NO_VOTERS',
+      executionMode: isShadowMode ? 'SHADOW' : 'REAL',
+      t2tLatencyMs: Math.round(endTime - startTime),
+      telemetry,
+      holdReason: 'Votantes insuficientes ou sem memória.',
+      debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ')
+    };
+  }
 
-  const debugVotes = opinions.map(o => `${o.agentName.charAt(0).toUpperCase()}:${o.action}/${o.confidence}`).join(' ');
+  const side = callScore > putScore ? 'CALL' : (putScore > callScore ? 'PUT' : 'HOLD');
+  const avgConf = side === 'HOLD' ? 0 : (side === 'CALL' ? callScore : putScore) / totalWeights;
+
+  const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
+  let riskFactor = 1.0;
+  if (critic && side !== 'HOLD' && critic.action !== side) {
+    riskFactor = 1 - Math.min(critic.confidence, 100) / RISK_DAMPING;
+  }
+
+  const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
+  const adjusted = avgConf * entropyPenalty * riskFactor;
+  
+  const finalAction = (side !== 'HOLD' && adjusted >= MIN_EXEC_CONFIDENCE) ? side : 'HOLD';
+  const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
 
   return {
-    finalAction: action,
-    recommendedContract: selectBestContract(opinions, action),
-    stakeRatio: action !== 'HOLD' ? 0.25 * entropyPenalty : 0,
-    consensusConfidence: Math.round(maxScore / Math.max(1, opinions.length)),
+    finalAction,
+    recommendedContract: selectBestContract(opinions, finalAction),
+    stakeRatio: finalAction !== 'HOLD' ? entropyPenalty : 0,
+    consensusConfidence: Math.min(100, Math.round(adjusted)),
     opinions,
     executedVia: 'COUNCIL_LLM',
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
-    zenThought: action === 'HOLD' ? "O conselho está dividido ou em zona neutra. O silêncio é a melhor estratégia." : "Convergência detectada nos extremos de volatilidade.",
+    zenThought: finalAction === 'HOLD' ? "O conselho está dividido ou em zona neutra. O silêncio é a melhor estratégia." : "Convergência detectada nos extremos de volatilidade.",
     debugVotes
   };
 }
@@ -296,6 +331,7 @@ function synthesizeChairmanDecision(
 function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
   const rsi = snapshot.rsi || 50;
   const action = rsi > 75 ? 'PUT' : rsi < 25 ? 'CALL' : 'HOLD';
+  const debugVotes = `MATH:RSI=${Math.round(rsi)}`;
 
   return {
     finalAction: action,
@@ -308,6 +344,6 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
     zenThought: "IA Instável. Operando por motor estocástico de emergência.",
-    debugVotes: `MATH:RSI=${Math.round(rsi)}`
+    debugVotes
   };
 }

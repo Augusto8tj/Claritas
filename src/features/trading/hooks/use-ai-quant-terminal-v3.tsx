@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
@@ -17,7 +16,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
-import { runQuantCouncil } from '../services/quant-council-engine';
+import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 
@@ -57,7 +56,7 @@ export function useAIQuantTerminalV3(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData 
+        botCandleData, durationLimits 
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -103,6 +102,7 @@ export function useAIQuantTerminalV3(
     const scheduleRef = useRef<Record<string, number>>({});
     const executionLockRef = useRef(false);
     const botCandleDataRef = useRef(botCandleData);
+    const durationLimitsRef = useRef(durationLimits);
 
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { multiAssetCandlesRef.current = multiAssetCandles; }, [multiAssetCandles]);
@@ -112,6 +112,7 @@ export function useAIQuantTerminalV3(
     useEffect(() => { priceTicksRef.current = priceTicks; }, [priceTicks]);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
     useEffect(() => { botCandleDataRef.current = botCandleData; }, [botCandleData]);
+    useEffect(() => { durationLimitsRef.current = durationLimits; }, [durationLimits]);
 
     // OLLAMA CONFIG VIA STATE + EFFECT
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
@@ -203,7 +204,7 @@ export function useAIQuantTerminalV3(
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
-                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos.`, 'warning');
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. chaves do último candle=${Object.keys(candles[candles.length-1] ?? {}).join(',')} n=${candles.length}`, 'warning');
                 return;
             }
 
@@ -225,7 +226,8 @@ export function useAIQuantTerminalV3(
                 maxConcurrentPositions: maxConcurrentTrades,
                 totalExposure: operationsLogRef.current.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
                 maxTotalExposure: dailyBalance,
-                lockedSymbols: new Set()
+                lockedSymbols: new Set(),
+                plannedStake: stakeValue
             };
 
             const assetPermissions: AssetExecutionPermission = {
@@ -238,8 +240,9 @@ export function useAIQuantTerminalV3(
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
             
+            addLog(`[DECISION] ${symbol}: ${decision.finalAction} ${decision.consensusConfidence}% via=${decision.executedVia} contract=${decision.recommendedContract} votes=${decision.debugVotes} ${decision.holdReason ? 'hold='+decision.holdReason : ''} Latency=${decision.t2tLatencyMs}ms`, 'decision');
+
             if (isFocused) {
-                addLog(`[COUNCIL] ${symbol}: Action=${decision.finalAction} | Votes=[${decision.debugVotes}] | Entropy=${decision.telemetry.consensusEntropy.toFixed(2)} | Latency=${decision.t2tLatencyMs}ms`, 'decision');
                 if (decision.finalAction === 'HOLD' && decision.holdReason) {
                     addLog(`[REJECTED] ${symbol}: ${decision.holdReason}`, 'warning');
                 }
@@ -251,7 +254,7 @@ export function useAIQuantTerminalV3(
                 ...prev,
                 [symbol]: {
                     symbol, lastAction: decision.finalAction, lastPrice: currentPrice, confidence: decision.consensusConfidence,
-                    timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65,
+                    timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= MIN_EXEC_CONFIDENCE,
                     executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
                     holdReason: decision.holdReason, debugVotes: decision.debugVotes,
                     indicators: {
@@ -262,29 +265,41 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= 65);
+            const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= MIN_EXEC_CONFIDENCE);
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                const hasOpen = operationsLogRef.current.some(op => op.asset === symbol && op.status === 'pending');
+                let finalContractType = 'CALL';
+                switch (decision.recommendedContract) {
+                    case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
+                    case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
+                    default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
+                }
+
+                const hasOpen = operationsLogRef.current.some(op => op.asset === symbol && op.status === 'pending' && op.contractType === finalContractType);
+                
                 if (!hasOpen) {
+                    const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
+                    addLog(`[STAKE] ${symbol}: base=${stakeValue} ratio=${decision.stakeRatio?.toFixed(2)} final=${stake}`, 'info');
+
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar');
                     } else {
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         
-                        let finalContractType = 'CALL';
-                        switch (decision.recommendedContract) {
-                            case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
-                            case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
-                            default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
-                        }
-
                         const adxValue = indicators.adx || 20;
                         const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
-                        const finalDuration = decision.recommendedContract === 'OPTIONS' ? optionsDuration : 15;
+                        
+                        const minS = durationLimitsRef.current?.s?.min ?? 15;
+                        const finalDuration = decision.recommendedContract === 'OPTIONS' ? Math.max(minS, optionsDuration) : 15;
 
-                        await executeTrade(finalContractType, stakeValue, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
-                        addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado (Dur: ${finalDuration}s)`, 'execution');
+                        const tradeStart = performance.now();
+                        const res = await executeTrade(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
+                        
+                        if (res.success) {
+                            addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado (Dur: ${finalDuration}s) contractId=${res.contractId}`, 'execution');
+                        } else {
+                            addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error');
+                        }
                     }
                 }
             }
@@ -308,7 +323,10 @@ export function useAIQuantTerminalV3(
             const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
             const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
             
-            if (dueSymbols.length === 0) return;
+            if (dueSymbols.length === 0) {
+                executionLockRef.current = false;
+                return;
+            }
 
             // Prioriza o ativo em foco
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
@@ -321,9 +339,7 @@ export function useAIQuantTerminalV3(
 
                     try {
                         await runAnalysisForSymbol(symbol, candles as CandleData[]);
-                    } catch (e: any) {
-                        // O erro já é logado em runAnalysisForSymbol
-                    }
+                    } catch (e: any) {}
                 }
             }
             

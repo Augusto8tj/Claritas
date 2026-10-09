@@ -41,7 +41,7 @@ export interface CouncilDecision {
   stakeRatio: number;
   consensusConfidence: number;
   opinions: AgentOpinion[];
-  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO';
+  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO' | 'NO_VOTERS';
   executionMode: 'REAL' | 'SHADOW';
   t2tLatencyMs: number;
   telemetry: CouncilTelemetry;
@@ -87,4 +87,5 @@ export interface PortfolioRiskState {
   totalExposure: number;
   maxTotalExposure: number;
   lockedSymbols: Set<string>; // Ativos já processados neste ciclo
+  plannedStake?: number;
 }
