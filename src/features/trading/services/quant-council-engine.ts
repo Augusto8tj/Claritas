@@ -48,7 +48,7 @@ function validateExecutionGate(
   const plannedStake = portfolio.plannedStake ?? 1.0;
   const estimatedNewExposure = portfolio.totalExposure + plannedStake;
   if (estimatedNewExposure > portfolio.maxTotalExposure) {
-    return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure}) excederia o limite diário ($${portfolio.maxTotalExposure}).` };
+    return { allowed: false, reason: `Bloqueado: Exposição total ($${estimatedNewExposure.toFixed(2)}) excederia o limite diário ($${portfolio.maxTotalExposure}).` };
   }
 
   return { allowed: true };
@@ -92,6 +92,7 @@ export async function runQuantCouncil(
 ): Promise<CouncilDecision> {
   const startTime = performance.now();
   const symbol = marketSnapshot.symbol;
+  const trace: string[] = [];
 
   try {
     const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
@@ -106,10 +107,10 @@ export async function runQuantCouncil(
         const agentName = agents[i];
         if (res.status === 'fulfilled' && res.value) {
             const op = res.value;
-            console.log(`[Agent ${agentName}] action=${op.action}, confidence=${op.confidence}%, contract=${op.recommendedContract}, veto=${op.vetoTriggered}`);
+            trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'} ${op.latencyMs}ms | "${op.reasoning.slice(0, 160)}"`);
             opinions.push(op);
         } else {
-            console.log(`[Agent ${agentName}] FAILED: ${res.status === 'rejected' ? res.reason : 'null value'}`);
+            trace.push(`${agentName}: SEM RESPOSTA (timeout/erro/parse)`);
         }
     });
 
@@ -119,6 +120,7 @@ export async function runQuantCouncil(
     if (critic?.vetoTriggered && critic.confidence > 70) {
       const endTime = performance.now();
       const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
+      trace.push(`VETO: ${critic.reasoning}`);
       return {
         finalAction: 'HOLD',
         recommendedContract: 'OPTIONS',
@@ -131,15 +133,16 @@ export async function runQuantCouncil(
         telemetry: generateTelemetry(opinions, startTime, endTime),
         zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
         holdReason: `VETO_RISK: ${critic.reasoning}`,
-        debugVotes
+        debugVotes,
+        trace
       };
     }
 
-    const decision = synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, hasMemory);
+    const decision = synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, hasMemory, trace);
 
-    // GOVERNANÇA: Se houver intenção de execução, passamos pelo GATE institucional
     if (decision.finalAction !== 'HOLD' && portfolio && permissions) {
       const gate = validateExecutionGate(symbol, decision, permissions, portfolio, isFocused);
+      trace.push(`GATE: ${gate.allowed ? 'ok' : gate.reason}`);
       if (!gate.allowed) {
         return {
           ...decision,
@@ -153,9 +156,10 @@ export async function runQuantCouncil(
 
   } catch (error: any) {
     const endTime = performance.now();
-    // SEGURANÇA: Fallback matemático RESTRITO ao ativo em foco
+    trace.push(`FALLBACK: ${error.message}`);
     if (isFocused) {
-      return executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+      const fallback = executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+      return { ...fallback, trace };
     }
     return {
       finalAction: 'HOLD',
@@ -168,7 +172,8 @@ export async function runQuantCouncil(
       t2tLatencyMs: Math.round(endTime - startTime),
       telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
       holdReason: "Failover bloqueado para background asset.",
-      debugVotes: "FAIL"
+      debugVotes: "FAIL",
+      trace
     };
   }
 }
@@ -261,7 +266,8 @@ function synthesizeChairmanDecision(
   snapshot: any,
   isShadowMode: boolean,
   startTime: number,
-  hasMemory: boolean
+  hasMemory: boolean,
+  trace: string[]
 ): CouncilDecision {
   const endTime = performance.now();
   const telemetry = generateTelemetry(opinions, startTime, endTime);
@@ -271,14 +277,15 @@ function synthesizeChairmanDecision(
   let totalWeights = 0;
 
   opinions.forEach(op => {
-    if (op.agentName === 'MOMENTUM') {
-      totalWeights += 1.0;
-      if (op.action === 'CALL') callScore += op.confidence * 1.0;
-      if (op.action === 'PUT') putScore += op.confidence * 1.0;
-    } else if (op.agentName === 'ARCHIVIST' && hasMemory) {
-      totalWeights += 1.2;
-      if (op.action === 'CALL') callScore += op.confidence * 1.2;
-      if (op.action === 'PUT') putScore += op.confidence * 1.2;
+    let weight = 0;
+    if (op.agentName === 'MOMENTUM') weight = 1.0;
+    else if (op.agentName === 'ARCHIVIST' && hasMemory) weight = 1.2;
+
+    if (weight > 0) {
+      trace.push(`VOTANTE: ${op.agentName} peso=${weight} voto=${op.action} conf=${op.confidence}%`);
+      totalWeights += weight;
+      if (op.action === 'CALL') callScore += op.confidence * weight;
+      if (op.action === 'PUT') putScore += op.confidence * weight;
     }
   });
 
@@ -294,7 +301,8 @@ function synthesizeChairmanDecision(
       t2tLatencyMs: Math.round(endTime - startTime),
       telemetry,
       holdReason: 'Votantes insuficientes ou sem memória.',
-      debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ')
+      debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+      trace
     };
   }
 
@@ -310,6 +318,10 @@ function synthesizeChairmanDecision(
   const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
   const adjusted = avgConf * entropyPenalty * riskFactor;
   
+  trace.push(`SÍNTESE: call=${callScore.toFixed(1)} put=${putScore.toFixed(1)} wsum=${totalWeights.toFixed(1)} side=${side}`);
+  trace.push(`MÉTRICAS: avgConf=${avgConf.toFixed(1)} entropy=${telemetry.consensusEntropy.toFixed(2)} penalty=${entropyPenalty} riskFactor=${riskFactor.toFixed(2)}`);
+  trace.push(`FINAL: ajustada=${adjusted.toFixed(1)} min=${MIN_EXEC_CONFIDENCE} -> ${adjusted >= MIN_EXEC_CONFIDENCE ? side : 'HOLD'}`);
+
   const finalAction = (side !== 'HOLD' && adjusted >= MIN_EXEC_CONFIDENCE) ? side : 'HOLD';
   const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
 
@@ -324,7 +336,8 @@ function synthesizeChairmanDecision(
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
     zenThought: finalAction === 'HOLD' ? "O conselho está dividido ou em zona neutra. O silêncio é a melhor estratégia." : "Convergência detectada nos extremos de volatilidade.",
-    debugVotes
+    debugVotes,
+    trace
   };
 }
 

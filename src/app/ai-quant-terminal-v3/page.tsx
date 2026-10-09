@@ -1,7 +1,7 @@
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -17,13 +17,13 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useAIQuantTerminalV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
+import { useAIQuantTerminalV3, type LogEntry } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -33,6 +33,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import type { AllowedContractsV3, AllowedActionsV3 } from "@/features/trading/types/council";
+import { useToast } from '@/hooks/use-toast';
 
 function TerminalV3Content() {
     const { 
@@ -43,21 +44,25 @@ function TerminalV3Content() {
     } = useDerivApi();
 
     const v3 = useAIQuantTerminalV3(activeSymbol, priceTicks, chartData as any);
+    const { toast } = useToast();
     const { 
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, 
         timeToNextAnalysis, analysisInterval, setAnalysisInterval,
+        backgroundIntervalSec, setBackgroundIntervalSec, sentinelIntervalSec, setSentinelIntervalSec,
         radarStatus, sentinel, watchedSymbols, setWatchedSymbols, resetSession,
         allowedActions, setAllowedActions,
         allowedContracts, setAllowedContracts, 
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
+        sessionStats, councilStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
         updateOllamaConfig
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
+    const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
+    const [expandedLogTs, setExpandedLogTs] = useState<number | null>(null);
     
     // Referência para auto-scroll
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -68,10 +73,7 @@ function TerminalV3Content() {
         }
     }, []);
 
-    // Auto-scroll quando chegam mensagens ou muda o estado de carregamento
-    useEffect(() => {
-        scrollToBottom();
-    }, [chatMessages, isChatLoading, scrollToBottom]);
+    useEffect(() => { scrollToBottom(); }, [chatMessages, isChatLoading, scrollToBottom]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -83,6 +85,25 @@ function TerminalV3Content() {
             setChatInput('');
         }
     };
+
+    const copyLogs = () => {
+        const text = filteredLogs.map(l => {
+            let s = `[${l.time}] ${l.message}`;
+            if (l.details) s += `\n  ` + l.details.join('\n  ');
+            return s;
+        }).join('\n\n');
+        navigator.clipboard.writeText(text);
+        toast({ title: "Log copiado" });
+    };
+
+    const filteredLogs = useMemo(() => {
+        if (logFilter === 'all') return reasoningLog;
+        if (logFilter === 'error') return reasoningLog.filter(l => l.type === 'error' || l.type === 'warning');
+        return reasoningLog.filter(l => l.type === logFilter);
+    }, [reasoningLog, logFilter]);
+
+    const scanEstimateSec = Math.round(watchedSymbols.length * councilStats.avgLatencyMs / 1000);
+    const isScanOverloaded = backgroundIntervalSec < scanEstimateSec;
 
     // Renderizador de mensagens com suporte a Deep Think (think tags)
     const renderMessageContent = (content: string) => {
@@ -118,7 +139,7 @@ function TerminalV3Content() {
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
-            {/* RADAR DE OPORTUNIDADES V3 (Surgical Port from V2.5) */}
+            {/* RADAR DE OPORTUNIDADES V3 */}
             <Card className="bg-purple-500/5 border-purple-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-purple-500/10 border-b border-purple-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-purple-700">
@@ -281,23 +302,57 @@ function TerminalV3Content() {
                                 <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={v3.toggleShadowMode} />
                             </div>
 
-                            <div className="space-y-3 p-3 rounded-lg border border-purple-200 bg-card/50">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
-                                    <span className="font-mono text-purple-700 font-bold">{analysisInterval}s</span>
+                            <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground flex items-center gap-1.5"><BrainCircuit className="h-3.5 w-3.5"/> Foco (Inferência)</span>
+                                        <span className="font-mono text-purple-700 font-bold">{analysisInterval}s</span>
+                                    </div>
+                                    <Slider value={[analysisInterval]} min={10} max={600} step={5} onValueChange={(v) => setAnalysisInterval(v[0])} />
                                 </div>
-                                <Slider 
-                                    value={[analysisInterval]} 
-                                    min={30} max={600} step={30} 
-                                    onValueChange={(v) => setAnalysisInterval(v[0])}
-                                    disabled={isAutoMode}
-                                />
-                                <div className="space-y-1.5 pt-2">
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground flex items-center gap-1.5"><Radar className="h-3.5 w-3.5"/> Background Scan</span>
+                                        <span className="font-mono text-purple-700 font-bold">{backgroundIntervalSec}s</span>
+                                    </div>
+                                    <Slider value={[backgroundIntervalSec]} min={10} max={600} step={5} onValueChange={(v) => setBackgroundIntervalSec(v[0])} />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground flex items-center gap-1.5"><Gauge className="h-3.5 w-3.5"/> Sentinel Frequency</span>
+                                    </div>
+                                    <Select value={String(sentinelIntervalSec)} onValueChange={(v) => setSentinelIntervalSec(Number(v))}>
+                                        <SelectTrigger className="h-8 text-xs font-mono">
+                                            <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="1">1s (Real-time)</SelectItem>
+                                            <SelectItem value="2">2s (Balanced)</SelectItem>
+                                            <SelectItem value="5">5s (Conservative)</SelectItem>
+                                            <SelectItem value="10">10s (Eco)</SelectItem>
+                                            <SelectItem value="30">30s (Static)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <Separator />
+                                <div className="space-y-1">
                                     <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold">
-                                        <span>Processando em</span>
+                                        <span>Scan Estimado</span>
+                                        <span className="font-mono text-primary font-bold">~{scanEstimateSec}s</span>
+                                    </div>
+                                    {isScanOverloaded && (
+                                        <p className="text-[9px] text-amber-600 font-medium italic">
+                                            ⚠️ Ativos serão analisados em fila contínua.
+                                        </p>
+                                    )}
+                                    <div className="flex justify-between text-[10px] text-muted-foreground uppercase font-bold pt-1">
+                                        <span>Focus Inference em</span>
                                         <span className="font-mono text-primary font-bold">{timeToNextAnalysis}s</span>
                                     </div>
-                                    <Progress value={(timeToNextAnalysis / analysisInterval) * 100} className="h-1" />
+                                    <Progress value={((analysisInterval - timeToNextAnalysis) / analysisInterval) * 100} className="h-1" />
                                 </div>
                             </div>
 
@@ -640,25 +695,62 @@ function TerminalV3Content() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-purple-200 flex-1 min-h-0">
-                        <CardHeader className="py-2 px-4 border-b bg-card/50">
+                    <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-purple-200 h-96 flex flex-col">
+                        <CardHeader className="py-2 px-4 border-b bg-card/50 flex flex-row items-center justify-between">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
-                                <TerminalIcon className="h-3 w-3" /> Reasoning Engine Log
+                                <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
+                                <Copy className="h-3 w-3" />
+                            </Button>
                         </CardHeader>
-                        <CardContent className="p-0">
-                            <ScrollArea className="h-64 p-4 text-[10px]">
-                                {reasoningLog.length === 0 ? (
-                                    <p className="animate-pulse text-muted-foreground italic">Monitorando nó de inferência...</p>
+                        <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
+                             <div className="flex flex-wrap gap-2 text-[10px] font-mono text-muted-foreground">
+                                <span>{councilStats.total} evals</span>
+                                <span>| HOLD {councilStats.total > 0 ? Math.round(councilStats.hold/councilStats.total*100) : 0}%</span>
+                                <span>| CALL {councilStats.call}</span>
+                                <span>| PUT {councilStats.put}</span>
+                                <span>| vetos {councilStats.vetoes}</span>
+                                <span>| fallbacks {councilStats.fallbacks}</span>
+                                <span>| {(councilStats.avgLatencyMs/1000).toFixed(1)}s/ativo</span>
+                             </div>
+                             <div className="flex gap-2">
+                                {['all', 'decision', 'sentinel', 'execution', 'error'].map(f => (
+                                    <Badge 
+                                        key={f} 
+                                        variant={logFilter === f ? 'default' : 'outline'} 
+                                        className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-bold"
+                                        onClick={() => setLogFilter(f as any)}
+                                    >
+                                        {f === 'decision' ? 'Conselho' : f === 'sentinel' ? 'Sentinela' : f === 'execution' ? 'Execução' : f === 'error' ? 'Erros' : 'Todos'}
+                                    </Badge>
+                                ))}
+                             </div>
+                        </div>
+                        <CardContent className="p-0 flex-1 overflow-hidden relative">
+                            <ScrollArea className="h-full p-4 text-[10px]">
+                                {filteredLogs.length === 0 ? (
+                                    <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    reasoningLog.map((log, i) => (
-                                        <div key={i} className="mb-1 border-l-2 border-purple-500/30 pl-2">
-                                            <span className="opacity-50">[{log.time}]</span>{' '}
-                                            <span className={cn(
-                                                "font-medium",
-                                                log.type === 'decision' ? "text-purple-600 font-bold" : 
-                                                log.type === 'execution' ? "text-green-600 font-bold" : "text-muted-foreground"
-                                            )}>{log.message}</span>
+                                    filteredLogs.map((log, i) => (
+                                        <div key={log.ts} className="mb-1.5 border-l-2 border-purple-500/30 pl-2">
+                                            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
+                                                <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
+                                                {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-purple-200 text-purple-600">{log.symbol}</Badge>}
+                                                <span className={cn(
+                                                    "font-medium",
+                                                    log.type === 'decision' ? "text-purple-600 font-bold" : 
+                                                    log.type === 'execution' ? "text-green-600 font-bold" : 
+                                                    log.type === 'sentinel' ? "text-blue-500" :
+                                                    (log.type === 'error' || log.type === 'warning') ? "text-red-600" : "text-muted-foreground"
+                                                )}>{log.message}</span>
+                                                {log.details && log.details.length > 0 && <ChevronRight className={cn("h-2.5 w-2.5 transition-transform opacity-30 group-hover:opacity-100", expandedLogTs === log.ts && "rotate-90")} />}
+                                            </div>
+                                            {expandedLogTs === log.ts && log.details && (
+                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-purple-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
+                                                    {log.details.join('\n')}
+                                                </div>
+                                            )}
                                         </div>
                                     ))
                                 )}

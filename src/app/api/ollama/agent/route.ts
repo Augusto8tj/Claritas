@@ -48,6 +48,8 @@ export async function POST(req: Request) {
       DADOS DO MERCADO ATUAL:
       ${JSON.stringify(marketSnapshot, null, 2)}
       
+      Campos do snapshot: mom5/mom15 = variação em ATRs nos últimos 5/15 candles; bbPos = posição nas Bandas de Bollinger (0 inferior, 1 superior); bwPct = percentil da largura das bandas; atrRatio = volatilidade atual/mediana; er = eficiência (0 lateral, 1 tendência limpa); streak = candles seguidos (+alta/-baixa).
+
       REGRAS DE RESPOSTA:
       1. POLARIDADE RSI: RSI < 35 é SOBREVENDA (Possível CALL). RSI > 65 é SOBRECOMPRA (Possível PUT). Sugerir o oposto é ERRO CRÍTICO.
 

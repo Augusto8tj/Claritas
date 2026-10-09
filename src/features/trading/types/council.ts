@@ -48,6 +48,7 @@ export interface CouncilDecision {
   zenThought?: string;
   holdReason?: string; // Motivo detalhado se a decisão for HOLD
   debugVotes?: string; // NOVO: Formato "M:CALL/78 R:HOLD/20 A:HOLD/0"
+  trace?: string[];
 }
 
 /**
