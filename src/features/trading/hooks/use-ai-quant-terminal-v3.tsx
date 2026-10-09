@@ -167,6 +167,18 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
+    // CÁLCULO DE ESTATÍSTICAS DE SESSÃO
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && op.initiator === 'Conselho_V3' && op.asset === activeSymbol
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : null;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate, total };
+    }, [operationsLog, activeSymbol]);
+
     useEffect(() => {
         const settings = {
             analysisInterval, backgroundIntervalSec, sentinelIntervalSec,
