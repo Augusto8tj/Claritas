@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
@@ -56,7 +57,7 @@ export interface ChatMessage {
 }
 
 export interface LogEntry {
-    ts: number;
+    ts: string; // Alterado para string para garantir unicidade absoluta
     time: string;
     message: string;
     type: 'info' | 'decision' | 'execution' | 'error' | 'warning' | 'radar' | 'sentinel';
@@ -209,7 +210,7 @@ export function useAIQuantTerminalV3(
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
-            ts: Date.now(),
+            ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // ID ÚNICO PARA EVITAR ERRO DE CHAVE DUPLICADA
             time: new Date().toLocaleTimeString(),
             message,
             type,
@@ -422,7 +423,7 @@ export function useAIQuantTerminalV3(
         const session = `[SESSÃO] Modo: ${isShadowMode ? 'SHADOW' : 'REAL'} | Piloto: ${isAutoMode ? 'ON' : 'OFF'} | Conta: ${accountType} | Saldo: $${accountBalance.balance} | P&L: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) || '--'}% | Pos: ${operationsLogRef.current.filter(o => o.status === 'pending').length}/${maxConcurrentTrades} | Stake: $${stakeValue} | Ações: ${JSON.stringify(allowedActions)} | Contratos: ${JSON.stringify(allowedContracts)} | Intervals: ${analysisInterval}s/${backgroundIntervalSec}s | Global: ${stats.total} evals, ${stats.call}C/${stats.put}P, ${stats.vetoes} vetos, ${stats.fallbacks} fallbacks, ${(stats.avgLatencyMs/1000).toFixed(1)}s/lat.`;
 
         const marketRows = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).map(sym => {
-            const status = radarStatus[sym];
+            const status = radarStatus[sym!];
             const candles = getCandlesFor(sym!);
             const sent = sentinel[sym!];
             if (!candles || candles.length === 0) return `- ${sym}: sem dados.`;

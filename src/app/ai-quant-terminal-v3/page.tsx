@@ -1,3 +1,4 @@
+
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -62,7 +63,7 @@ function TerminalV3Content() {
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
-    const [expandedLogTs, setExpandedLogTs] = useState<number | null>(null);
+    const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null); // Alterado para string
     
     // Referência para auto-scroll
     const messagesEndRef = useRef<HTMLDivElement>(null);
