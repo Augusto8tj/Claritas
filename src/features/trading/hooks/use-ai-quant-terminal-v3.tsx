@@ -525,6 +525,39 @@ export function useAIQuantTerminalV3(
         }
     };
 
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        setMemoryBuffer({ wins: [], losses: [] });
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
+    }, [clearActiveContracts, toast]);
+
+    const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
+        if (!ollamaConfig) return;
+        const newConfig = { ...ollamaConfig, ...updates };
+        setOllamaConfigState(newConfig);
+        localStorage.setItem('ollamaConfig', JSON.stringify(newConfig));
+    };
+
+    const fetchAvailableModels = async () => {
+        if (!ollamaConfig) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${ollamaConfig.apiKey}`, 'ngrok-skip-browser-warning': 'true' } });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableModels(data.models || []);
+            }
+        } catch (e) { console.error("Falha ao buscar modelos", e); }
+    };
+
     useEffect(() => {
         const timer = setInterval(() => {
             const nextTs = scheduleRef.current[activeSymbolRef.current ?? ''] ?? Date.now();
@@ -532,8 +565,6 @@ export function useAIQuantTerminalV3(
         }, 1000);
         return () => clearInterval(timer);
     }, []);
-
-    const resetSessionActual = useCallback(() => resetSession(), [resetSession]);
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
@@ -545,7 +576,7 @@ export function useAIQuantTerminalV3(
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, sentinel,
-        watchedSymbols, setWatchedSymbols, resetSession: resetSessionActual, chatMessages, isChatLoading, sendMessage,
+        watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         setAccountType, accountType
