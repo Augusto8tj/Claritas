@@ -2,8 +2,8 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.7 (COUNCIL EDITION)
- * V3.7: Chat Determinístico, Personas de Agentes e RAG de Contexto Técnico.
+ * @fileOverview TERMINAL QUANT V3.8 (COUNCIL EDITION)
+ * V3.8: Comandos Determinísticos, RAG de Microestrutura e Rastreabilidade Multi-Ativo.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -120,7 +120,7 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // REFS PARA ESTABILIDADE
+    // REFS PARA ESTABILIDADE E RASTREABILIDADE
     const chartDataRef = useRef(chartData);
     const multiAssetCandlesRef = useRef(multiAssetCandles);
     const watchedSymbolsRef = useRef(watchedSymbols);
@@ -133,7 +133,7 @@ export function useAIQuantTerminalV3(
     const executionLockRef = useRef(false);
     const botCandleDataRef = useRef(botCandleData);
     const durationLimitsRef = useRef(durationLimits);
-    const decisionHistoryRef = useRef<Record<string, Array<{ts: number, action: string, conf: number, contract: string, votes: string, via: string, hold: string}>>>({});
+    const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const chatBusyRef = useRef(false);
     const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
     const lastSkipLogRef = useRef<Record<string, number>>({});
@@ -205,13 +205,6 @@ export function useAIQuantTerminalV3(
         return (multi ?? []) as CandleData[];
     }, []);
 
-    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
-    const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
-    const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
-    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-    const [isChatLoading, setIsChatLoading] = useState(false);
-    const [availableModels, setAvailableModels] = useState<any[]>([]);
-
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
             ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
@@ -241,7 +234,6 @@ export function useAIQuantTerminalV3(
                     const logKey = `${sym}-${c.contract}`;
                     if (c.score >= SIGNAL_TRIGGER_SCORE) {
                         const lastLog = sentinelAboveRef.current[logKey] || 0;
-                        // Logar se for primeira vez ou a cada 5 min (300000ms)
                         if (lastLog === 0 || now - lastLog > 300000) {
                             addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
                             sentinelAboveRef.current[logKey] = now;
@@ -304,19 +296,14 @@ export function useAIQuantTerminalV3(
             };
 
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
+            lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
             
             const { finalAction: action, consensusConfidence: conf, executedVia: via, recommendedContract: contract, debugVotes: votes, t2tLatencyMs: lat } = decision;
 
             addLog(`[CONSELHO] ${symbol}: ${action} ${conf}% | ${contract} | via=${via} | votos[${votes}] | ${lat}ms`, 'decision', 
                 [`ENTRADA: ${JSON.stringify(snapshot)}`, ...(decision.trace ?? []), decision.holdReason ? `MOTIVO HOLD: ${decision.holdReason}` : ''].filter(Boolean), symbol);
 
-            if (!decisionHistoryRef.current[symbol]) decisionHistoryRef.current[symbol] = [];
-            decisionHistoryRef.current[symbol] = [{ ts: Date.now(), action, conf, contract, votes, via, hold: decision.holdReason || '' }, ...decisionHistoryRef.current[symbol]].slice(0, 10);
-
             if (isFocused) {
-                if (decision.finalAction === 'HOLD' && decision.holdReason) {
-                    addLog(`[REJECTED] ${symbol}: ${decision.holdReason}`, 'warning', undefined, symbol);
-                }
                 setLastDecision(decision);
                 setTelemetry(decision.telemetry);
             }
@@ -360,8 +347,6 @@ export function useAIQuantTerminalV3(
                 
                 if (!hasOpen) {
                     const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
-                    addLog(`[STAKE] ${symbol}: base=${stakeValue} ratio=${decision.stakeRatio?.toFixed(2)} final=${stake}`, 'info', undefined, symbol);
-
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
                     } else {
@@ -384,7 +369,7 @@ export function useAIQuantTerminalV3(
             return decision;
         } catch (error: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${error.message}`, 'error', undefined, symbol);
-            throw error;
+            return undefined;
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, addLog, stakeValue]);
 
@@ -455,6 +440,138 @@ export function useAIQuantTerminalV3(
         toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
     }, [clearActiveContracts, toast]);
 
+    const getScoreLabel = (cat: string, cands: SignalCandidate[]) => {
+        const c = cands.find(x => x.contract === cat);
+        if (!c) return "--";
+        const arrow = c.direction === 'CALL' ? '↑CALL' : (c.direction === 'PUT' ? '↓PUT' : '');
+        return `${c.score}${arrow}`;
+    };
+
+    const buildStatusReport = useCallback(() => {
+        const nowStr = new Date().toLocaleTimeString('pt-BR', { hour12: false });
+        const mode = isShadowMode ? 'SHADOW' : 'REAL';
+        const pilot = isAutoMode ? 'ON' : 'OFF';
+        const stats = councilStats;
+        const positions = operationsLogRef.current.filter(o => o.status === 'pending');
+        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+        
+        let report = `RELATÓRIO ${nowStr} | ${mode} | piloto ${pilot} | conta ${accountType} | saldo $${accountBalance.balance}\n`;
+        report += `Conselho: ${stats.total} avaliações | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | vetos ${stats.vetoes} | fallbacks ${stats.fallbacks} | ${(stats.avgLatencyMs/1000).toFixed(1)}s/ativo\n`;
+        report += `Posições abertas: ${positions.length}/${maxConcurrentTrades}\n\n`;
+
+        symbols.forEach(sym => {
+            if (!sym) return;
+            const sentData = sentinel[sym];
+            const price = sentData?.features?.price ?? (getCandlesFor(sym).slice(-1)[0]?.close || 0);
+            report += `${sym} $${price.toFixed(4)}\n`;
+            if (sentData?.features) {
+                const f = sentData.features;
+                report += `  RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} ATR | seq ${f.streak}\n`;
+                report += `  Sentinela: Opções ${getScoreLabel('OPTIONS', sentData.candidates)} | Multiplicadores ${getScoreLabel('MULTIPLIERS', sentData.candidates)} | Acumuladores ${getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
+            }
+            
+            const hist = lastDecisionBySymbolRef.current[sym];
+            if (hist) {
+                const age = Math.round((Date.now() - hist.ts) / 1000);
+                const d = hist.decision;
+                report += `  Conselho: há ${age}s ${d.finalAction} ${d.consensusConfidence}% ${d.recommendedContract} votos[${d.debugVotes}] ${d.holdReason ? d.holdReason.slice(0, 100) : ''}\n`;
+            } else {
+                report += `  Conselho: ainda não avaliou\n`;
+            }
+            report += `  Posições: ${positions.filter(o => o.asset === sym).length}\n\n`;
+        });
+
+        const candidates = Object.values(sentinel)
+            .flatMap(s => s.candidates)
+            .filter(c => c.score >= 55)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 3);
+
+        report += `MELHORES CANDIDATOS (score >= 55):\n`;
+        if (candidates.length > 0) {
+            candidates.forEach(c => {
+                const hist = lastDecisionBySymbolRef.current[c.symbol];
+                const consStatus = hist ? (hist.decision.finalAction === 'HOLD' ? 'HOLD' : 'confirmou') : 'ainda não avaliou';
+                report += `  ${c.symbol} ${c.contract} ${c.direction !== 'NONE' ? c.direction : 'sem direção'} score ${c.score} regra ${c.rule} (${c.reasons.join(', ')}) | Conselho: ${consStatus}\n`;
+            });
+        } else {
+            report += `  nenhum candidato acima do gatilho\n`;
+        }
+
+        report += `\nSinais são hipóteses sobre índices sintéticos aleatórios; validar no Shadow.`;
+        return report;
+    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, councilStats, maxConcurrentTrades, sentinel, getCandlesFor]);
+
+    const buildAssetReport = useCallback((sym: string) => {
+        const sentData = sentinel[sym];
+        const hist = lastDecisionBySymbolRef.current[sym];
+        const lastCandle = getCandlesFor(sym).slice(-1)[0];
+        
+        let report = `ANÁLISE DETALHADA: ${sym}\n`;
+        report += `Preço: $${(lastCandle?.close || 0).toFixed(4)}\n\n`;
+
+        if (sentData?.features) {
+            const f = sentData.features;
+            report += `MÉTRICAS AO VIVO:\n`;
+            report += `- RSI: ${f.rsi}\n- %B (Posição Bandas): ${f.bbPos.toFixed(3)}\n- ER (Eficiência): ${f.er.toFixed(2)}\n- Volatilidade: x${f.atrRatio.toFixed(2)}\n- Momentum 15: ${f.mom15.toFixed(1)} ATR\n- Streak: ${f.streak}\n\n`;
+            
+            report += `SENTINELA (CANDIDATOS):\n`;
+            sentData.candidates.forEach(c => {
+                report += `- ${c.contract}: score ${c.score} [${c.rule}] -> ${c.reasons.join(', ')}\n`;
+            });
+            report += '\n';
+        }
+
+        if (hist) {
+            const d = hist.decision;
+            const age = Math.round((Date.now() - hist.ts) / 1000);
+            report += `ÚLTIMA DELIBERAÇÃO (há ${age}s):\n`;
+            report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${d.recommendedContract})\n`;
+            if (d.holdReason) report += `Hold Reason: ${d.holdReason}\n`;
+            
+            report += `\nOPINIÕES DOS AGENTES:\n`;
+            d.opinions.forEach(o => {
+                report += `- ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} — ${o.reasoning.slice(0, 160)}\n`;
+            });
+
+            if (d.trace && d.trace.length > 0) {
+                report += `\nTRACE DO CHAIRMAN:\n`;
+                d.trace.forEach(t => report += `  > ${t}\n`);
+            }
+        } else {
+            report += `Conselho ainda não realizou varredura para este ativo.`;
+        }
+
+        return report;
+    }, [sentinel, getCandlesFor]);
+
+    const buildShortContextForLLM = useCallback(() => {
+        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+        let context = "LEGENDA: Sentinela = pontuação 0-100 por tipo de contrato (Opções, Multiplicadores, Acumuladores); >= 55 é gatilho; ↑ CALL, ↓ PUT; Acumuladores não têm direção. %B 0-1 (posição nas bandas); ER 0-1 (1 = tendência limpa); vol xN = volatilidade atual / mediana; mom15 em ATRs.\n\n";
+        
+        symbols.forEach(sym => {
+            if (!sym) return;
+            const sentData = sentinel[sym];
+            const price = sentData?.features?.price ?? 0;
+            const hist = lastDecisionBySymbolRef.current[sym];
+            
+            context += `${sym}: $${price.toFixed(4)}\n`;
+            if (sentData?.features) {
+                const f = sentData.features;
+                context += `  Metrics: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} | streak ${f.streak}\n`;
+                context += `  Sentinel: O:${getScoreLabel('OPTIONS', sentData.candidates)} M:${getScoreLabel('MULTIPLIERS', sentData.candidates)} A:${getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
+            }
+            if (hist) {
+                const age = Math.round((Date.now() - hist.ts) / 1000);
+                const d = hist.decision;
+                context += `  Council (${age}s ago): ${d.finalAction} ${d.consensusConfidence}% [${d.debugVotes}] ${d.holdReason || ''}\n`;
+            }
+            context += "\n";
+        });
+        
+        return context.slice(0, 2200);
+    }, [sentinel]);
+
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!ollamaConfig || !content.trim() || !user) return;
         
@@ -462,55 +579,91 @@ export function useAIQuantTerminalV3(
         const userMsg: ChatMessage = { role: 'user', content, time };
         setChatMessages(prev => [...prev, userMsg]);
 
-        // COMANDOS DETERMINÍSTICOS
-        const cmdMatch = content.match(/^\s*(por favor[, ]*)?(compre|comprar|venda|vender|execute|executar|opere|operar|abra|abrir|entre|entrar)\b\s*(.*)/i);
+        const CONFIRM = /^\s*confirmo[\s.!]*$/i;
+        const CMD = /^\s*(por favor[, ]*)?(compre|comprar|venda|vender|execute|executar|opere|operar|abra|abrir|entre|entrar)\b\s*(.*)/i;
+        const WHY = /(por\s?que|porque|motivo|explique|explica|como est[aá])/i;
+        const REPORT = /(situa[cç][aã]o|status|auditoria|listagem|relat[oó]rio|resumo|quais ativos|que ativos|monitorando|oportunidades?|chances?|vantaj\w*|melhor(es)?|promissor\w*)/i;
+
+        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+
+        // 1. CONFIRM
+        if (content.match(CONFIRM)) {
+            if (pendingChatOrderRef.current && (Date.now() - pendingChatOrderRef.current.ts) < 60000 && !isShadowMode) {
+                const sym = pendingChatOrderRef.current.symbol;
+                const decision = await runAnalysisForSymbol(sym, getCandlesFor(sym), true);
+                setChatMessages(prev => [...prev, { 
+                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                    content: `[REAL] Execução para ${sym} via chat: ${decision?.finalAction} ${decision?.consensusConfidence}% via=${decision?.executedVia}.`
+                }]);
+                pendingChatOrderRef.current = null;
+            } else {
+                setChatMessages(prev => [...prev, { 
+                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                    content: "Nenhum pedido pendente ou modo Real desativado."
+                }]);
+                pendingChatOrderRef.current = null;
+            }
+            return;
+        }
+
+        // 2. CMD
+        const cmdMatch = content.match(CMD);
         if (cmdMatch) {
-            const rest = cmdMatch[3].toUpperCase();
-            const symbol = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).find(s => s && rest.includes(s));
-            
-            if (symbol) {
+            const found = symbols.filter(s => s && content.toUpperCase().includes(s.toUpperCase()));
+            if (found.length === 0) {
+                setChatMessages(prev => [...prev, { 
+                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                    content: `Informe o ativo (ex.: compre 1HZ10V). Ativos monitorados: ${symbols.join(', ')}`
+                }]);
+            } else if (found.length > 1) {
+                setChatMessages(prev => [...prev, { 
+                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                    content: `Múltiplos ativos detectados (${found.join(', ')}). Por favor, escolha apenas UM para o comando.`
+                }]);
+            } else {
+                const symbol = found[0];
                 if (isShadowMode) {
                     const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
                     setChatMessages(prev => [...prev, { 
-                        role: 'assistant', 
-                        agentName: 'SISTEMA', 
-                        time: new Date().toLocaleTimeString(),
+                        role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
                         content: `[SHADOW] Auditoria para ${symbol}: ${decision?.finalAction} ${decision?.consensusConfidence}% (${decision?.recommendedContract}) votos:[${decision?.debugVotes}] ${decision?.holdReason ? 'hold='+decision.holdReason : ''}`
                     }]);
-                    return;
                 } else {
-                    if (content.match(/\bconfirmo\b/i) && pendingChatOrderRef.current?.symbol === symbol && (Date.now() - pendingChatOrderRef.current.ts) < 60000) {
-                        const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
-                        setChatMessages(prev => [...prev, { 
-                            role: 'assistant', 
-                            agentName: 'SISTEMA', 
-                            time: new Date().toLocaleTimeString(),
-                            content: `[REAL] Execução para ${symbol} solicitada via chat: ${decision?.finalAction} ${decision?.consensusConfidence}% via=${decision?.executedVia}.`
-                        }]);
-                        pendingChatOrderRef.current = null;
-                        return;
-                    } else {
-                        pendingChatOrderRef.current = { symbol, ts: Date.now() };
-                        setChatMessages(prev => [...prev, { 
-                            role: 'assistant', 
-                            agentName: 'SISTEMA', 
-                            time: new Date().toLocaleTimeString(),
-                            content: `⚠️ Ordem REAL para ${symbol} detectada. Digite "CONFIRMO" em até 60s para autorizar a execução. O Conselho decidirá a direção final.`
-                        }]);
-                        return;
-                    }
+                    pendingChatOrderRef.current = { symbol, ts: Date.now() };
+                    setChatMessages(prev => [...prev, { 
+                        role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                        content: `⚠️ Ordem REAL para ${symbol} detectada. Digite "CONFIRMO" em até 60s para autorizar a execução. O Conselho decidirá a direção final.`
+                    }]);
                 }
             }
+            return;
         }
 
-        // DIÁLOGO LLM
+        // 3. WHY / REPORT
+        const hasSym = symbols.find(s => s && content.toUpperCase().includes(s.toUpperCase()));
+        if (hasSym && content.match(WHY)) {
+            setChatMessages(prev => [...prev, { 
+                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                content: buildAssetReport(hasSym)
+            }]);
+            return;
+        }
+
+        if (content.match(REPORT)) {
+            setChatMessages(prev => [...prev, { 
+                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                content: buildStatusReport()
+            }]);
+            return;
+        }
+
+        // 4. LLM DIÁLOGO
         setIsChatLoading(true);
         chatBusyRef.current = true;
         try {
-            const context = buildChatContext();
-            const systemPrompt = `Você é ${(AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN}. Responda em português do Brasil, em primeira pessoa.
-            ${context}
-            REGRAS: use SOMENTE os dados acima; se faltar dado, diga que não tem. Ao explicar uma decisão, cite os votos, os números e o motivo do HOLD. Não preveja preços: descreva cenários condicionais (se X, então Y) marcados como hipótese. Os ativos são índices sintéticos de natureza aleatória: nunca afirme certeza de lucro; sinais são hipóteses a validar no Shadow. Até 150 palavras, salvo pedido de relatório.`;
+            const context = buildShortContextForLLM();
+            const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que falta; sem previsão de preço (cenários "se X, então Y" como hipótese); índices sintéticos aleatórios, nunca afirmar certeza de lucro; até 120 palavras.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -527,41 +680,6 @@ export function useAIQuantTerminalV3(
             setIsChatLoading(false);
         }
     };
-
-    const buildChatContext = useCallback(() => {
-        const stats = councilStats;
-        const session = `[SESSÃO] Modo: ${isShadowMode ? 'SHADOW' : 'REAL'} | Piloto: ${isAutoMode ? 'ON' : 'OFF'} | Conta: ${accountType} | Saldo: $${accountBalance.balance} | P&L: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) || '--'}% | Pos: ${operationsLogRef.current.filter(o => o.status === 'pending').length}/${maxConcurrentTrades} | Stake: $${stakeValue} | Ações: ${JSON.stringify(allowedActions)} | Contratos: ${JSON.stringify(allowedContracts)} | Intervals: ${analysisInterval}s/${backgroundIntervalSec}s | Global: ${stats.total} evals, ${stats.call}C/${stats.put}P, ${stats.vetoes} vetos, ${stats.fallbacks} fallbacks, ${(stats.avgLatencyMs/1000).toFixed(1)}s/lat.`;
-
-        const marketRows = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).map(sym => {
-            const status = radarStatus[sym!];
-            const candles = getCandlesFor(sym!);
-            const sent = sentinel[sym!];
-            if (!candles || candles.length === 0) return `- ${sym}: sem dados.`;
-
-            const last = candles[candles.length - 1];
-            const p = last.close ?? last.price;
-            const hist = decisionHistoryRef.current[sym!]?.[0];
-            const s = hist ? Math.round((Date.now() - hist.ts)/1000) : '--';
-            
-            const sentStr = sent?.candidates.map(c => `${c.contract[0]}:${c.score}${c.direction === 'CALL' ? '↑' : (c.direction === 'PUT' ? '↓' : '')}`).join(' ') || '--';
-
-            return `- ${sym}: $${p.toFixed(4)} | RSI:${status?.indicators?.rsi.toFixed(1) || '--'} | %B:${status?.indicators?.bbw.toFixed(3) || '--'} | ADX:${status?.indicators?.adx.toFixed(0) || '--'} | Sentinela:[${sentStr}] | Conselho(${s}s): ${hist?.action || 'HOLD'} ${hist?.conf || 0}% ${hist?.contract || ''} [${hist?.votes || ''}] ${hist?.hold?.slice(0, 80) || ''} | posições abertas no ativo: ${operationsLogRef.current.filter(o => o.asset === sym && o.status === 'pending').length}`;
-        }).join('\n');
-
-        const focusOpinions = activeSymbolRef.current && radarStatus[activeSymbolRef.current] 
-            ? radarStatus[activeSymbolRef.current].opinions.map(o => `  - ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} - ${o.reasoning.slice(0, 140)}`).join('\n')
-            : "Nenhuma opinião disponível.";
-
-        const recentLogs = reasoningLog
-            .filter(l => ['decision', 'execution', 'error'].includes(l.type))
-            .slice(0, 12)
-            .map(l => `[${l.time}] ${l.message}`)
-            .join('\n');
-
-        const memory = TradeMemoryManager.formatBufferForPrompt(memoryBuffer).slice(0, 600);
-
-        return `\n${session}\n\n[MERCADO]\n${marketRows}\n\n[ÚLTIMAS OPINIÕES DO FOCO]\n${focusOpinions}\n\n[EVENTOS RECENTES]\n${recentLogs}\n\n[MEMÓRIA]\n${memory}`;
-    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, sessionStats, maxConcurrentTrades, stakeValue, allowedActions, allowedContracts, analysisInterval, backgroundIntervalSec, councilStats, getCandlesFor, radarStatus, sentinel, reasoningLog, memoryBuffer]);
 
     const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
         if (!ollamaConfig) return;
@@ -610,3 +728,17 @@ export function useAIQuantTerminalV3(
         setAccountType, accountType
     };
 }
+
+const getDecimalPlaces = (pipSize: number | undefined): number => {
+    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
+        return 2; 
+    }
+    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
+        return 0;
+    }
+    const pipString = String(pipSize);
+    if (pipString.includes('.')) {
+        return pipString.split('.')[1].length;
+    }
+    return 0;
+};
