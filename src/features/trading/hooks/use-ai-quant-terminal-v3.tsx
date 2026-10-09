@@ -2,11 +2,8 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.6 (COUNCIL EDITION) - MONITORAMENTO MULTI-ATIVO
- * V3.6: Fila Sequencial de Inferência (Hardware-Safe), Agendamento Half-Cycle
- * e Estabilidade via Refs para evitar over-rendering.
- * CORREÇÃO: Uso de botCandleData (OHLC 1m) para análise técnica em vez de chartData.
- * NOVO: Sentinel Monitor em tempo real integrado.
+ * @fileOverview TERMINAL QUANT V3.7 (COUNCIL EDITION)
+ * V3.7: Chat Determinístico, Personas de Agentes e RAG de Contexto Técnico.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -21,6 +18,15 @@ import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 import { computeSignalFeatures, evaluateSignals, SIGNAL_TRIGGER_SCORE, type SignalCandidate, type SignalFeatures } from '../services/signal-engine';
+
+const SETTINGS_KEY = 'quantV3Settings';
+
+const AGENT_PERSONAS = {
+  CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
+  MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
+  RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
+  ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
+};
 
 export interface RadarAssetStatus {
     symbol: string;
@@ -68,8 +74,6 @@ export interface CouncilStats {
     avgLatencyMs: number;
 }
 
-const SETTINGS_KEY = 'quantV3Settings';
-
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -84,7 +88,7 @@ export function useAIQuantTerminalV3(
     const { user } = useAuth();
     const { toast } = useToast();
 
-    // ESTADOS DE CONTROLE (NUNCA PERSISTIR)
+    // ESTADOS DE CONTROLE
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
 
@@ -128,6 +132,9 @@ export function useAIQuantTerminalV3(
     const executionLockRef = useRef(false);
     const botCandleDataRef = useRef(botCandleData);
     const durationLimitsRef = useRef(durationLimits);
+    const decisionHistoryRef = useRef<Record<string, Array<{ts: number, action: string, conf: number, contract: string, votes: string, via: string, hold: string}>>>({});
+    const chatBusyRef = useRef(false);
+    const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
 
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { multiAssetCandlesRef.current = multiAssetCandles; }, [multiAssetCandles]);
@@ -140,10 +147,8 @@ export function useAIQuantTerminalV3(
     useEffect(() => { botCandleDataRef.current = botCandleData; }, [botCandleData]);
     useEffect(() => { durationLimitsRef.current = durationLimits; }, [durationLimits]);
 
-    // OLLAMA CONFIG VIA STATE + EFFECT
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
     
-    // PERSISTÊNCIA DE CONFIGURAÇÕES
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
@@ -167,7 +172,6 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
-    // CÁLCULO DE ESTATÍSTICAS DE SESSÃO
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho_V3' && op.asset === activeSymbol
@@ -188,7 +192,6 @@ export function useAIQuantTerminalV3(
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }, [analysisInterval, backgroundIntervalSec, sentinelIntervalSec, stakeValue, maxConcurrentTrades, dailyBalance, dailyTarget, allowedActions, allowedContracts]);
 
-    // HELPER: Fonte única de candles OHLC 1m para todos os ativos
     const getCandlesFor = useCallback((symbol: string): CandleData[] => {
         const multi = multiAssetCandlesRef.current[symbol];
         if (multi && multi.length >= 30) return multi as CandleData[];
@@ -215,7 +218,6 @@ export function useAIQuantTerminalV3(
         }, ...prev].slice(0, 300));
     }, []);
 
-    // SENTINEL REAL-TIME MONITORING
     useEffect(() => {
         const interval = setInterval(() => {
             const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
@@ -230,7 +232,6 @@ export function useAIQuantTerminalV3(
                 
                 newSentinel[sym] = { features, candidates, ts: now };
 
-                // LOG HIGH-SCORE TRIGGERS
                 candidates.forEach(c => {
                     if (c.score >= SIGNAL_TRIGGER_SCORE) {
                         const logKey = `${sym}-${c.contract}`;
@@ -248,43 +249,11 @@ export function useAIQuantTerminalV3(
         return () => clearInterval(interval);
     }, [getCandlesFor, addLog, sentinelIntervalSec]);
 
-    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
-        if (typeof window === 'undefined') return;
-        const current = ollamaConfig || { baseUrl: '', model: '', temperature: 0.2, keepAlive: '5m' };
-        const next = { ...current, ...updates };
-        localStorage.setItem('ollamaConfig', JSON.stringify(next));
-        setOllamaConfigState(next);
-        toast({ title: "Configuração Salva", description: "Reiniciando workspace para aplicar mudanças." });
-        window.location.reload();
-    }, [ollamaConfig, toast]);
-
-    const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) {
-            toast({ title: "Gateway não configurado", description: "Informe a URL do Ollama nas Configurações.", variant: "destructive" });
-            return;
-        }
-        try {
-            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
-
-            const response = await fetch(url, { headers });
-            if (response.ok) {
-                const data = await response.json();
-                setAvailableModels(data.models || []);
-                toast({ title: "Hardware Sincronizado", description: "Lista de modelos atualizada." });
-            }
-        } catch (e: any) {
-            addLog(`Erro ao buscar modelos: ${e.message}`, 'error');
-        }
-    }, [ollamaConfig, addLog, toast]);
-
-    // ANÁLISE POR SÍMBOLO (ESTÁVEL)
-    const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false) => {
-        if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado.`, 'warning', undefined, symbol); return; }
-        if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig ausente.`, 'warning', undefined, symbol); return; }
-        if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning', undefined, symbol); return; }
-        if (!user) { addLog(`[SKIP] ${symbol}: usuário nulo.`, 'warning', undefined, symbol); return; }
+    const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false): Promise<CouncilDecision | undefined> => {
+        if (!isConnected) { addLog(`[SKIP] ${symbol}: WebSocket desconectado.`, 'warning', undefined, symbol); return undefined; }
+        if (!ollamaConfig) { addLog(`[SKIP] ${symbol}: ollamaConfig ausente.`, 'warning', undefined, symbol); return undefined; }
+        if (candles.length < 30) { addLog(`[SKIP] ${symbol}: candles insuficientes (${candles.length}/30).`, 'warning', undefined, symbol); return undefined; }
+        if (!user) { addLog(`[SKIP] ${symbol}: usuário nulo.`, 'warning', undefined, symbol); return undefined; }
         
         const isFocused = symbol === activeSymbolRef.current;
         
@@ -294,7 +263,7 @@ export function useAIQuantTerminalV3(
             
             if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
                 addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. n=${candles.length}`, 'warning', undefined, symbol);
-                return;
+                return undefined;
             }
 
             const feats = computeSignalFeatures(candles as any);
@@ -332,6 +301,9 @@ export function useAIQuantTerminalV3(
             addLog(`[CONSELHO] ${symbol}: ${action} ${conf}% | ${contract} | via=${via} | votos[${votes}] | ${lat}ms`, 'decision', 
                 [`ENTRADA: ${JSON.stringify(snapshot)}`, ...(decision.trace ?? []), decision.holdReason ? `MOTIVO HOLD: ${decision.holdReason}` : ''].filter(Boolean), symbol);
 
+            if (!decisionHistoryRef.current[symbol]) decisionHistoryRef.current[symbol] = [];
+            decisionHistoryRef.current[symbol] = [{ ts: Date.now(), action, conf, contract, votes, via, hold: decision.holdReason || '' }, ...decisionHistoryRef.current[symbol]].slice(0, 10);
+
             if (isFocused) {
                 if (decision.finalAction === 'HOLD' && decision.holdReason) {
                     addLog(`[REJECTED] ${symbol}: ${decision.holdReason}`, 'warning', undefined, symbol);
@@ -355,7 +327,6 @@ export function useAIQuantTerminalV3(
                 }
             }));
 
-            // ATUALIZAR ESTATÍSTICAS
             setCouncilStats(prev => ({
                 total: prev.total + 1,
                 call: prev.call + (action === 'CALL' ? 1 : 0),
@@ -394,22 +365,22 @@ export function useAIQuantTerminalV3(
                         const res = await executeTrade(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
                         
                         if (res.success) {
-                            addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado (Dur: ${finalDuration}s) contractId=${res.contractId}`, 'execution', undefined, symbol);
+                            addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado contractId=${res.contractId}`, 'execution', undefined, symbol);
                         } else {
                             addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
                         }
                     }
                 }
             }
+            return decision;
         } catch (error: any) {
             if (isFocused) addLog(`Erro em ${symbol}: ${error.message}`, 'error', undefined, symbol);
             throw error;
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
 
-    // FILA SEQUENCIAL E SCHEDULING (Hardware Safe)
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current || !isConnected || !ollamaConfig) return;
+        if (executionLockRef.current || chatBusyRef.current || !isConnected || !ollamaConfig) return;
         executionLockRef.current = true;
 
         const startTime = Date.now();
@@ -425,7 +396,6 @@ export function useAIQuantTerminalV3(
                 return;
             }
 
-            // Prioriza o ativo em foco
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
@@ -439,82 +409,118 @@ export function useAIQuantTerminalV3(
             }
         } finally {
             executionLockRef.current = false;
-            addLog(`Ciclo de Radar finalizado em ${Math.round(performance.now() - startTime)}ms.`, 'radar');
         }
-    }, [isConnected, ollamaConfig, runAnalysisForSymbol, getCandlesFor, addLog]);
+    }, [isConnected, ollamaConfig, runAnalysisForSymbol, getCandlesFor]);
 
     useEffect(() => {
         const scanner = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(scanner);
     }, [runMultiAssetCycle]);
 
-    const resetSession = async () => {
-        setIsAutoMode(false);
-        clearActiveContracts();
-        setRadarStatus({});
-        setSentinel({});
-        setReasoningLog([]);
-        setChatMessages([]);
-        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
-        scheduleRef.current = {};
-        setLastDecision(null);
-        if (user) await TradeMemoryManager.clearBuffer(user.uid);
-        setMemoryBuffer({ wins: [], losses: [] });
-        toast({ title: "Sessão Resetada" });
-    };
+    const buildChatContext = useCallback(() => {
+        const stats = councilStats;
+        const session = `[SESSÃO] Modo: ${isShadowMode ? 'SHADOW' : 'REAL'} | Piloto: ${isAutoMode ? 'ON' : 'OFF'} | Conta: ${accountType} | Saldo: $${accountBalance.balance} | P&L: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) || '--'}% | Pos: ${operationsLogRef.current.filter(o => o.status === 'pending').length}/${maxConcurrentTrades} | Stake: $${stakeValue} | Ações: ${JSON.stringify(allowedActions)} | Contratos: ${JSON.stringify(allowedContracts)} | Intervals: ${analysisInterval}s/${backgroundIntervalSec}s | Global: ${stats.total} evals, ${stats.call}C/${stats.put}P, ${stats.vetoes} vetos, ${stats.fallbacks} fallbacks, ${(stats.avgLatencyMs/1000).toFixed(1)}s/lat.`;
+
+        const marketRows = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).map(sym => {
+            const status = radarStatus[sym];
+            const candles = getCandlesFor(sym!);
+            const sent = sentinel[sym!];
+            if (!candles || candles.length === 0) return `- ${sym}: sem dados.`;
+
+            const last = candles[candles.length - 1];
+            const p = last.close ?? last.price;
+            const hist = decisionHistoryRef.current[sym!]?.[0];
+            const s = hist ? Math.round((Date.now() - hist.ts)/1000) : '--';
+            
+            const sentStr = sent?.candidates.map(c => `${c.contract[0]}:${c.score}${c.direction === 'CALL' ? '↑' : (c.direction === 'PUT' ? '↓' : '')}`).join(' ') || '--';
+
+            return `- ${sym}: $${p.toFixed(4)} | RSI:${status?.indicators?.rsi.toFixed(1) || '--'} | %B:${status?.indicators?.bbw.toFixed(3) || '--'} | ADX:${status?.indicators?.adx.toFixed(0) || '--'} | Sentinela:[${sentStr}] | Conselho(${s}s): ${hist?.action || 'HOLD'} ${hist?.conf || 0}% ${hist?.contract || ''} [${hist?.votes || ''}] ${hist?.hold?.slice(0, 80) || ''} | Pos: ${operationsLogRef.current.filter(o => o.asset === sym && o.status === 'pending').length}`;
+        }).join('\n');
+
+        const focusOpinions = activeSymbolRef.current && radarStatus[activeSymbolRef.current] 
+            ? radarStatus[activeSymbolRef.current].opinions.map(o => `  - ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} - ${o.reasoning.slice(0, 140)}`).join('\n')
+            : "Nenhuma opinião disponível.";
+
+        const recentLogs = reasoningLog
+            .filter(l => ['decision', 'execution', 'error'].includes(l.type))
+            .slice(0, 12)
+            .map(l => `[${l.time}] ${l.message}`)
+            .join('\n');
+
+        const memory = TradeMemoryManager.formatBufferForPrompt(memoryBuffer).slice(0, 600);
+
+        return `\n${session}\n\n[MERCADO]\n${marketRows}\n\n[ÚLTIMAS OPINIÕES DO FOCO]\n${focusOpinions}\n\n[EVENTOS RECENTES]\n${recentLogs}\n\n[MEMÓRIA]\n${memory}`;
+    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, sessionStats, maxConcurrentTrades, stakeValue, allowedActions, allowedContracts, analysisInterval, backgroundIntervalSec, councilStats, getCandlesFor, radarStatus, sentinel, reasoningLog, memoryBuffer]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!ollamaConfig || !content.trim() || !user) return;
-        const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
+        
+        const time = new Date().toLocaleTimeString();
+        const userMsg: ChatMessage = { role: 'user', content, time };
         setChatMessages(prev => [...prev, userMsg]);
-        setIsChatLoading(true);
 
-        try {
-            while (executionLockRef.current) { await new Promise(r => setTimeout(r, 500)); }
-            executionLockRef.current = true;
-
-            const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
-            const radarDetails = watchedSymbolsRef.current.map(sym => {
-                const status = radarStatus[sym];
-                const candles = getCandlesFor(sym);
-                let price = "Sincronizando...";
-                let rsiValue = "--";
-                if (candles && candles.length > 0) {
-                    const lastCandle = candles[candles.length - 1];
-                    const priceValue = lastCandle.close ?? lastCandle.price;
-                    price = priceValue ? priceValue.toFixed(4) : "N/D";
-                    if (status?.indicators?.rsi) rsiValue = status.indicators.rsi.toFixed(1);
-                }
-                return `- Ativo: ${sym} | Preço: ${price} | RSI: ${rsiValue} | Status: ${status?.lastAction || 'SCAN'} | Conf: ${status?.confidence || 0}% | Contrato: ${status?.recommendedContract || 'N/A'}`;
-            }).join('\n');
-
-            const systemPrompt = `VOCÊ É O CIO DO LABORATÓRIO QUANT V3.0 (CHAIRMAN).
-            PNL DA SESSÃO ATIVA: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) ?? '--'}%
-            DADOS DE MERCADO EM TEMPO REAL:
-            ${radarDetails}
-            ${memoryContext}`;
-
-            const response = await getOllamaResponse(ollamaConfig, content, [
-                { role: 'system', content: systemPrompt }, 
-                ...chatMessages.map(m => ({ role: m.role, content: m.content }))
-            ]);
+        // COMANDOS DETERMINÍSTICOS
+        const cmdMatch = content.match(/^\s*(por favor[, ]*)?(compre|comprar|venda|vender|execute|executar|opere|operar|abra|abrir|entre|entrar)\b\s*(.*)/i);
+        if (cmdMatch) {
+            const rest = cmdMatch[3].toUpperCase();
+            const symbol = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).find(s => s && rest.includes(s));
             
-            if (response.success) {
-                const assistantContent = response.success;
-                setChatMessages(prev => [...prev, { role: 'assistant', content: assistantContent, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
-                const executionTag = assistantContent.match(/\[SOLICITAR_EXECUCAO:(.*?)\]/);
-                if (executionTag && executionTag[1]) {
-                    const requestedSymbol = executionTag[1].trim();
-                    const targetCandles = getCandlesFor(requestedSymbol);
-                    if (targetCandles && targetCandles.length >= 30) {
-                        await runAnalysisForSymbol(requestedSymbol, targetCandles as CandleData[], true);
+            if (symbol) {
+                if (isShadowMode) {
+                    const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
+                    setChatMessages(prev => [...prev, { 
+                        role: 'assistant', 
+                        agentName: 'SISTEMA', 
+                        time: new Date().toLocaleTimeString(),
+                        content: `[SHADOW] Auditoria para ${symbol}: ${decision?.finalAction} ${decision?.consensusConfidence}% (${decision?.recommendedContract}) votos:[${decision?.debugVotes}] ${decision?.holdReason ? 'hold='+decision.holdReason : ''}`
+                    }]);
+                    return;
+                } else {
+                    if (content.match(/\bconfirmo\b/i) && pendingChatOrderRef.current?.symbol === symbol && (Date.now() - pendingChatOrderRef.current.ts) < 60000) {
+                        const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
+                        setChatMessages(prev => [...prev, { 
+                            role: 'assistant', 
+                            agentName: 'SISTEMA', 
+                            time: new Date().toLocaleTimeString(),
+                            content: `[REAL] Execução para ${symbol} solicitada via chat: ${decision?.finalAction} ${decision?.consensusConfidence}% via=${decision?.executedVia}.`
+                        }]);
+                        pendingChatOrderRef.current = null;
+                        return;
+                    } else {
+                        pendingChatOrderRef.current = { symbol, ts: Date.now() };
+                        setChatMessages(prev => [...prev, { 
+                            role: 'assistant', 
+                            agentName: 'SISTEMA', 
+                            time: new Date().toLocaleTimeString(),
+                            content: `⚠️ Ordem REAL para ${symbol} detectada. Digite "CONFIRMO" em até 60s para autorizar a execução. O Conselho decidirá a direção final.`
+                        }]);
+                        return;
                     }
                 }
             }
+        }
+
+        // DIÁLOGO LLM
+        setIsChatLoading(true);
+        chatBusyRef.current = true;
+        try {
+            const context = buildChatContext();
+            const systemPrompt = `Você é ${(AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN}. Responda em português do Brasil, em primeira pessoa.
+            ${context}
+            REGRAS: use SOMENTE os dados acima; se faltar dado, diga que não tem. Ao explicar uma decisão, cite os votos, os números e o motivo do HOLD. Não preveja preços: descreva cenários condicionais (se X, então Y) marcados como hipótese. Os ativos são índices sintéticos de natureza aleatória: nunca afirme certeza de lucro; sinais são hipóteses a validar no Shadow. Até 150 palavras, salvo pedido de relatório.`;
+
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+            ]);
+            
+            if (response.success) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+            }
         } catch (error: any) {
-            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro de Hardware: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
+            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
         } finally {
-            executionLockRef.current = false;
+            chatBusyRef.current = false;
             setIsChatLoading(false);
         }
     };
@@ -527,6 +533,8 @@ export function useAIQuantTerminalV3(
         return () => clearInterval(timer);
     }, []);
 
+    const resetSessionActual = useCallback(() => resetSession(), [resetSession]);
+
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
@@ -537,8 +545,8 @@ export function useAIQuantTerminalV3(
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, sentinel,
-        watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
-        executeManualDecision: () => lastDecision && runAnalysisForSymbol(activeSymbolRef.current!, getCandlesFor(activeSymbolRef.current!), true),
+        watchedSymbols, setWatchedSymbols, resetSession: resetSessionActual, chatMessages, isChatLoading, sendMessage,
+        executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         setAccountType, accountType
     };
