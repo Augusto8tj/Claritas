@@ -63,9 +63,8 @@ function TerminalV3Content() {
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
-    const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null); // Alterado para string
+    const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
     
-    // Referência para auto-scroll
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const scrollToBottom = useCallback(() => {
@@ -88,13 +87,24 @@ function TerminalV3Content() {
     };
 
     const copyLogs = () => {
+        if (filteredLogs.length === 0) {
+            toast({ title: "Nada para copiar", description: "O log de raciocínio está vazio no momento.", variant: "destructive" });
+            return;
+        }
+
         const text = filteredLogs.map(l => {
             let s = `[${l.time}] ${l.message}`;
-            if (l.details) s += `\n  ` + l.details.join('\n  ');
+            if (l.details && l.details.length > 0) s += `\n  ` + l.details.join('\n  ');
             return s;
         }).join('\n\n');
-        navigator.clipboard.writeText(text);
-        toast({ title: "Log copiado" });
+
+        navigator.clipboard.writeText(text).then(() => {
+            console.log(`[Quant V3] ${filteredLogs.length} entradas de log copiadas.`);
+            toast({ title: "Log copiado", description: `${filteredLogs.length} entradas enviadas para a área de transferência.` });
+        }).catch(err => {
+            console.error("Falha ao copiar logs:", err);
+            toast({ title: "Erro ao copiar", description: "Não foi possível acessar a área de transferência.", variant: "destructive" });
+        });
     };
 
     const filteredLogs = useMemo(() => {
@@ -106,7 +116,6 @@ function TerminalV3Content() {
     const scanEstimateSec = Math.round(watchedSymbols.length * councilStats.avgLatencyMs / 1000);
     const isScanOverloaded = backgroundIntervalSec < scanEstimateSec;
 
-    // Renderizador de mensagens com suporte a Deep Think (think tags)
     const renderMessageContent = (content: string) => {
         const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
         const match = content.match(thinkRegex);
@@ -609,11 +618,10 @@ function TerminalV3Content() {
                                         </div>
                                     ))}
                                     {isChatLoading && (
-                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse font-mono p-3">
+                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse p-3 font-mono">
                                             <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
                                         </div>
                                     )}
-                                    {/* Âncora para auto-scroll */}
                                     <div ref={messagesEndRef} />
                                 </div>
                             </ScrollArea>
@@ -701,8 +709,9 @@ function TerminalV3Content() {
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
-                                <Copy className="h-3 w-3" />
+                            <Button variant="ghost" size="sm" className="h-6 px-2 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
+                                <Copy className="h-3 w-3 mr-2" />
+                                este botão está funcionando?
                             </Button>
                         </CardHeader>
                         <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
