@@ -1,4 +1,3 @@
-
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -47,7 +46,7 @@ function TerminalV3Content() {
     const { 
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, 
         timeToNextAnalysis, analysisInterval, setAnalysisInterval,
-        radarStatus, watchedSymbols, setWatchedSymbols, resetSession,
+        radarStatus, sentinel, watchedSymbols, setWatchedSymbols, resetSession,
         allowedActions, setAllowedActions,
         allowedContracts, setAllowedContracts, 
         maxConcurrentTrades, setMaxConcurrentTrades,
@@ -168,6 +167,7 @@ function TerminalV3Content() {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         {watchedSymbols.map((symbol) => {
                             const status = radarStatus[symbol];
+                            const sent = sentinel[symbol];
                             return (
                                 <div 
                                     key={symbol} 
@@ -192,6 +192,27 @@ function TerminalV3Content() {
                                     <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
                                         <span className="truncate">{status?.recommendedContract || 'Analisando...'}</span>
                                         <span className="font-mono">{status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
+                                    </div>
+                                    
+                                    {/* SENTINEL SCORE CHIPS */}
+                                    <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
+                                        {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
+                                            const cand = sent?.candidates.find(c => c.contract === cat);
+                                            const score = cand?.score ?? '--';
+                                            const isHigh = typeof score === 'number' && score >= 55;
+                                            return (
+                                                <Badge 
+                                                    key={cat} 
+                                                    variant="outline" 
+                                                    className={cn(
+                                                        "text-[9px] px-1 h-3.5 border-none", 
+                                                        isHigh ? "bg-green-500/20 text-green-600" : "bg-muted/30 text-muted-foreground opacity-50"
+                                                    )}
+                                                >
+                                                    {cat[0]} {score}
+                                                </Badge>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -296,7 +317,7 @@ function TerminalV3Content() {
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
-                                                <Label htmlFor={`action-${action}`} className="text-[10px] font-medium leading-none cursor-pointer">
+                                                <Label htmlFor={`action-${action}`} className="text-sm font-medium leading-none cursor-pointer">
                                                     {action}
                                                 </Label>
                                             </div>
@@ -319,7 +340,7 @@ function TerminalV3Content() {
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
-                                                <Label htmlFor={`contract-${contract}`} className="text-[10px] font-medium leading-none cursor-pointer">
+                                                <Label htmlFor={`contract-${contract}`} className="text-sm font-medium leading-none cursor-pointer">
                                                     {contract}
                                                 </Label>
                                             </div>
