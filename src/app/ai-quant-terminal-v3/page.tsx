@@ -1,4 +1,3 @@
-
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -709,9 +708,8 @@ function TerminalV3Content() {
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>
-                            <Button variant="ghost" size="sm" className="h-6 px-2 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
-                                <Copy className="h-3 w-3 mr-2" />
-                                este botão está funcionando?
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
+                                <Copy className="h-3.5 w-3.5" />
                             </Button>
                         </CardHeader>
                         <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
