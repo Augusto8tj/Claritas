@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
@@ -57,7 +56,7 @@ export interface ChatMessage {
 }
 
 export interface LogEntry {
-    ts: string; // Alterado para string para garantir unicidade absoluta
+    ts: string; 
     time: string;
     message: string;
     type: 'info' | 'decision' | 'execution' | 'error' | 'warning' | 'radar' | 'sentinel';
@@ -111,6 +110,7 @@ export function useAIQuantTerminalV3(
     // SENTINEL MONITOR STATE
     const [sentinel, setSentinel] = useState<Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number }>>({});
     const lastTriggerLogRef = useRef<Record<string, number>>({});
+    const sentinelAboveRef = useRef<Record<string, number>>({});
 
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({
         avgTokensPerSec: 0,
@@ -136,6 +136,10 @@ export function useAIQuantTerminalV3(
     const decisionHistoryRef = useRef<Record<string, Array<{ts: number, action: string, conf: number, contract: string, votes: string, via: string, hold: string}>>>({});
     const chatBusyRef = useRef(false);
     const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
+    const lastSkipLogRef = useRef<Record<string, number>>({});
+
+    const executeTradeRef = useRef(executeTrade);
+    useEffect(() => { executeTradeRef.current = executeTrade; }, [executeTrade]);
 
     useEffect(() => { chartDataRef.current = chartData; }, [chartData]);
     useEffect(() => { multiAssetCandlesRef.current = multiAssetCandles; }, [multiAssetCandles]);
@@ -175,14 +179,14 @@ export function useAIQuantTerminalV3(
 
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && op.initiator === 'Conselho_V3' && op.asset === activeSymbol
+            op.status !== 'pending' && op.initiator === 'Conselho_V3'
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : null;
         const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
-    }, [operationsLog, activeSymbol]);
+    }, [operationsLog]);
 
     useEffect(() => {
         const settings = {
@@ -210,7 +214,7 @@ export function useAIQuantTerminalV3(
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
-            ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, // ID ÚNICO PARA EVITAR ERRO DE CHAVE DUPLICADA
+            ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
             time: new Date().toLocaleTimeString(),
             message,
             type,
@@ -234,12 +238,16 @@ export function useAIQuantTerminalV3(
                 newSentinel[sym] = { features, candidates, ts: now };
 
                 candidates.forEach(c => {
+                    const logKey = `${sym}-${c.contract}`;
                     if (c.score >= SIGNAL_TRIGGER_SCORE) {
-                        const logKey = `${sym}-${c.contract}`;
-                        if (now - (lastTriggerLogRef.current[logKey] || 0) > 30000) {
+                        const lastLog = sentinelAboveRef.current[logKey] || 0;
+                        // Logar se for primeira vez ou a cada 5 min (300000ms)
+                        if (lastLog === 0 || now - lastLog > 300000) {
                             addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
-                            lastTriggerLogRef.current[logKey] = now;
+                            sentinelAboveRef.current[logKey] = now;
                         }
+                    } else {
+                        delete sentinelAboveRef.current[logKey];
                     }
                 });
             });
@@ -363,7 +371,7 @@ export function useAIQuantTerminalV3(
                         const minS = durationLimitsRef.current?.s?.min ?? 15;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? Math.max(minS, optionsDuration) : 15;
 
-                        const res = await executeTrade(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
+                        const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
                         
                         if (res.success) {
                             addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado contractId=${res.contractId}`, 'execution', undefined, symbol);
@@ -378,10 +386,20 @@ export function useAIQuantTerminalV3(
             if (isFocused) addLog(`Erro em ${symbol}: ${error.message}`, 'error', undefined, symbol);
             throw error;
         }
-    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, executeTrade, addLog, stakeValue]);
+    }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, addLog, stakeValue]);
 
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current || chatBusyRef.current || !isConnected || !ollamaConfig) return;
+        if (executionLockRef.current || chatBusyRef.current || !isConnected || !ollamaConfig) {
+            const now = Date.now();
+            const reason = chatBusyRef.current ? 'chat em andamento' : !isConnected ? 'WebSocket desconectado' : !ollamaConfig ? 'ollamaConfig ausente' : null;
+            if (reason) {
+                if (now - (lastSkipLogRef.current[reason] || 0) > 30000) {
+                    addLog(`[CICLO-PULADO] ${reason}`, 'warning');
+                    lastSkipLogRef.current[reason] = now;
+                }
+            }
+            return;
+        }
         executionLockRef.current = true;
 
         const startTime = Date.now();
@@ -397,6 +415,7 @@ export function useAIQuantTerminalV3(
                 return;
             }
 
+            addLog(`[CICLO] due=[${dueSymbols.join(', ')}]`, 'info');
             dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
             for (const symbol of dueSymbols) {
@@ -411,47 +430,30 @@ export function useAIQuantTerminalV3(
         } finally {
             executionLockRef.current = false;
         }
-    }, [isConnected, ollamaConfig, runAnalysisForSymbol, getCandlesFor]);
+    }, [isConnected, ollamaConfig, runAnalysisForSymbol, getCandlesFor, addLog]);
+
+    const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
+    useEffect(() => { runMultiAssetCycleRef.current = runMultiAssetCycle; }, [runMultiAssetCycle]);
 
     useEffect(() => {
-        const scanner = setInterval(runMultiAssetCycle, 5000);
-        return () => clearInterval(scanner);
-    }, [runMultiAssetCycle]);
+        const first = setTimeout(() => { runMultiAssetCycleRef.current(); }, 1500);
+        const id = setInterval(() => { runMultiAssetCycleRef.current(); }, 5000);
+        return () => { clearTimeout(first); clearInterval(id); };
+    }, []);
 
-    const buildChatContext = useCallback(() => {
-        const stats = councilStats;
-        const session = `[SESSÃO] Modo: ${isShadowMode ? 'SHADOW' : 'REAL'} | Piloto: ${isAutoMode ? 'ON' : 'OFF'} | Conta: ${accountType} | Saldo: $${accountBalance.balance} | P&L: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) || '--'}% | Pos: ${operationsLogRef.current.filter(o => o.status === 'pending').length}/${maxConcurrentTrades} | Stake: $${stakeValue} | Ações: ${JSON.stringify(allowedActions)} | Contratos: ${JSON.stringify(allowedContracts)} | Intervals: ${analysisInterval}s/${backgroundIntervalSec}s | Global: ${stats.total} evals, ${stats.call}C/${stats.put}P, ${stats.vetoes} vetos, ${stats.fallbacks} fallbacks, ${(stats.avgLatencyMs/1000).toFixed(1)}s/lat.`;
-
-        const marketRows = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).map(sym => {
-            const status = radarStatus[sym!];
-            const candles = getCandlesFor(sym!);
-            const sent = sentinel[sym!];
-            if (!candles || candles.length === 0) return `- ${sym}: sem dados.`;
-
-            const last = candles[candles.length - 1];
-            const p = last.close ?? last.price;
-            const hist = decisionHistoryRef.current[sym!]?.[0];
-            const s = hist ? Math.round((Date.now() - hist.ts)/1000) : '--';
-            
-            const sentStr = sent?.candidates.map(c => `${c.contract[0]}:${c.score}${c.direction === 'CALL' ? '↑' : (c.direction === 'PUT' ? '↓' : '')}`).join(' ') || '--';
-
-            return `- ${sym}: $${p.toFixed(4)} | RSI:${status?.indicators?.rsi.toFixed(1) || '--'} | %B:${status?.indicators?.bbw.toFixed(3) || '--'} | ADX:${status?.indicators?.adx.toFixed(0) || '--'} | Sentinela:[${sentStr}] | Conselho(${s}s): ${hist?.action || 'HOLD'} ${hist?.conf || 0}% ${hist?.contract || ''} [${hist?.votes || ''}] ${hist?.hold?.slice(0, 80) || ''} | Pos: ${operationsLogRef.current.filter(o => o.asset === sym && o.status === 'pending').length}`;
-        }).join('\n');
-
-        const focusOpinions = activeSymbolRef.current && radarStatus[activeSymbolRef.current] 
-            ? radarStatus[activeSymbolRef.current].opinions.map(o => `  - ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} - ${o.reasoning.slice(0, 140)}`).join('\n')
-            : "Nenhuma opinião disponível.";
-
-        const recentLogs = reasoningLog
-            .filter(l => ['decision', 'execution', 'error'].includes(l.type))
-            .slice(0, 12)
-            .map(l => `[${l.time}] ${l.message}`)
-            .join('\n');
-
-        const memory = TradeMemoryManager.formatBufferForPrompt(memoryBuffer).slice(0, 600);
-
-        return `\n${session}\n\n[MERCADO]\n${marketRows}\n\n[ÚLTIMAS OPINIÕES DO FOCO]\n${focusOpinions}\n\n[EVENTOS RECENTES]\n${recentLogs}\n\n[MEMÓRIA]\n${memory}`;
-    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, sessionStats, maxConcurrentTrades, stakeValue, allowedActions, allowedContracts, analysisInterval, backgroundIntervalSec, councilStats, getCandlesFor, radarStatus, sentinel, reasoningLog, memoryBuffer]);
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        setMemoryBuffer({ wins: [], losses: [] });
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
+    }, [clearActiveContracts, toast]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!ollamaConfig || !content.trim() || !user) return;
@@ -526,19 +528,40 @@ export function useAIQuantTerminalV3(
         }
     };
 
-    const resetSession = useCallback(() => {
-        setIsAutoMode(false);
-        setIsShadowMode(true);
-        clearActiveContracts();
-        setRadarStatus({});
-        setReasoningLog([]);
-        setChatMessages([]);
-        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
-        scheduleRef.current = {};
-        setLastDecision(null);
-        setMemoryBuffer({ wins: [], losses: [] });
-        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
-    }, [clearActiveContracts, toast]);
+    const buildChatContext = useCallback(() => {
+        const stats = councilStats;
+        const session = `[SESSÃO] Modo: ${isShadowMode ? 'SHADOW' : 'REAL'} | Piloto: ${isAutoMode ? 'ON' : 'OFF'} | Conta: ${accountType} | Saldo: $${accountBalance.balance} | P&L: $${sessionStats.pnl.toFixed(2)} | WR: ${sessionStats.winRate?.toFixed(1) || '--'}% | Pos: ${operationsLogRef.current.filter(o => o.status === 'pending').length}/${maxConcurrentTrades} | Stake: $${stakeValue} | Ações: ${JSON.stringify(allowedActions)} | Contratos: ${JSON.stringify(allowedContracts)} | Intervals: ${analysisInterval}s/${backgroundIntervalSec}s | Global: ${stats.total} evals, ${stats.call}C/${stats.put}P, ${stats.vetoes} vetos, ${stats.fallbacks} fallbacks, ${(stats.avgLatencyMs/1000).toFixed(1)}s/lat.`;
+
+        const marketRows = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean))).map(sym => {
+            const status = radarStatus[sym!];
+            const candles = getCandlesFor(sym!);
+            const sent = sentinel[sym!];
+            if (!candles || candles.length === 0) return `- ${sym}: sem dados.`;
+
+            const last = candles[candles.length - 1];
+            const p = last.close ?? last.price;
+            const hist = decisionHistoryRef.current[sym!]?.[0];
+            const s = hist ? Math.round((Date.now() - hist.ts)/1000) : '--';
+            
+            const sentStr = sent?.candidates.map(c => `${c.contract[0]}:${c.score}${c.direction === 'CALL' ? '↑' : (c.direction === 'PUT' ? '↓' : '')}`).join(' ') || '--';
+
+            return `- ${sym}: $${p.toFixed(4)} | RSI:${status?.indicators?.rsi.toFixed(1) || '--'} | %B:${status?.indicators?.bbw.toFixed(3) || '--'} | ADX:${status?.indicators?.adx.toFixed(0) || '--'} | Sentinela:[${sentStr}] | Conselho(${s}s): ${hist?.action || 'HOLD'} ${hist?.conf || 0}% ${hist?.contract || ''} [${hist?.votes || ''}] ${hist?.hold?.slice(0, 80) || ''} | posições abertas no ativo: ${operationsLogRef.current.filter(o => o.asset === sym && o.status === 'pending').length}`;
+        }).join('\n');
+
+        const focusOpinions = activeSymbolRef.current && radarStatus[activeSymbolRef.current] 
+            ? radarStatus[activeSymbolRef.current].opinions.map(o => `  - ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} - ${o.reasoning.slice(0, 140)}`).join('\n')
+            : "Nenhuma opinião disponível.";
+
+        const recentLogs = reasoningLog
+            .filter(l => ['decision', 'execution', 'error'].includes(l.type))
+            .slice(0, 12)
+            .map(l => `[${l.time}] ${l.message}`)
+            .join('\n');
+
+        const memory = TradeMemoryManager.formatBufferForPrompt(memoryBuffer).slice(0, 600);
+
+        return `\n${session}\n\n[MERCADO]\n${marketRows}\n\n[ÚLTIMAS OPINIÕES DO FOCO]\n${focusOpinions}\n\n[EVENTOS RECENTES]\n${recentLogs}\n\n[MEMÓRIA]\n${memory}`;
+    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, sessionStats, maxConcurrentTrades, stakeValue, allowedActions, allowedContracts, analysisInterval, backgroundIntervalSec, councilStats, getCandlesFor, radarStatus, sentinel, reasoningLog, memoryBuffer]);
 
     const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
         if (!ollamaConfig) return;
@@ -551,7 +574,11 @@ export function useAIQuantTerminalV3(
         if (!ollamaConfig) return;
         try {
             const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const res = await fetch(url, { headers: { 'Authorization': `Bearer ${ollamaConfig.apiKey}`, 'ngrok-skip-browser-warning': 'true' } });
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) {
+                headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            }
+            const res = await fetch(url, { headers });
             if (res.ok) {
                 const data = await res.json();
                 setAvailableModels(data.models || []);
