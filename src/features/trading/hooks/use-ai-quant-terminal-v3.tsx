@@ -107,11 +107,8 @@ export function useAIQuantTerminalV3(
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     
-    // SENTINEL MONITOR STATE
-    const [sentinel, setSentinel] = useState<Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number }>>({});
-    const lastTriggerLogRef = useRef<Record<string, number>>({});
-    const sentinelAboveRef = useRef<Record<string, number>>({});
-
+    // LOGS E TELEMETRIA
+    const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({
         avgTokensPerSec: 0,
         totalTokens: 0,
@@ -120,7 +117,14 @@ export function useAIQuantTerminalV3(
         inferenceHealth: 100
     });
     
-    // REFS PARA ESTABILIDADE E RASTREABILIDADE
+    // MEMÓRIA E RADAR
+    const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
+    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
+    const [sentinel, setSentinel] = useState<Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number }>>({});
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+    const [isChatLoading, setIsChatLoading] = useState(false);
+
+    // REFS PARA ESTABILIDADE
     const chartDataRef = useRef(chartData);
     const multiAssetCandlesRef = useRef(multiAssetCandles);
     const watchedSymbolsRef = useRef(watchedSymbols);
@@ -137,6 +141,8 @@ export function useAIQuantTerminalV3(
     const chatBusyRef = useRef(false);
     const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
     const lastSkipLogRef = useRef<Record<string, number>>({});
+    const lastTriggerLogRef = useRef<Record<string, number>>({});
+    const sentinelAboveRef = useRef<Record<string, number>>({});
 
     const executeTradeRef = useRef(executeTrade);
     useEffect(() => { executeTradeRef.current = executeTrade; }, [executeTrade]);
@@ -153,7 +159,9 @@ export function useAIQuantTerminalV3(
     useEffect(() => { durationLimitsRef.current = durationLimits; }, [durationLimits]);
 
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
+    const [availableModels, setAvailableModels] = useState<any[]>([]);
     
+    // PERSISTÊNCIA DE CONFIGURAÇÕES
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
@@ -177,6 +185,7 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
+    // MÉTRICAS DE PERFORMANCE
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho_V3'
@@ -197,14 +206,6 @@ export function useAIQuantTerminalV3(
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     }, [analysisInterval, backgroundIntervalSec, sentinelIntervalSec, stakeValue, maxConcurrentTrades, dailyBalance, dailyTarget, allowedActions, allowedContracts]);
 
-    const getCandlesFor = useCallback((symbol: string): CandleData[] => {
-        const multi = multiAssetCandlesRef.current[symbol];
-        if (multi && multi.length >= 30) return multi as CandleData[];
-        if (symbol === activeSymbolRef.current && botCandleDataRef.current.length >= 30)
-            return botCandleDataRef.current;
-        return (multi ?? []) as CandleData[];
-    }, []);
-
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
             ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
@@ -216,6 +217,15 @@ export function useAIQuantTerminalV3(
         }, ...prev].slice(0, 300));
     }, []);
 
+    const getCandlesFor = useCallback((symbol: string): CandleData[] => {
+        const multi = multiAssetCandlesRef.current[symbol];
+        if (multi && multi.length >= 30) return multi as CandleData[];
+        if (symbol === activeSymbolRef.current && botCandleDataRef.current.length >= 30)
+            return botCandleDataRef.current;
+        return (multi ?? []) as CandleData[];
+    }, []);
+
+    // SENTINEL MONITOR (1s)
     useEffect(() => {
         const interval = setInterval(() => {
             const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
@@ -234,6 +244,7 @@ export function useAIQuantTerminalV3(
                     const logKey = `${sym}-${c.contract}`;
                     if (c.score >= SIGNAL_TRIGGER_SCORE) {
                         const lastLog = sentinelAboveRef.current[logKey] || 0;
+                        // Loga apenas na borda ou a cada 5 minutos
                         if (lastLog === 0 || now - lastLog > 300000) {
                             addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
                             sentinelAboveRef.current[logKey] = now;
@@ -262,8 +273,8 @@ export function useAIQuantTerminalV3(
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             
-            if (!indicators || !Number.isFinite(indicators.rsi) || !Number.isFinite(indicators.bbw) || !Number.isFinite(indicators.adx)) {
-                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos. n=${candles.length}`, 'warning', undefined, symbol);
+            if (!indicators || !Number.isFinite(indicators.rsi)) {
+                addLog(`[SKIP-DADOS] ${symbol}: indicadores inválidos.`, 'warning', undefined, symbol);
                 return undefined;
             }
 
@@ -288,9 +299,7 @@ export function useAIQuantTerminalV3(
             };
 
             const assetPermissions: AssetExecutionPermission = {
-                symbol, 
-                enabled: true, 
-                maxStake: stakeValue * 2,
+                symbol, enabled: true, maxStake: stakeValue * 2,
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
@@ -315,11 +324,7 @@ export function useAIQuantTerminalV3(
                     timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= MIN_EXEC_CONFIDENCE,
                     executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
                     holdReason: decision.holdReason, debugVotes: decision.debugVotes,
-                    indicators: {
-                        rsi: snapshot.rsi || 50,
-                        bbw: indicators.bbw || 0,
-                        adx: indicators.adx || 0
-                    }
+                    indicators: { rsi: snapshot.rsi || 50, bbw: indicators.bbw || 0, adx: indicators.adx || 0 }
                 }
             }));
 
@@ -351,18 +356,13 @@ export function useAIQuantTerminalV3(
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
                     } else {
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
-                        const adxValue = indicators.adx || 20;
-                        const optionsDuration = adxValue > 40 ? 10 : adxValue > 25 ? 15 : 30;
+                        const optionsDuration = (indicators.adx || 20) > 40 ? 10 : (indicators.adx || 20) > 25 ? 15 : 30;
                         const minS = durationLimitsRef.current?.s?.min ?? 15;
                         const finalDuration = decision.recommendedContract === 'OPTIONS' ? Math.max(minS, optionsDuration) : 15;
 
                         const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
-                        
-                        if (res.success) {
-                            addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado contractId=${res.contractId}`, 'execution', undefined, symbol);
-                        } else {
-                            addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
-                        }
+                        if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
+                        else addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
                     }
                 }
             }
@@ -373,15 +373,14 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, ollamaConfig, isShadowMode, user, isAutoMode, allowedContracts, allowedActions, maxConcurrentTrades, dailyBalance, addLog, stakeValue]);
 
+    // RADAR SCANNER (5s)
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || chatBusyRef.current || !isConnected || !ollamaConfig) {
             const now = Date.now();
             const reason = chatBusyRef.current ? 'chat em andamento' : !isConnected ? 'WebSocket desconectado' : !ollamaConfig ? 'ollamaConfig ausente' : null;
-            if (reason) {
-                if (now - (lastSkipLogRef.current[reason] || 0) > 30000) {
-                    addLog(`[CICLO-PULADO] ${reason}`, 'warning');
-                    lastSkipLogRef.current[reason] = now;
-                }
+            if (reason && now - (lastSkipLogRef.current[reason] || 0) > 30000) {
+                addLog(`[CICLO-PULADO] ${reason}`, 'warning');
+                lastSkipLogRef.current[reason] = now;
             }
             return;
         }
@@ -390,7 +389,6 @@ export function useAIQuantTerminalV3(
         const startTime = Date.now();
         try {
             const currentActive = activeSymbolRef.current;
-            const currentInterval = analysisIntervalRef.current;
             const watchListDue = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
             const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
             const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
@@ -407,7 +405,7 @@ export function useAIQuantTerminalV3(
                 const candles = getCandlesFor(symbol);
                 if (candles && candles.length >= 30) {
                     const isFoco = symbol === currentActive;
-                    const nextInt = Math.max(10, isFoco ? currentInterval : backgroundIntervalRef.current);
+                    const nextInt = Math.max(10, isFoco ? analysisIntervalRef.current : backgroundIntervalRef.current);
                     scheduleRef.current[symbol] = Date.now() + nextInt * 1000;
                     try { await runAnalysisForSymbol(symbol, candles as CandleData[]); } catch (e: any) {}
                 }
@@ -586,7 +584,6 @@ export function useAIQuantTerminalV3(
 
         const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
 
-        // 1. CONFIRM
         if (content.match(CONFIRM)) {
             if (pendingChatOrderRef.current && (Date.now() - pendingChatOrderRef.current.ts) < 60000 && !isShadowMode) {
                 const sym = pendingChatOrderRef.current.symbol;
@@ -606,7 +603,6 @@ export function useAIQuantTerminalV3(
             return;
         }
 
-        // 2. CMD
         const cmdMatch = content.match(CMD);
         if (cmdMatch) {
             const found = symbols.filter(s => s && content.toUpperCase().includes(s.toUpperCase()));
@@ -639,7 +635,6 @@ export function useAIQuantTerminalV3(
             return;
         }
 
-        // 3. WHY / REPORT
         const hasSym = symbols.find(s => s && content.toUpperCase().includes(s.toUpperCase()));
         if (hasSym && content.match(WHY)) {
             setChatMessages(prev => [...prev, { 
@@ -657,13 +652,12 @@ export function useAIQuantTerminalV3(
             return;
         }
 
-        // 4. LLM DIÁLOGO
         setIsChatLoading(true);
         chatBusyRef.current = true;
         try {
             const context = buildShortContextForLLM();
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que falta; sem previsão de preço (cenários "se X, então Y" como hipótese); índices sintéticos aleatórios, nunca afirmar certeza de lucro; até 120 palavras.`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que falta; sem previsão de preço (cenários "se X, então Y" como hipóteses); índices sintéticos aleatórios, nunca afirmar certeza de lucro; até 120 palavras.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -728,17 +722,3 @@ export function useAIQuantTerminalV3(
         setAccountType, accountType
     };
 }
-
-const getDecimalPlaces = (pipSize: number | undefined): number => {
-    if (pipSize === undefined || pipSize === null || pipSize <= 0) {
-        return 2; 
-    }
-    if (Math.floor(pipSize) === pipSize && pipSize >= 1) {
-        return 0;
-    }
-    const pipString = String(pipSize);
-    if (pipString.includes('.')) {
-        return pipString.split('.')[1].length;
-    }
-    return 0;
-};
