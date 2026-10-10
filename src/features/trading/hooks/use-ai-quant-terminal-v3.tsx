@@ -2,14 +2,14 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.9.5 (COUNCIL EDITION)
+ * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION)
  * V3.9.5: Posições Órfãs, Backtest Pagina e Sentinela Histerese.
  * V3.9.6: Detecção de Mercado Fechado / Stale Data.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
-import { useDerivApiV2 as useDerivApi, type AccountType, type ApiHistoricalData } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
@@ -476,7 +476,7 @@ export function useAIQuantTerminalV3(
                             episode.peak = Math.max(episode.peak, c.score);
                         } else if (now - episode.lastAbove > 30000) {
                             const durS = Math.round((now - episode.start) / 1000);
-                            addLog(`[SENTINEL-FIM] ${sym} ${c.contract} duração ${s}s pico ${episode.peak}`, 'sentinel', undefined, sym);
+                            addLog(`[SENTINEL-FIM] ${sym} ${c.contract} duração ${durS}s pico ${episode.peak}`, 'sentinel', undefined, sym);
                             delete sentinelEpisodeRef.current[logKey];
                         }
                     }
@@ -751,7 +751,7 @@ export function useAIQuantTerminalV3(
             if (sentData?.features) {
                 const f = sentData.features;
                 report += `  RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} ATR | seq ${f.streak}\n`;
-                report += `  Sentinela: Opções {getScoreLabel('OPTIONS', sentData.candidates)} | Multiplicadores {getScoreLabel('MULTIPLIERS', sentData.candidates)} | Acumuladores {getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
+                report += `  Sentinela: Opções ${getScoreLabel('OPTIONS', sentData.candidates)} | Multiplicadores ${getScoreLabel('MULTIPLIERS', sentData.candidates)} | Acumuladores ${getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
             }
             
             const hist = lastDecisionBySymbolRef.current[sym];
