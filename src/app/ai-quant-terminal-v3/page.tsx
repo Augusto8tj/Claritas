@@ -120,7 +120,7 @@ function TerminalV3Content() {
         return reasoningLog.filter(l => l.type === logFilter);
     }, [reasoningLog, logFilter]);
 
-    const scanEstimateSec = Math.round(watchedSymbols.length * councilStats.avgLatencyMs / 1000);
+    const scanEstimateSec = Math.round(watchedSymbols.length * (councilStats.avgLatencyMs || 4000) / 1000);
     const isScanOverloaded = backgroundIntervalSec < scanEstimateSec;
 
     const renderMessageContent = (content: string) => {
@@ -708,7 +708,7 @@ function TerminalV3Content() {
                                             msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : 
                                             msg.isError ? "bg-red-50 border-red-200 text-red-700 mr-auto" : "bg-card mr-auto border-border"
                                         )}>
-                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
+                                            <div className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
                                                 {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
                                                 {msg.role === 'assistant' && !msg.isError && (
                                                   <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200 uppercase font-black tracking-tighter">
@@ -716,7 +716,7 @@ function TerminalV3Content() {
                                                   </Badge>
                                                 )}
                                                 {msg.isError && <AlertCircle className="h-3 w-3 text-red-500" />}
-                                            </span>
+                                            </div>
                                             {msg.role === 'assistant' && !msg.isError ? renderMessageContent(msg.content) : <p className="font-mono">{msg.content}</p>}
                                         </div>
                                     ))}
@@ -910,10 +910,10 @@ function TerminalV3Content() {
                                                     if (!reports) return null;
                                                     return (
                                                         <div key={period} className="space-y-2">
-                                                            <p className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
+                                                            <div className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
                                                                 {period === 'recent' ? 'Recente (50%)' : 'Anterior (Confirmação 50%)'}
                                                                 <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s,r)=>s+r.stat.n, 0)}</Badge>
-                                                            </p>
+                                                            </div>
                                                             <div className="border rounded-md overflow-hidden">
                                                                 <Table>
                                                                     <TableHeader className="bg-muted/30">
@@ -1083,3 +1083,4 @@ export default function AIQuantTerminalV3Page() {
         </DerivApiProvider>
     );
 }
+
