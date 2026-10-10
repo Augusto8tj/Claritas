@@ -1,3 +1,4 @@
+
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -17,7 +18,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart, Loader2, Info
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart, Loader2, Info, X
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -61,6 +62,7 @@ function TerminalV3Content() {
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [isBacktestSelectorOpen, setIsBacktestSelectorOpen] = useState(false);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
@@ -69,7 +71,7 @@ function TerminalV3Content() {
     // Backtest Config
     const [payoutInput, setPayoutInput] = useState(85);
     const [targetCount, setTargetCount] = useState(40000);
-    const [extraSymbolsInput, setExtraSymbolsInput] = useState("");
+    const [extraBacktestSymbols, setExtraBacktestSymbols] = useState<string[]>([]);
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -168,8 +170,7 @@ function TerminalV3Content() {
     };
 
     const handleRunBacktest = () => {
-        const extraSymbols = extraSymbolsInput.split(',').map(s => s.trim()).filter(Boolean);
-        runBacktest(payoutInput, targetCount, extraSymbols);
+        runBacktest(payoutInput, targetCount, extraBacktestSymbols);
     };
 
     return (
@@ -815,19 +816,65 @@ function TerminalV3Content() {
                                                 <SelectItem value="5000">5k</SelectItem>
                                                 <SelectItem value="20000">20k</SelectItem>
                                                 <SelectItem value="40000">40k</SelectItem>
-                                                <SelectItem value="50000">50k</SelectItem>
+                                                <SelectItem value="50000">5k</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
                                 </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Ativos extra (vírgula)</Label>
-                                    <Input 
-                                        placeholder="frxEURUSD,cryBTCUSD,frxXAUUSD"
-                                        value={extraSymbolsInput}
-                                        onChange={e => setExtraSymbolsInput(e.target.value)}
-                                        className="h-8 text-xs font-mono"
-                                    />
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Ativos extra para análise</Label>
+                                    <Popover open={isBacktestSelectorOpen} onOpenChange={setIsBacktestSelectorOpen}>
+                                        <PopoverTrigger asChild>
+                                            <Button variant="outline" size="sm" className="w-full h-8 text-[10px] uppercase font-bold border-purple-200 justify-between">
+                                                <span>{extraBacktestSymbols.length > 0 ? `${extraBacktestSymbols.length} ativos selecionados` : 'Selecionar Ativos'}</span>
+                                                <ChevronsUpDown className="ml-2 h-3 w-3 shrink-0 opacity-50" />
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-[300px] p-0" align="end">
+                                            <Command>
+                                                <CommandInput placeholder="Buscar ativos (Forex, Cripto...)" />
+                                                <CommandList>
+                                                    <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
+                                                    {assetGroups.map((group) => (
+                                                        <CommandGroup key={group.label} heading={group.label}>
+                                                            {group.options.map((asset) => (
+                                                                <CommandItem
+                                                                    key={asset.value}
+                                                                    onSelect={() => {
+                                                                        const newSymbols = extraBacktestSymbols.includes(asset.value)
+                                                                            ? extraBacktestSymbols.filter(s => s !== asset.value)
+                                                                            : [...extraBacktestSymbols, asset.value];
+                                                                        setExtraBacktestSymbols(newSymbols);
+                                                                    }}
+                                                                >
+                                                                    <Check className={cn("mr-2 h-4 w-4", extraBacktestSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
+                                                                    {asset.label} ({asset.value})
+                                                                </CommandItem>
+                                                            ))}
+                                                        </CommandGroup>
+                                                    ))}
+                                                </CommandList>
+                                            </Command>
+                                        </PopoverContent>
+                                    </Popover>
+                                    
+                                    {extraBacktestSymbols.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                            {extraBacktestSymbols.map(sym => (
+                                                <Badge key={sym} variant="secondary" className="text-[9px] h-5 pl-1 pr-0.5 flex items-center gap-1">
+                                                    {sym}
+                                                    <Button 
+                                                        variant="ghost" 
+                                                        size="icon" 
+                                                        className="h-4 w-4 rounded-full hover:bg-muted"
+                                                        onClick={() => setExtraBacktestSymbols(prev => prev.filter(s => s !== sym))}
+                                                    >
+                                                        <X className="h-2.5 w-2.5" />
+                                                    </Button>
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <Button 
                                     onClick={handleRunBacktest} 
