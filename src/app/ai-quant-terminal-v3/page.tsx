@@ -17,13 +17,13 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart, Loader2
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart, Loader2, Info
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useAIQuantTerminalV3, type LogEntry } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
+import { useAIQuantTerminalV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -57,7 +57,7 @@ function TerminalV3Content() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
-        updateOllamaConfig, backtest, runBacktest
+        updateOllamaConfig, backtest, runBacktest, staleMinutes
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -239,37 +239,46 @@ function TerminalV3Content() {
                         {watchedSymbols.map((symbol) => {
                             const status = radarStatus[symbol];
                             const sent = sentinel[symbol];
+                            const isStale = sent?.isStale;
                             return (
                                 <div 
                                     key={symbol} 
                                     onClick={() => setActiveSymbol(symbol)}
-                                    title={`${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
+                                    title={isStale ? `Mercado Defasado: ${sent?.staleMin} min` : `${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
                                     className={cn(
                                         "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                         symbol === activeSymbol ? "bg-purple-600 border-purple-600 text-white shadow-md" : "bg-card border-border hover:border-purple-400",
-                                        status?.isQualified && symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10"
+                                        status?.isQualified && !isStale && symbol !== activeSymbol && "animate-pulse border-green-500 bg-green-50/10",
+                                        isStale && "opacity-60 grayscale-[0.5]"
                                     )}
                                 >
                                     <div className="flex justify-between items-center mb-1">
                                         <span className="text-[10px] font-bold font-mono">{symbol}</span>
-                                        {status?.isQualified && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
+                                        {status?.isQualified && !isStale && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
+                                        {isStale && <Badge variant="outline" className="h-3.5 px-1 text-[8px] bg-red-50 text-red-600 border-red-200">OFFLINE</Badge>}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {status?.lastAction === 'RISE' || status?.lastAction === 'CALL' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
-                                         status?.lastAction === 'FALL' || status?.lastAction === 'PUT' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
-                                         <Minus className="h-4 w-4 text-muted-foreground" />}
-                                        <span className="text-sm font-black">{status?.lastAction || 'SCAN'}</span>
+                                        {isStale ? (
+                                            <Minus className="h-4 w-4 text-muted-foreground" />
+                                        ) : (
+                                            <>
+                                                {status?.lastAction === 'RISE' || status?.lastAction === 'CALL' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
+                                                 status?.lastAction === 'FALL' || status?.lastAction === 'PUT' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                                 <Minus className="h-4 w-4 text-muted-foreground" />}
+                                            </>
+                                        )}
+                                        <span className="text-sm font-black">{isStale ? 'FECHADO' : (status?.lastAction || 'SCAN')}</span>
                                     </div>
                                     <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
-                                        <span className="truncate">{status?.lastAction === 'HOLD' ? '—' : (status?.recommendedContract || 'Analisando...')}</span>
-                                        <span className="font-mono">{status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
+                                        <span className="truncate">{isStale ? `${sent?.staleMin} min atrás` : (status?.lastAction === 'HOLD' ? '—' : (status?.recommendedContract || 'Analisando...'))}</span>
+                                        <span className="font-mono">{!isStale && status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
                                     </div>
                                     
                                     <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
                                         {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
                                             const cand = sent?.candidates.find(c => c.contract === cat);
-                                            const score = cand?.score ?? '--';
-                                            const isHigh = typeof score === 'number' && score >= 55;
+                                            const score = isStale ? 'fechado' : (cand?.score ?? '--');
+                                            const isHigh = !isStale && typeof score === 'number' && score >= 55;
                                             return (
                                                 <Badge 
                                                     key={cat} 
@@ -322,7 +331,7 @@ function TerminalV3Content() {
                         <TestTube className="h-8 w-8 text-purple-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.9.5</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.9.6</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -931,7 +940,7 @@ function TerminalV3Content() {
                                                                 {report.recent.map(r => (
                                                                     <div key={r.rule} className="flex justify-between items-center bg-background/50 p-1 rounded px-2">
                                                                         <span className="opacity-70">{r.rule}</span>
-                                                                        <span className="font-bold">{(r.stat.rate * 100).toFixed(1)}% (n={r.stat.n})</span>
+                                                                        <span className="font-bold">{((r?.stat.rate ?? 0) * 100).toFixed(1)}% (n={r.stat.n})</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
