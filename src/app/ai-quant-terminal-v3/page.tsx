@@ -17,7 +17,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart, Loader2
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -32,9 +32,9 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import type { AllowedContractsV3, AllowedActionsV3 } from "@/features/trading/types/council";
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 function TerminalV3Content() {
     const { 
@@ -47,7 +47,7 @@ function TerminalV3Content() {
     const v3 = useAIQuantTerminalV3(activeSymbol, priceTicks, chartData as any);
     const { toast } = useToast();
     const { 
-        lastDecision, reasoningLog, memoryBuffer, isAutoMode, isShadowMode, 
+        lastDecision, reasoningLog, memoryBuffer, isAutoMode, setIsAutoMode, isShadowMode, setIsShadowMode,
         timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         backgroundIntervalSec, setBackgroundIntervalSec, sentinelIntervalSec, setSentinelIntervalSec,
         radarStatus, sentinel, watchedSymbols, setWatchedSymbols, resetSession,
@@ -146,6 +146,23 @@ function TerminalV3Content() {
         return <p className="font-mono whitespace-pre-wrap">{content}</p>;
     };
 
+    // HANDLERS COM CONFIRMAÇÃO
+    const handleShadowModeToggle = (checked: boolean) => {
+        if (isShadowMode && !checked) { // Switching to REAL
+            const confirmed = window.confirm(`Ativar MODO REAL? Ordens reais (conta ${accountType}) serão enviadas quando o piloto for ligado.`);
+            if (!confirmed) return;
+        }
+        setIsShadowMode(checked);
+    };
+
+    const handleAutoModeToggle = () => {
+        if (!isAutoMode && !isShadowMode) { // Turning ON in REAL
+            const confirmed = window.confirm(`Ligar o piloto em modo REAL (conta ${accountType})?`);
+            if (!confirmed) return;
+        }
+        setIsAutoMode(!isAutoMode);
+    };
+
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
@@ -235,7 +252,7 @@ function TerminalV3Content() {
                                         <span className="text-sm font-black">{status?.lastAction || 'SCAN'}</span>
                                     </div>
                                     <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
-                                        <span className="truncate">{status?.recommendedContract || 'Analisando...'}</span>
+                                        <span className="truncate">{status?.lastAction === 'HOLD' ? '—' : (status?.recommendedContract || 'Analisando...')}</span>
                                         <span className="font-mono">{status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
                                     </div>
                                     
@@ -269,10 +286,10 @@ function TerminalV3Content() {
             <div className="lg:hidden flex flex-wrap items-center gap-3 p-3 bg-muted/30 rounded-xl border">
                 <div className="flex items-center gap-2 bg-background p-2 rounded-lg border shadow-sm">
                     <Label htmlFor="mobile-shadow-mode" className="text-[10px] font-black uppercase">Shadow</Label>
-                    <Switch id="mobile-shadow-mode" checked={isShadowMode} onCheckedChange={v3.toggleShadowMode} />
+                    <Switch id="mobile-shadow-mode" checked={isShadowMode} onCheckedChange={handleShadowModeToggle} />
                 </div>
                 <Button 
-                    onClick={v3.toggleAutoMode} 
+                    onClick={handleAutoModeToggle} 
                     size="sm"
                     className={cn("flex-1 h-9 font-bold text-[10px] uppercase tracking-tighter", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white")}
                 >
@@ -296,7 +313,7 @@ function TerminalV3Content() {
                         <TestTube className="h-8 w-8 text-purple-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.8</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.9</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -346,7 +363,7 @@ function TerminalV3Content() {
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas para validação</span>
                                 </Label>
-                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={v3.toggleShadowMode} />
+                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={handleShadowModeToggle} />
                             </div>
 
                             <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
@@ -413,7 +430,7 @@ function TerminalV3Content() {
                                             <div key={action} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`action-${action}`} 
-                                                    checked={allowedActions[action as keyof AllowedActionsV3]}
+                                                    checked={allowedActions[action as keyof typeof allowedActions]}
                                                     onCheckedChange={(checked) => {
                                                         setAllowedActions(prev => ({ ...prev, [action]: !!checked }));
                                                     }}
@@ -436,7 +453,7 @@ function TerminalV3Content() {
                                             <div key={contract} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`contract-${contract}`} 
-                                                    checked={allowedContracts[contract as keyof AllowedContractsV3]}
+                                                    checked={allowedContracts[contract as keyof typeof allowedContracts]}
                                                     onCheckedChange={(checked) => {
                                                         setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
                                                     }}
@@ -452,7 +469,7 @@ function TerminalV3Content() {
                             </div>
 
                             <Button 
-                                onClick={v3.toggleAutoMode} 
+                                onClick={handleAutoModeToggle} 
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white hover:bg-purple-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}

@@ -46,6 +46,7 @@ export interface RadarAssetStatus {
         bbw: number;
         adx: number;
     };
+    isFallback?: boolean;
 }
 
 export interface ChatMessage {
@@ -152,7 +153,6 @@ export function useAIQuantTerminalV3(
     const chatBusyRef = useRef(false);
     const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
     const lastSkipLogRef = useRef<Record<string, number>>({});
-    const lastTriggerLogRef = useRef<Record<string, number>>({});
     const sentinelAboveRef = useRef<Record<string, number>>({});
     const interlockLoggedRef = useRef(false);
 
@@ -197,7 +197,22 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
-    // MÉTRICAS DE PERFORMANCE
+    // SEGURANÇA DE MODO: SHADOW -> REAL
+    const prevShadowModeRef = useRef(isShadowMode);
+    useEffect(() => {
+        if (prevShadowModeRef.current === true && isShadowMode === false) {
+            setIsAutoMode(false);
+            setReasoningLog(prev => [{
+                ts: `modo-${Date.now()}`,
+                time: new Date().toLocaleTimeString(),
+                message: "[MODO] REAL ativado: piloto desligado, ligue manualmente",
+                type: 'warning'
+            }, ...prev].slice(0, 300));
+        }
+        prevShadowModeRef.current = isShadowMode;
+    }, [isShadowMode]);
+
+    // MÉTRICAS DE PERFORMANCE (Agregadas)
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator === 'Conselho_V3'
@@ -332,7 +347,6 @@ export function useAIQuantTerminalV3(
                     const logKey = `${sym}-${c.contract}`;
                     if (c.score >= SIGNAL_TRIGGER_SCORE) {
                         const lastLog = sentinelAboveRef.current[logKey] || 0;
-                        // Loga apenas na borda ou a cada 5 minutos
                         if (lastLog === 0 || now - lastLog > 300000) {
                             addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
                             sentinelAboveRef.current[logKey] = now;
@@ -392,7 +406,6 @@ export function useAIQuantTerminalV3(
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
-            // INTERLOCK SEGURANÇA: Bloqueia Accumulators/Multipliers em modo Real por falta de saída automática
             if (!isShadowMode) {
               const filteredContracts = initialPermissions.allowedContracts.filter(c => c === 'OPTIONS');
               if (filteredContracts.length < initialPermissions.allowedContracts.length) {
@@ -422,9 +435,11 @@ export function useAIQuantTerminalV3(
                 [symbol]: {
                     symbol, lastAction: decision.finalAction, lastPrice: currentPrice, confidence: decision.consensusConfidence,
                     timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= MIN_EXEC_CONFIDENCE,
-                    executedVia: decision.executedVia, opinions: decision.opinions, recommendedContract: decision.recommendedContract,
+                    executedVia: decision.executedVia, opinions: decision.opinions, 
+                    recommendedContract: decision.finalAction === 'HOLD' ? '—' : decision.recommendedContract,
                     holdReason: decision.holdReason, debugVotes: decision.debugVotes,
-                    indicators: { rsi: snapshot.rsi || 50, bbw: indicators.bbw || 0, adx: indicators.adx || 0 }
+                    indicators: { rsi: snapshot.rsi || 50, bbw: indicators.bbw || 0, adx: indicators.adx || 0 },
+                    isFallback: decision.executedVia === 'MATH_FALLBACK'
                 }
             }));
 
@@ -558,6 +573,20 @@ export function useAIQuantTerminalV3(
         report += `Conselho: ${stats.total} avaliações | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | vetos ${stats.vetoes} | fallbacks ${stats.fallbacks} | ${(stats.avgLatencyMs/1000).toFixed(1)}s/ativo\n`;
         report += `Posições abertas: ${positions.length}/${maxConcurrentTrades}\n\n`;
 
+        if (positions.length > 0) {
+            report += `POSIÇÕES ABERTAS (${positions.length}):\n`;
+            positions.forEach(op => {
+                const ageMs = Date.now() - new Date(op.timestamp).getTime();
+                const min = Math.floor(ageMs / 60000);
+                let orphan = "";
+                if (min > 15 && (!op.expirationTime || op.expirationTime + 60000 < Date.now())) {
+                    orphan = " (possível órfã)";
+                }
+                report += `- #${op.id} ${op.asset} ${op.contractType || 'OPTIONS'} $${op.stake} há ${min}min por ${op.initiator}${orphan}\n`;
+            });
+            report += "\n";
+        }
+
         symbols.forEach(sym => {
             if (!sym) return;
             const sentData = sentinel[sym];
@@ -573,7 +602,8 @@ export function useAIQuantTerminalV3(
             if (hist) {
                 const age = Math.round((Date.now() - hist.ts) / 1000);
                 const d = hist.decision;
-                report += `  Conselho: há ${age}s ${d.finalAction} ${d.consensusConfidence}% ${d.recommendedContract} votos[${d.debugVotes}] ${d.holdReason ? d.holdReason.slice(0, 100) : ''}\n`;
+                const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
+                report += `  Conselho: há ${age}s ${d.finalAction} ${d.consensusConfidence}% ${contractDisplay} votos[${d.debugVotes}] ${d.holdReason ? d.holdReason.slice(0, 100) : ''}\n`;
             } else {
                 report += `  Conselho: ainda não avaliou\n`;
             }
@@ -624,13 +654,14 @@ export function useAIQuantTerminalV3(
         if (hist) {
             const d = hist.decision;
             const age = Math.round((Date.now() - hist.ts) / 1000);
+            const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
             report += `ÚLTIMA DELIBERAÇÃO (há ${age}s):\n`;
-            report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${d.recommendedContract})\n`;
+            report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${contractDisplay})\n`;
             if (d.holdReason) report += `Hold Reason: ${d.holdReason}\n`;
             
             report += `\nOPINIÕES DOS AGENTES:\n`;
             d.opinions.forEach(o => {
-                report += `- ${o.agentName}: ${o.action} ${o.confidence}% ${o.recommendedContract} — ${o.reasoning.slice(0, 160)}\n`;
+                report += `- ${o.agentName}: ${o.action} ${o.confidence}% ${o.action === 'HOLD' ? '—' : o.recommendedContract} — ${o.reasoning.slice(0, 160)}\n`;
             });
 
             if (d.trace && d.trace.length > 0) {
@@ -663,7 +694,8 @@ export function useAIQuantTerminalV3(
             if (hist) {
                 const age = Math.round((Date.now() - hist.ts) / 1000);
                 const d = hist.decision;
-                context += `  Council (${age}s ago): ${d.finalAction} ${d.consensusConfidence}% [${d.debugVotes}] ${d.holdReason || ''}\n`;
+                const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
+                context += `  Council (${age}s ago): ${d.finalAction} ${d.consensusConfidence}% [${d.debugVotes}] ${d.holdReason || ''} contract=${contractDisplay}\n`;
             }
             context += "\n";
         });
@@ -767,7 +799,7 @@ export function useAIQuantTerminalV3(
         try {
             const context = buildShortContextForLLM();
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que falta; sem previsão de preço (cenários "se X, então Y" como hipóteses); índices sintéticos aleatórios, nunca afirmar certeza de lucro; até 120 palavras.`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que não tem. Ao explicar uma decisão, cite os votos, os números e o motivo do HOLD. Não preveja preço (cenários "se X, então Y" como hipóteses); índices sintéticos aleatórios, nunca afirmar certeza de lucro; sinais são hipóteses a validar no Shadow. Até 120 palavras, salvo pedido de relatório.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -802,8 +834,8 @@ export function useAIQuantTerminalV3(
             }
             const res = await fetch(url, { headers });
             if (res.ok) {
-                const data = await res.ok ? await res.json() : null;
-                if(data) setAvailableModels(data.models || []);
+                const data = await res.json();
+                setAvailableModels(data.models || []);
             }
         } catch (e) { console.error("Falha ao buscar modelos", e); }
     };
@@ -817,8 +849,8 @@ export function useAIQuantTerminalV3(
     }, []);
 
     return {
-        isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
-        isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
+        isAutoMode, setIsAutoMode,
+        isShadowMode, setIsShadowMode,
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         backgroundIntervalSec, setBackgroundIntervalSec, sentinelIntervalSec, setSentinelIntervalSec,
         allowedActions, setAllowedActions,
