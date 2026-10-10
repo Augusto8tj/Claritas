@@ -34,6 +34,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import type { AllowedContractsV3, AllowedActionsV3 } from "@/features/trading/types/council";
 import { useToast } from '@/hooks/use-toast';
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 function TerminalV3Content() {
     const { 
@@ -76,6 +77,14 @@ function TerminalV3Content() {
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+    const handleChatSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (chatInput.trim()) {
+            sendMessage(chatInput, chatTarget);
+            setChatInput('');
+        }
+    };
 
     const copyLogs = () => {
         if (filteredLogs.length === 0) {
