@@ -18,6 +18,7 @@ import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 import { computeSignalFeatures, evaluateSignals, SIGNAL_TRIGGER_SCORE, type SignalCandidate, type SignalFeatures } from '../services/signal-engine';
+import { backtestCandles, mergeStats, type RuleReport } from '../services/backtest';
 
 const SETTINGS_KEY = 'quantV3Settings';
 
@@ -83,7 +84,7 @@ export function useAIQuantTerminalV3(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData, durationLimits 
+        botCandleData, durationLimits, getHistoricalData 
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -107,6 +108,16 @@ export function useAIQuantTerminalV3(
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     
+    // BACKTEST
+    const [backtest, setBacktest] = useState<{
+        running: boolean;
+        progress: string;
+        ts: number | null;
+        payoutPct: number;
+        merged: RuleReport[] | null;
+        perAsset: Record<string, RuleReport[]>;
+    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: null, perAsset: {} });
+
     // LOGS E TELEMETRIA
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({
@@ -225,6 +236,82 @@ export function useAIQuantTerminalV3(
             return botCandleDataRef.current;
         return (multi ?? []) as CandleData[];
     }, []);
+
+    const runBacktest = async (payoutPct = 85, count = 5000) => {
+        if (backtest.running) return;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct }));
+        const perAsset: Record<string, RuleReport[]> = {};
+        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+
+        try {
+            for (const sym of symbols) {
+                if (!sym) continue;
+                setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}...` }));
+                const hist = await getHistoricalData(sym, 'candles', count, '1m');
+                const candles = hist.map(h => ({
+                    epoch: h.epoch,
+                    open: h.open!,
+                    high: h.high!,
+                    low: h.low!,
+                    close: h.close!
+                })).filter(c => c.open !== undefined && c.high !== undefined && c.low !== undefined && c.close !== undefined);
+
+                if (candles.length < 200) {
+                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${candles.length}/200).`, 'warning');
+                    continue;
+                }
+
+                setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${candles.length} candles)...` }));
+                await new Promise(r => setTimeout(r, 0));
+                perAsset[sym] = backtestCandles(candles as any, { payoutPct });
+            }
+
+            const merged = mergeStats(Object.values(perAsset), payoutPct);
+            setBacktest(prev => ({ ...prev, merged, perAsset, ts: Date.now(), progress: '' }));
+
+            // Logs
+            merged.forEach(r => {
+                const n = r.stat.n;
+                const x = (r.stat.rate * 100).toFixed(1);
+                const lo = (r.stat.lo * 100).toFixed(1);
+                const hi = (r.stat.hi * 100).toFixed(1);
+                const b = (r.baseline * 100).toFixed(1);
+                const e = r.breakeven ? (r.breakeven * 100).toFixed(1) : '';
+                const msg = `[BACKTEST] ${r.rule}: n=${n} acerto=${x}% IC95[${lo}%, ${hi}%] base=${b}%${r.breakeven ? ' equilíbrio='+e+'%' : ''} → ${r.verdict}`;
+                
+                const details = [
+                    ...r.buckets.map(b => `${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})`),
+                    '--- Por Ativo ---',
+                    ...Object.entries(perAsset).map(([sym, reports]) => {
+                        const ar = reports.find(x => x.rule === r.rule);
+                        return `${sym}: ${(ar?.stat.rate || 0 * 100).toFixed(1)}% (n=${ar?.stat.n || 0})`;
+                    })
+                ];
+                addLog(msg, 'info', details);
+            });
+
+        } catch (e: any) {
+            addLog(`[BACKTEST] Erro fatal: ${e.message}`, 'error');
+        } finally {
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    const buildBacktestReport = useCallback(() => {
+        if (!backtest.merged) return "Nenhum backtest realizado.";
+        let report = "RELATÓRIO DE BACKTEST (Candles 1m)\n\n";
+        backtest.merged.forEach(r => {
+            const n = r.stat.n;
+            const x = (r.stat.rate * 100).toFixed(1);
+            const lo = (r.stat.lo * 100).toFixed(1);
+            const hi = (r.stat.hi * 100).toFixed(1);
+            const b = (r.baseline * 100).toFixed(1);
+            const e = r.breakeven ? (r.breakeven * 100).toFixed(1) : '';
+            report += `${r.rule}: n=${n} acerto=${x}% IC95[${lo}%, ${hi}%] base=${b}%${r.breakeven ? ' equilíbrio='+e+'%' : ''} → ${r.verdict}\n`;
+        });
+        report += `\nObservações:\nn conta episódios (anti-sobreposição de 5 candles).\nOpções = direção do candle de 60s seguinte; Multiplicadores = direção após 5 candles (sem TP/SL); Acumuladores = proxy de calma (não é o contrato real). Payout assumido ${backtest.payoutPct}%. Várias regras/faixas aumentam a chance de falso positivo.`;
+        return report;
+    }, [backtest]);
 
     // SENTINEL MONITOR (1s)
     useEffect(() => {
@@ -595,6 +682,7 @@ export function useAIQuantTerminalV3(
         const CMD = /^\s*(por favor[, ]*)?(compre|comprar|venda|vender|execute|executar|opere|operar|abra|abrir|entre|entrar)\b\s*(.*)/i;
         const WHY = /(por\s?que|porque|motivo|explique|explica|como est[aá])/i;
         const REPORT = /(situa[cç][aã]o|status|auditoria|listagem|relat[oó]rio|resumo|quais ativos|que ativos|monitorando|oportunidades?|chances?|vantaj\w*|melhor(es)?|promissor\w*)/i;
+        const BACKTEST_RE = /(backtest|retroteste|teste estat[ií]stic)/i;
 
         const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
 
@@ -654,6 +742,14 @@ export function useAIQuantTerminalV3(
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
                 content: buildAssetReport(hasSym)
+            }]);
+            return;
+        }
+
+        if (content.match(BACKTEST_RE)) {
+            setChatMessages(prev => [...prev, { 
+                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                content: backtest.merged ? buildBacktestReport() : "Rode o backtest no painel."
             }]);
             return;
         }
@@ -733,6 +829,6 @@ export function useAIQuantTerminalV3(
         watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        setAccountType, accountType
+        setAccountType, accountType, runBacktest, backtest
     };
 }

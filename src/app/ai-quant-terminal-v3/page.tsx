@@ -17,7 +17,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     TestTube, Scale, Brain, Trash2, Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Settings2, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight
+    MessageSquare, Send, Gauge, Laptop, HardDrive, Coins, AlertCircle, ChevronDown, Copy, ChevronRight, FilePieChart
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -56,7 +56,7 @@ function TerminalV3Content() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
-        updateOllamaConfig
+        updateOllamaConfig, backtest, runBacktest
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -64,6 +64,7 @@ function TerminalV3Content() {
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
+    const [payoutInput, setPayoutInput] = useState(85);
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -745,6 +746,115 @@ function TerminalV3Content() {
                                 <div className="text-center py-10 opacity-30">
                                     <RefreshCw className="h-10 w-10 mx-auto mb-2 animate-spin" />
                                     <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Sincronizando Conselho...</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-purple-200 bg-purple-50/5 shadow-sm">
+                        <CardHeader className="py-3 border-b">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-purple-600 flex items-center gap-2">
+                                <TestTube className="h-4 w-4" /> Backtest das regras (1m)
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout assumido (%)</Label>
+                                    <Input 
+                                        type="number" 
+                                        value={payoutInput} 
+                                        onChange={(e) => setPayoutInput(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono"
+                                        min={50} max={100}
+                                    />
+                                </div>
+                                <Button 
+                                    onClick={() => runBacktest(payoutInput)} 
+                                    disabled={backtest.running}
+                                    size="sm"
+                                    className="mt-5 h-8 bg-purple-600 text-white font-bold"
+                                >
+                                    {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
+                                </Button>
+                            </div>
+                            {backtest.progress && <p className="text-[10px] text-center text-purple-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
+                            
+                            {backtest.merged && (
+                                <div className="space-y-4">
+                                    <ScrollArea className="h-48 border rounded-md">
+                                        <Table>
+                                            <TableHeader className="bg-muted/30">
+                                                <TableRow>
+                                                    <TableHead className="text-[9px] h-7 px-2 uppercase">Regra</TableHead>
+                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-center">n</TableHead>
+                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-center">Acerto</TableHead>
+                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-right">Veredito</TableHead>
+                                                </TableRow>
+                                            </TableHeader>
+                                            <TableBody>
+                                                {backtest.merged.map(r => (
+                                                    <TableRow key={r.rule} className="h-8">
+                                                        <TableCell className="text-[10px] font-bold p-2">{r.rule}</TableCell>
+                                                        <TableCell className="text-[10px] text-center p-1 font-mono">{r.stat.n}</TableCell>
+                                                        <TableCell className="text-[10px] text-center p-1 font-mono">
+                                                            {(r.stat.rate * 100).toFixed(1)}%
+                                                            <div className="text-[8px] text-muted-foreground">
+                                                                [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right p-2">
+                                                            <Badge variant="outline" className={cn(
+                                                                "text-[8px] h-4 px-1 border-none",
+                                                                r.verdict.includes('ACIMA') ? "bg-green-100 text-green-700" :
+                                                                r.verdict.includes('abaixo') ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"
+                                                            )}>
+                                                                {r.verdict.includes('equilibrio') ? 'EQUILIBRIO' : 
+                                                                 r.verdict.includes('acaso') ? 'ACASO' :
+                                                                 r.verdict.includes('insuficiente') ? 'n < 50' : 'RESULTADO'}
+                                                            </Badge>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    </ScrollArea>
+                                    
+                                    <Accordion type="single" collapsible className="w-full">
+                                        <AccordionItem value="breakdown" className="border-none">
+                                            <AccordionTrigger className="py-1 text-[10px] font-bold uppercase hover:no-underline">Faixas e por ativo</AccordionTrigger>
+                                            <AccordionContent className="pt-2">
+                                                <ScrollArea className="h-40 border rounded-md p-2 bg-muted/20 text-[9px] font-mono space-y-3">
+                                                    {backtest.merged.map(r => (
+                                                        <div key={r.rule} className="mb-4">
+                                                            <p className="font-bold text-purple-700 border-b pb-1 mb-1">{r.rule}</p>
+                                                            <div className="grid grid-cols-3 gap-1 mb-2">
+                                                                {r.buckets.map(b => (
+                                                                    <div key={b.label} className="text-center bg-background p-1 rounded">
+                                                                        <div className="opacity-60">{b.label}</div>
+                                                                        <div className="font-bold">{(b.stat.rate * 100).toFixed(1)}%</div>
+                                                                        <div className="opacity-40">n={b.stat.n}</div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            <div className="opacity-60 space-y-0.5">
+                                                                {Object.entries(backtest.perAsset).map(([sym, reports]) => {
+                                                                    const ar = reports.find(x => x.rule === r.rule);
+                                                                    return <div key={sym}>{sym}: {(ar?.stat.rate || 0 * 100).toFixed(1)}% (n={ar?.stat.n || 0})</div>
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </ScrollArea>
+                                            </AccordionContent>
+                                        </AccordionItem>
+                                    </Accordion>
+                                    
+                                    <p className="text-[9px] text-muted-foreground italic leading-tight border-t pt-2">
+                                        n conta episódios (anti-sobreposição de 5 candles).
+                                        Opções = direção do candle de 60s seguinte; Multiplicadores = direção após 5 candles (sem TP/SL); Acumuladores = proxy de
+                                        calma (não é o contrato real). Payout assumido {backtest.payoutPct}%. Várias regras/faixas aumentam a chance de falso positivo.
+                                    </p>
                                 </div>
                             )}
                         </CardContent>
