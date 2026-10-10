@@ -1,19 +1,21 @@
 import { computeSignalFeatures, evaluateSignals, type SignalCandle } from './signal-engine';
 
 export interface BacktestOptions {
-  minScore?: number;        // score minimo para contar o sinal (padrao 40, para ter amostra)
-  optHorizon?: number;      // candles de 1m a frente para Opcoes (padrao 1 = 60s)
+  minScore?: number;        // score minimo (padrao 40)
+  optHorizon?: number;      // candles de 1m a frente para Opcoes (padrao 1)
   multHorizon?: number;     // candles a frente para Multiplicadores (padrao 5)
   accuHorizon?: number;     // candles a frente para Acumuladores (padrao 5)
-  skip?: number;            // candles ignorados apos cada amostra da mesma regra (anti-sobreposicao, padrao 5)
+  skip?: number;            // anti-sobreposicao: candles ignorados apos cada amostra da mesma regra (padrao 5)
   payoutPct?: number;       // payout assumido de Rise/Fall (padrao 85)
 }
 export interface Stat { n: number; wins: number; rate: number; lo: number; hi: number; }
+export interface Move { n: number; sum: number; sumSq: number; mean: number; t: number; } // movimento medio em ATRs
 export interface RuleReport {
   rule: string; contract: string; horizon: number; stat: Stat;
-  baseline: number;         // taxa incondicional (acaso) na mesma metrica
+  baseline: number;         // taxa do acaso na mesma metrica (media ponderada por n ao agregar)
   breakeven: number | null; // so para Opcoes
   buckets: Array<{ label: string; stat: Stat }>;
+  move?: Move;              // so Multiplicadores: expectativa bruta em ATRs (sem custos)
   verdict: string;
 }
 
@@ -23,17 +25,29 @@ const wilson = (w: number, n: number, z = 1.96): Stat => {
   const a = z * Math.sqrt((p * (1 - p) + (z * z) / (4 * n)) / n);
   return { n, wins: w, rate: p, lo: (c - a) / d, hi: (c + a) / d };
 };
+const mkMove = (n: number, sum: number, sumSq: number): Move => {
+  if (n < 2) return { n, sum, sumSq, mean: 0, t: 0 };
+  const mean = sum / n, varr = Math.max(0, (sumSq - n * mean * mean) / (n - 1));
+  return { n, sum, sumSq, mean, t: varr > 0 ? mean / Math.sqrt(varr / n) : 0 };
+};
+const verdictOf = (stat: Stat, baseline: number, breakeven: number | null): string => {
+  if (stat.n < 50) return 'amostra insuficiente (n<50)';
+  if (breakeven !== null && stat.hi < breakeven) return 'abaixo do ponto de equilibrio (perda esperada)';
+  if (breakeven !== null && stat.lo > breakeven) return 'ACIMA do ponto de equilibrio (verificar overfitting)';
+  if (baseline >= stat.lo && baseline <= stat.hi) return 'indistinguivel do acaso';
+  return stat.lo > baseline ? 'acima do acaso (investigar)' : 'abaixo do acaso';
+};
 
-export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = {}) {
+export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = {}): RuleReport[] {
   const minScore = opt.minScore ?? 40, optH = opt.optHorizon ?? 1, multH = opt.multHorizon ?? 5, accuH = opt.accuHorizon ?? 5, skip = opt.skip ?? 5;
   const n = candles.length;
   const closes = candles.map(c => Number(c.close));
   const maxH = Math.max(optH, multH, accuH);
-  type Acc = { w: number; n: number; b: Record<string, { w: number; n: number }> };
-  const mk = (): Acc => ({ w: 0, n: 0, b: {} });
+  type Acc = { w: number; n: number; b: Record<string, { w: number; n: number }>; fadeW: number; ms: number; mss: number };
+  const mk = (): Acc => ({ w: 0, n: 0, b: {}, fadeW: 0, ms: 0, mss: 0 });
   const accs: Record<string, Acc> = { OPT_REV: mk(), OPT_MOM: mk(), MULT_TREND: mk(), ACCU_CALM: mk() };
   const lastTaken: Record<string, number> = {};
-  let upBase = { w: 0, n: 0 }, multBase = { w: 0, n: 0 }, calmBase = { w: 0, n: 0 };
+  const base = { opt: 0, mult: 0, calm: 0, n: 0 };
 
   const bucketOf = (s: number) => (s < 55 ? '40-54' : s < 70 ? '55-69' : '70+');
   const add = (a: Acc, win: boolean, score: number) => {
@@ -44,26 +58,29 @@ export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = 
   for (let i = 60; i < n - maxH - 1; i++) {
     const f = computeSignalFeatures(candles.slice(Math.max(0, i - 139), i + 1));
     if (!f) continue;
-    const atrAbs = ((f.atrPct / 100) * f.price) / (f.atrRatio > 0 ? f.atrRatio : 1); // ATR de referencia (mediana), nao o atual
-    // linhas de base incondicionais (acaso) nas mesmas metricas
-    upBase.n++; if (closes[i + optH] > closes[i]) upBase.w++;
-    const dirMult = closes[i + multH] - closes[i];
-    multBase.n++; if (dirMult > 0) multBase.w++;
-    let calm = true; for (let j = i + 1; j <= i + accuH; j++) if (Math.abs(closes[j] - closes[j - 1]) > 1.5 * atrAbs) { calm = false; break; }
-    calmBase.n++; if (calm) calmBase.w++;
+    const atrRef = ((f.atrPct / 100) * f.price) / (f.atrRatio > 0 ? f.atrRatio : 1);   // ATR de referencia (mediana)
+    const atrNow = (f.atrPct / 100) * f.price;
+    // taxas do acaso: media de P(sobe) e P(desce) (empates nao ganham em nenhum lado)
+    base.n++;
+    const dOpt = closes[i + optH] - closes[i]; base.opt += dOpt !== 0 ? 0.5 : 0;
+    const dMult = closes[i + multH] - closes[i]; base.mult += dMult !== 0 ? 0.5 : 0;
+    let calm = true; for (let j = i + 1; j <= i + accuH; j++) if (Math.abs(closes[j] - closes[j - 1]) > 1.5 * atrRef) { calm = false; break; }
+    if (calm) base.calm++;
 
     for (const c of evaluateSignals('BT', f)) {
       if (c.score < minScore) continue;
       const rule = c.rule === 'OPT' ? '' : c.rule;
       if (!accs[rule]) continue;
-      if (i - (lastTaken[rule] ?? -999) < skip) continue;   // anti-sobreposicao
+      if (i - (lastTaken[rule] ?? -999) < skip) continue;
       lastTaken[rule] = i;
       if (rule === 'OPT_REV' || rule === 'OPT_MOM') {
-        const win = c.direction === 'CALL' ? closes[i + optH] > closes[i] : closes[i + optH] < closes[i];
-        add(accs[rule], win, c.score);
+        add(accs[rule], c.direction === 'CALL' ? dOpt > 0 : dOpt < 0, c.score);
       } else if (rule === 'MULT_TREND') {
-        const win = c.direction === 'CALL' ? dirMult > 0 : dirMult < 0;
-        add(accs[rule], win, c.score);
+        const sign = c.direction === 'CALL' ? 1 : -1;
+        add(accs[rule], sign * dMult > 0, c.score);
+        if (sign * dMult < 0) accs[rule].fadeW++;
+        const mv = (sign * dMult) / (atrNow > 0 ? atrNow : 1);
+        accs[rule].ms += mv; accs[rule].mss += mv * mv;
       } else if (rule === 'ACCU_CALM') {
         add(accs[rule], calm, c.score);
       }
@@ -71,26 +88,23 @@ export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = 
   }
 
   const payout = (opt.payoutPct ?? 85) / 100, be = 1 / (1 + payout);
+  const nb = Math.max(1, base.n);
   const mkReport = (rule: string, contract: string, h: number, baseline: number, breakeven: number | null): RuleReport => {
     const a = accs[rule]; const stat = wilson(a.w, a.n);
     const buckets = ['40-54', '55-69', '70+'].map(k => ({ label: k, stat: wilson(a.b[k]?.w ?? 0, a.b[k]?.n ?? 0) }));
-    let verdict: string;
-    if (a.n < 50) verdict = 'amostra insuficiente (n<50)';
-    else if (breakeven !== null && stat.hi < breakeven) verdict = 'abaixo do ponto de equilibrio (perda esperada)';
-    else if (breakeven !== null && stat.lo > breakeven) verdict = 'ACIMA do ponto de equilibrio (verificar overfitting)';
-    else if (baseline >= stat.lo && baseline <= stat.hi) verdict = 'indistinguivel do acaso';
-    else if (stat.lo > baseline) verdict = 'acima do acaso (investigar)';
-    else verdict = 'abaixo do acaso';
-    return { rule, contract, horizon: h, stat, baseline, breakeven, buckets, verdict };
+    const r: RuleReport = { rule, contract, horizon: h, stat, baseline, breakeven, buckets, verdict: verdictOf(stat, baseline, breakeven) };
+    if (rule === 'MULT_TREND') r.move = mkMove(a.n, a.ms, a.mss);
+    return r;
   };
   return [
-    mkReport('OPT_REV', 'OPTIONS', optH, upBase.w / Math.max(1, upBase.n), be),
-    mkReport('OPT_MOM', 'OPTIONS', optH, upBase.w / Math.max(1, upBase.n), be),
-    mkReport('MULT_TREND', 'MULTIPLIERS', multH, 0.5, null),
-    mkReport('ACCU_CALM', 'ACCUMULATORS', accuH, calmBase.w / Math.max(1, calmBase.n), null),
+    mkReport('OPT_REV', 'OPTIONS', optH, base.opt / nb, be),
+    mkReport('OPT_MOM', 'OPTIONS', optH, base.opt / nb, be),
+    mkReport('MULT_TREND', 'MULTIPLIERS', multH, base.mult / nb, null),
+    mkReport('ACCU_CALM', 'ACCUMULATORS', accuH, base.calm / nb, null),
   ];
 }
 
+// Agrega ativos: acerto agrupado; taxa do acaso = media PONDERADA por n (nao media simples).
 export function mergeStats(reports: RuleReport[][], payoutPct = 85): RuleReport[] {
   const be = 1 / (1 + payoutPct / 100);
   const rules = reports[0]?.map(r => r.rule) ?? [];
@@ -98,19 +112,14 @@ export function mergeStats(reports: RuleReport[][], payoutPct = 85): RuleReport[
     const parts = reports.map(r => r[idx]);
     const w = parts.reduce((s, p) => s + p.stat.wins, 0), n = parts.reduce((s, p) => s + p.stat.n, 0);
     const stat = wilson(w, n);
-    const baseline = parts.reduce((s, p) => s + p.baseline, 0) / parts.length;
+    const baseline = n > 0 ? parts.reduce((s, p) => s + p.baseline * p.stat.n, 0) / n : 0.5;
     const breakeven = parts[0].breakeven === null ? null : be;
     const buckets = ['40-54', '55-69', '70+'].map((label, bi) => {
       const bw = parts.reduce((s, p) => s + p.buckets[bi].stat.wins, 0), bn = parts.reduce((s, p) => s + p.buckets[bi].stat.n, 0);
       return { label, stat: wilson(bw, bn) };
     });
-    let verdict: string;
-    if (n < 50) verdict = 'amostra insuficiente (n<50)';
-    else if (breakeven !== null && stat.hi < breakeven) verdict = 'abaixo do ponto de equilibrio (perda esperada)';
-    else if (breakeven !== null && stat.lo > breakeven) verdict = 'ACIMA do ponto de equilibrio (verificar overfitting)';
-    else if (baseline >= stat.lo && baseline <= stat.hi) verdict = 'indistinguivel do acaso';
-    else if (stat.lo > baseline) verdict = 'acima do acaso (investigar)';
-    else verdict = 'abaixo do acaso';
-    return { ...parts[0], stat, baseline, breakeven, buckets, verdict };
+    const out: RuleReport = { ...parts[0], stat, baseline, breakeven, buckets, verdict: verdictOf(stat, baseline, breakeven) };
+    if (parts[0].move) out.move = mkMove(parts.reduce((s, p) => s + (p.move?.n ?? 0), 0), parts.reduce((s, p) => s + (p.move?.sum ?? 0), 0), parts.reduce((s, p) => s + (p.move?.sumSq ?? 0), 0));
+    return out;
   });
 }

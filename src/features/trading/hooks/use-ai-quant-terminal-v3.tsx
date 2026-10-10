@@ -21,6 +21,7 @@ import { computeSignalFeatures, evaluateSignals, SIGNAL_TRIGGER_SCORE, type Sign
 import { backtestCandles, mergeStats, type RuleReport } from '../services/backtest';
 
 const SETTINGS_KEY = 'quantV3Settings';
+const REAL_MARKET_RE = /^(frx|cry|OTC_)/;
 
 const AGENT_PERSONAS = {
   CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
@@ -83,6 +84,8 @@ const isOrphanOp = (op: Operation) => {
     return isExpired || isVeryOld;
 };
 
+const groupOf = (sym: string) => REAL_MARKET_RE.test(sym) ? 'REAIS' : 'SINTETICOS';
+
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -122,10 +125,10 @@ export function useAIQuantTerminalV3(
         progress: string;
         ts: number | null;
         payoutPct: number;
-        merged: RuleReport[] | null;
-        perAsset: Record<string, RuleReport[]>;
+        merged: Record<string, { recent: RuleReport[] | null, older: RuleReport[] | null }>;
+        perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }>;
         assetCounts: Record<string, number>;
-    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: null, perAsset: {}, assetCounts: {} });
+    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: {}, perAsset: {}, assetCounts: {} });
 
     // LOGS E TELEMETRIA
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -214,7 +217,7 @@ export function useAIQuantTerminalV3(
             setReasoningLog(prev => [{
                 ts: `modo-${Date.now()}`,
                 time: new Date().toLocaleTimeString(),
-                message: "[MODO] REAL ativado: piloto desligado, ligue manualmente",
+                message: "[MODO] REAL ativado: piloto automático desligado por segurança. Ligue manualmente se desejar.",
                 type: 'warning'
             }, ...prev].slice(0, 300));
         }
@@ -293,10 +296,10 @@ export function useAIQuantTerminalV3(
         return all;
     };
 
-    const runBacktest = async (payoutPct = 85, targetCount = 20000, extraSymbols: string[] = []) => {
+    const runBacktest = async (payoutPct = 85, targetCount = 40000, extraSymbols: string[] = []) => {
         if (backtest.running) return;
-        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: null, perAsset: {}, assetCounts: {} }));
-        const perAsset: Record<string, RuleReport[]> = {};
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: {}, perAsset: {}, assetCounts: {} }));
+        const perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }> = {};
         const assetCounts: Record<string, number> = {};
         
         const baseSymbols = new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean));
@@ -308,46 +311,78 @@ export function useAIQuantTerminalV3(
                 if (!sym) continue;
                 setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}...` }));
                 const candles = await fetchCandlesPaged(sym, targetCount);
+                const n = candles.length;
+                assetCounts[sym] = n;
                 
-                if (candles.length < 1000) {
-                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${candles.length}/1000).`, 'warning');
+                if (n < 1000) {
+                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${n}/1000).`, 'warning');
                     continue;
                 }
 
                 const dataIni = new Date(candles[0].epoch * 1000).toLocaleDateString();
-                const dataFim = new Date(candles[candles.length - 1].epoch * 1000).toLocaleDateString();
-                const dias = ((candles[candles.length-1].epoch - candles[0].epoch) / 86400).toFixed(1);
-                addLog(`[BACKTEST] ${sym}: ${candles.length} candles (${dias} dias, de ${dataIni} a ${dataFim})`, 'info', undefined, sym);
+                const dataFim = new Date(candles[n - 1].epoch * 1000).toLocaleDateString();
+                const dias = ((candles[n-1].epoch - candles[0].epoch) / 86400).toFixed(1);
+                addLog(`[BACKTEST] ${sym}: ${n} candles (${dias} dias, de ${dataIni} a ${dataFim})`, 'info', undefined, sym);
 
-                setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${candles.length} candles)...` }));
-                await new Promise(r => setTimeout(r, 0));
-                
-                perAsset[sym] = backtestCandles(candles as any, { payoutPct });
-                assetCounts[sym] = candles.length;
+                if (n >= 30000) {
+                    const mid = Math.floor(n / 2);
+                    const olderCandles = candles.slice(0, mid);
+                    const recentCandles = candles.slice(mid);
+                    
+                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Recente)...` }));
+                    const recentReport = backtestCandles(recentCandles as any, { payoutPct });
+                    await new Promise(r => setTimeout(r, 0));
+                    
+                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Anterior)...` }));
+                    const olderReport = backtestCandles(olderCandles as any, { payoutPct });
+                    
+                    perAsset[sym] = { recent: recentReport, older: olderReport };
+                } else {
+                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${n} candles)...` }));
+                    perAsset[sym] = { recent: backtestCandles(candles as any, { payoutPct }) };
+                }
             }
 
-            const merged = mergeStats(Object.values(perAsset), payoutPct);
-            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, ts: Date.now(), progress: '' }));
+            const groups = ['SINTETICOS', 'REAIS'];
+            const merged: Record<string, { recent: RuleReport[] | null, older: RuleReport[] | null }> = {};
 
-            merged.forEach(r => {
-                const n = r.stat.n;
-                const x = (r.stat.rate * 100).toFixed(1);
-                const lo = (r.stat.lo * 100).toFixed(1);
-                const hi = (r.stat.hi * 100).toFixed(1);
-                const b = (r.baseline * 100).toFixed(1);
-                const e = r.breakeven ? (r.breakeven * 100).toFixed(1) : '';
-                const msg = `[BACKTEST] ${r.rule}: n=${n} acerto=${x}% IC95[${lo}%, ${hi}%] base=${b}%${r.breakeven ? ' equilíbrio='+e+'%' : ''} → ${r.verdict}`;
-                
-                const details = [
-                    ...r.buckets.map(b => `${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})`),
-                    '--- Por Ativo ---',
-                    ...Object.entries(perAsset).map(([sym, reports]) => {
-                        const ar = reports.find(x => x.rule === r.rule);
-                        return `${sym} (${assetCounts[sym]} candles): ${((ar?.stat.rate ?? 0) * 100).toFixed(1)}% (n=${ar?.stat.n || 0})`;
-                    })
-                ];
-                addLog(msg, 'info', details);
+            groups.forEach(g => {
+                const assetsInGroup = Object.keys(perAsset).filter(sym => groupOf(sym) === g);
+                if (assetsInGroup.length === 0) return;
+
+                const recentReports = assetsInGroup.map(sym => perAsset[sym].recent);
+                const olderReports = assetsInGroup.map(sym => perAsset[sym].older).filter(Boolean) as RuleReport[][];
+
+                merged[g] = {
+                    recent: mergeStats(recentReports, payoutPct),
+                    older: olderReports.length > 0 ? mergeStats(olderReports, payoutPct) : null
+                };
+
+                // Logs formatados
+                const logGroup = (period: 'RECENTE' | 'ANTERIOR', reports: RuleReport[]) => {
+                    reports.forEach(r => {
+                        const { n, rate, lo, hi } = r.stat;
+                        const b = (r.baseline * 100).toFixed(1);
+                        const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR t=${r.move.t.toFixed(1)}` : '';
+                        const msg = `[BACKTEST] [${g}] [${period}] ${r.rule}: n=${n} acerto=${(rate*100).toFixed(1)}% IC95[${(lo*100).toFixed(0)}%, ${(hi*100).toFixed(0)}%] base=${b}%${moveStr} → ${r.verdict}`;
+                        
+                        const details = [
+                            ...r.buckets.map(b => `${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})`),
+                            '--- Por Ativo ---',
+                            ...assetsInGroup.map(sym => {
+                                const rep = (period === 'RECENTE' ? perAsset[sym].recent : perAsset[sym].older)?.find(x => x.rule === r.rule);
+                                return `${sym}: ${((rep?.stat.rate ?? 0) * 100).toFixed(1)}% (n=${rep?.stat.n || 0})`;
+                            })
+                        ];
+                        addLog(msg, 'info', details);
+                    });
+                };
+
+                if (merged[g].recent) logGroup('RECENTE', merged[g].recent!);
+                if (merged[g].older) logGroup('ANTERIOR', merged[g].older!);
             });
+
+            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, ts: Date.now(), progress: '' }));
 
         } catch (e: any) {
             addLog(`[BACKTEST] Erro fatal: ${e.message}`, 'error');
@@ -357,22 +392,29 @@ export function useAIQuantTerminalV3(
     };
 
     const buildBacktestReport = useCallback(() => {
-        if (!backtest.merged) return "Nenhum backtest realizado.";
-        let report = `RELATÓRIO DE BACKTEST (Candles 1m)\n\n`;
-        backtest.merged.forEach(r => {
-            const n = r.stat.n;
-            const x = (r.stat.rate * 100).toFixed(1);
-            const lo = (r.stat.lo * 100).toFixed(1);
-            const hi = (r.stat.hi * 100).toFixed(1);
-            const b = (r.baseline * 100).toFixed(1);
-            const e = r.breakeven ? (r.breakeven * 100).toFixed(1) : '';
-            report += `${r.rule}: n=${n} acerto=${x}% IC95[${lo}%, ${hi}%] base=${b}%${r.breakeven ? ' equilíbrio='+e+'%' : ''} → ${r.verdict}\n`;
+        if (Object.keys(backtest.merged).length === 0) return "Nenhum backtest realizado.";
+        let report = `RELATÓRIO DE BACKTEST (Dividido em metades quando n >= 30k)\n\n`;
+        
+        Object.entries(backtest.merged).forEach(([group, periods]) => {
+            report += `### MERCADOS: ${group}\n`;
+            if (periods.recent) {
+                report += `PERÍODO RECENTE:\n`;
+                periods.recent.forEach(r => {
+                    const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR` : '';
+                    report += `- ${r.rule}: n=${r.stat.n} acerto=${(r.stat.rate*100).toFixed(1)}% base=${(r.baseline*100).toFixed(1)}%${moveStr} -> ${r.verdict}\n`;
+                });
+            }
+            if (periods.older) {
+                report += `PERÍODO ANTERIOR (CONFIRMAÇÃO):\n`;
+                periods.older.forEach(r => {
+                    const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR` : '';
+                    report += `- ${r.rule}: n=${r.stat.n} acerto=${(r.stat.rate*100).toFixed(1)}% base=${(r.baseline*100).toFixed(1)}%${moveStr} -> ${r.verdict}\n`;
+                });
+            }
+            report += '\n';
         });
-        report += "\nPOR ATIVO:\n";
-        Object.keys(backtest.perAsset).forEach(sym => {
-            report += `- ${sym}: ${backtest.assetCounts[sym]} candles\n`;
-        });
-        report += `\nObservações:\nn conta episódios (anti-sobreposição de 5 candles).\nOpções = direção do candle de 60s seguinte; Multiplicadores = direção após 5 candles (sem TP/SL); Acumuladores = proxy de calma (não é o contrato real). Payout assumido ${backtest.payoutPct}%. Várias regras/faixas aumentam a chance de falso positivo.`;
+
+        report += `Observações:\nn conta episódios (anti-sobreposição de 5 candles).\nOpções = direção do candle de 60s seguinte; Multiplicadores = direção após 5 candles (sem TP/SL); Acumuladores = proxy de calma (não é o contrato real). Payout assumido ${backtest.payoutPct}%. Várias regras/faixas aumentam a chance de falso positivo.`;
         return report;
     }, [backtest]);
 
@@ -840,7 +882,7 @@ export function useAIQuantTerminalV3(
         if (content.match(BACKTEST_RE)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: backtest.merged ? buildBacktestReport() : "Rode o backtest no painel."
+                content: (Object.keys(backtest.merged).length > 0) ? buildBacktestReport() : "Rode o backtest no painel."
             }]);
             return;
         }

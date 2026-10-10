@@ -35,6 +35,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 function TerminalV3Content() {
     const { 
@@ -67,7 +68,7 @@ function TerminalV3Content() {
     
     // Backtest Config
     const [payoutInput, setPayoutInput] = useState(85);
-    const [targetCount, setTargetCount] = useState(20000);
+    const [targetCount, setTargetCount] = useState(40000);
     const [extraSymbolsInput, setExtraSymbolsInput] = useState("");
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -804,6 +805,7 @@ function TerminalV3Content() {
                                             <SelectContent>
                                                 <SelectItem value="5000">5k</SelectItem>
                                                 <SelectItem value="20000">20k</SelectItem>
+                                                <SelectItem value="40000">40k</SelectItem>
                                                 <SelectItem value="50000">50k</SelectItem>
                                             </SelectContent>
                                         </Select>
@@ -830,75 +832,108 @@ function TerminalV3Content() {
 
                             {backtest.progress && <p className="text-[10px] text-center text-purple-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
                             
-                            {backtest.merged && (
+                            {Object.keys(backtest.merged).length > 0 && (
                                 <div className="space-y-4">
-                                    <ScrollArea className="h-48 border rounded-md">
-                                        <Table>
-                                            <TableHeader className="bg-muted/30">
-                                                <TableRow>
-                                                    <TableHead className="text-[9px] h-7 px-2 uppercase">Regra</TableHead>
-                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-center">n</TableHead>
-                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-center">Acerto</TableHead>
-                                                    <TableHead className="text-right text-[9px] h-7 px-2 uppercase">Leitura</TableHead>
-                                                </TableRow>
-                                            </TableHeader>
-                                            <TableBody>
-                                                {backtest.merged.map(r => {
-                                                    const verdict = r.verdict;
-                                                    let color = "text-muted-foreground";
-                                                    let text = "n < 50";
-                                                    
-                                                    if (r.stat.n >= 50) {
-                                                        if (verdict.includes('ABAIXO do equilíbrio')) { color = "text-red-600 font-bold"; text = "ABAIXO do equilíbrio"; }
-                                                        else if (verdict.includes('Indistinguível')) { color = "text-muted-foreground"; text = "Indistinguível do acaso"; }
-                                                        else if (verdict.includes('ACIMA do equilíbrio')) { color = "text-green-600 font-bold"; text = "ACIMA do equilíbrio"; }
-                                                        else if (verdict.includes('acima do acaso')) { color = "text-green-500"; text = "Acima do acaso"; }
-                                                        else if (verdict.includes('abaixo do acaso')) { color = "text-red-400"; text = "Abaixo do acaso"; }
-                                                        else { text = verdict; }
-                                                    }
+                                    <Alert className="bg-muted/30 border-dashed p-2">
+                                        <Info className="h-3 w-3" />
+                                        <AlertDescription className="text-[9px] leading-tight">
+                                            O período Anterior não foi inspecionado antes. Efeito que aparece no Recente e some no Anterior é ruído. Resultados brutos, sem spread nem comissão.
+                                        </AlertDescription>
+                                    </Alert>
 
+                                    <Tabs defaultValue="SINTETICOS" className="w-full">
+                                        <TabsList className="grid w-full grid-cols-2 h-7">
+                                            <TabsTrigger value="SINTETICOS" className="text-[9px] uppercase font-bold">Sintéticos</TabsTrigger>
+                                            <TabsTrigger value="REAIS" className="text-[9px] uppercase font-bold">Mercados Reais</TabsTrigger>
+                                        </TabsList>
+                                        
+                                        {['SINTETICOS', 'REAIS'].map(group => (
+                                            <TabsContent key={group} value={group} className="mt-2 space-y-4">
+                                                {['recent', 'older'].map(period => {
+                                                    const reports = backtest.merged[group]?.[period as 'recent' | 'older'];
+                                                    if (!reports) return null;
                                                     return (
-                                                        <TableRow key={r.rule} className="h-8">
-                                                            <TableCell className="text-[10px] font-bold p-2">{r.rule}</TableCell>
-                                                            <TableCell className="text-[10px] text-center p-1 font-mono">{r.stat.n}</TableCell>
-                                                            <TableCell className="text-[10px] text-center p-1 font-mono">
-                                                                {(r.stat.rate * 100).toFixed(1)}%
-                                                                <div className="text-[8px] text-muted-foreground">
-                                                                    [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
-                                                                </div>
-                                                            </TableCell>
-                                                            <TableCell className={cn("text-right p-2 text-[9px] leading-tight", color)}>
-                                                                {text}
-                                                            </TableCell>
-                                                        </TableRow>
+                                                        <div key={period} className="space-y-2">
+                                                            <p className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
+                                                                {period === 'recent' ? 'Recente (50%)' : 'Anterior (Confirmação 50%)'}
+                                                                <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s,r)=>s+r.stat.n, 0)}</Badge>
+                                                            </p>
+                                                            <div className="border rounded-md overflow-hidden">
+                                                                <Table>
+                                                                    <TableHeader className="bg-muted/30">
+                                                                        <TableRow className="h-7">
+                                                                            <TableHead className="text-[8px] h-7 px-2 uppercase">Regra</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">n</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Acerto</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Mov. ATR (t)</TableHead>
+                                                                            <TableHead className="text-right text-[8px] h-7 px-2 uppercase">Leitura</TableHead>
+                                                                        </TableRow>
+                                                                    </TableHeader>
+                                                                    <TableBody>
+                                                                        {reports.map(r => {
+                                                                            const verdict = r.verdict;
+                                                                            let color = "text-muted-foreground";
+                                                                            if (r.stat.n >= 50) {
+                                                                                if (verdict.includes('ABAIXO')) color = "text-red-600 font-bold";
+                                                                                else if (verdict.includes('ACIMA')) color = "text-green-600 font-bold";
+                                                                                else if (verdict.includes('acima do acaso')) color = "text-green-500";
+                                                                                else if (verdict.includes('abaixo do acaso')) color = "text-red-400";
+                                                                            }
+
+                                                                            return (
+                                                                                <TableRow key={r.rule} className="h-8">
+                                                                                    <TableCell className="text-[9px] font-bold p-1.5">{r.rule}</TableCell>
+                                                                                    <TableCell className="text-[9px] text-center p-1 font-mono">{r.stat.n}</TableCell>
+                                                                                    <TableCell className="text-[9px] text-center p-1 font-mono">
+                                                                                        {(r.stat.rate * 100).toFixed(1)}%
+                                                                                        <div className="text-[7px] text-muted-foreground">
+                                                                                            [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
+                                                                                        </div>
+                                                                                    </TableCell>
+                                                                                    <TableCell className="text-[9px] text-center p-1 font-mono">
+                                                                                        {r.move ? (
+                                                                                            <>
+                                                                                                {r.move.mean.toFixed(3)}
+                                                                                                <div className="text-[7px] text-muted-foreground">t={r.move.t.toFixed(1)}</div>
+                                                                                            </>
+                                                                                        ) : '—'}
+                                                                                    </TableCell>
+                                                                                    <TableCell className={cn("text-right p-1.5 text-[8px] leading-tight", color)}>
+                                                                                        {r.stat.n < 50 ? 'n < 50' : 
+                                                                                         verdict.includes('abaixo do ponto de equilibrio') ? 'ABAIXO do equilíbrio' :
+                                                                                         verdict.includes('ACIMA do ponto de equilibrio') ? 'ACIMA do equilíbrio' :
+                                                                                         verdict.includes('indistinguivel') ? 'Indistinguível' :
+                                                                                         verdict.includes('acima do acaso') ? 'Acima do acaso' :
+                                                                                         verdict.includes('abaixo do acaso') ? 'Abaixo do acaso' : verdict}
+                                                                                    </TableCell>
+                                                                                </TableRow>
+                                                                            );
+                                                                        })}
+                                                                    </TableBody>
+                                                                </Table>
+                                                            </div>
+                                                        </div>
                                                     );
                                                 })}
-                                            </TableBody>
-                                        </Table>
-                                    </ScrollArea>
+                                            </TabsContent>
+                                        ))}
+                                    </Tabs>
                                     
                                     <Accordion type="single" collapsible className="w-full">
                                         <AccordionItem value="breakdown" className="border-none">
                                             <AccordionTrigger className="py-1 text-[10px] font-bold uppercase hover:no-underline">Faixas e por ativo</AccordionTrigger>
                                             <AccordionContent className="pt-2">
                                                 <ScrollArea className="h-40 border rounded-md p-2 bg-muted/20 text-[9px] font-mono space-y-3">
-                                                    {backtest.merged.map(r => (
-                                                        <div key={r.rule} className="mb-4">
-                                                            <p className="font-bold text-purple-700 border-b pb-1 mb-1">{r.rule}</p>
-                                                            <div className="grid grid-cols-3 gap-1 mb-2">
-                                                                {r.buckets.map(b => (
-                                                                    <div key={b.label} className="text-center bg-background p-1 rounded">
-                                                                        <div className="opacity-60">{b.label}</div>
-                                                                        <div className="font-bold">{(b.stat.rate * 100).toFixed(1)}%</div>
-                                                                        <div className="opacity-40">n={b.stat.n}</div>
+                                                    {Object.entries(backtest.perAsset).map(([sym, report]) => (
+                                                        <div key={sym} className="mb-4">
+                                                            <p className="font-bold text-purple-700 border-b pb-1 mb-1">{sym} ({backtest.assetCounts[sym]} candles)</p>
+                                                            <div className="space-y-2">
+                                                                {report.recent.map(r => (
+                                                                    <div key={r.rule} className="flex justify-between items-center bg-background/50 p-1 rounded px-2">
+                                                                        <span className="opacity-70">{r.rule}</span>
+                                                                        <span className="font-bold">{(r.stat.rate * 100).toFixed(1)}% (n={r.stat.n})</span>
                                                                     </div>
                                                                 ))}
-                                                            </div>
-                                                            <div className="opacity-60 space-y-0.5">
-                                                                {Object.entries(backtest.perAsset).map(([sym, reports]) => {
-                                                                    const ar = reports.find(x => x.rule === r.rule);
-                                                                    return <div key={sym}>{sym} ({backtest.assetCounts[sym]} candles): {((ar?.stat.rate ?? 0) * 100).toFixed(1)}% (n={ar?.stat.n || 0})</div>
-                                                                })}
                                                             </div>
                                                         </div>
                                                     ))}
