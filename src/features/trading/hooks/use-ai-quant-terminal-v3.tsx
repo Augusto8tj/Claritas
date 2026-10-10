@@ -143,6 +143,7 @@ export function useAIQuantTerminalV3(
     const lastSkipLogRef = useRef<Record<string, number>>({});
     const lastTriggerLogRef = useRef<Record<string, number>>({});
     const sentinelAboveRef = useRef<Record<string, number>>({});
+    const interlockLoggedRef = useRef(false);
 
     const executeTradeRef = useRef(executeTrade);
     useEffect(() => { executeTradeRef.current = executeTrade; }, [executeTrade]);
@@ -298,13 +299,25 @@ export function useAIQuantTerminalV3(
                 plannedStake: stakeValue
             };
 
-            const assetPermissions: AssetExecutionPermission = {
+            const initialPermissions: AssetExecutionPermission = {
                 symbol, enabled: true, maxStake: stakeValue * 2,
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
-            const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, assetPermissions, portfolioState);
+            // INTERLOCK SEGURANÇA: Bloqueia Accumulators/Multipliers em modo Real por falta de saída automática
+            if (!isShadowMode) {
+              const filteredContracts = initialPermissions.allowedContracts.filter(c => c === 'OPTIONS');
+              if (filteredContracts.length < initialPermissions.allowedContracts.length) {
+                if (!interlockLoggedRef.current) {
+                   addLog(`[INTERLOCK] Bloqueando categorias sem saída automática em modo REAL.`, 'warning', undefined, symbol);
+                   interlockLoggedRef.current = true;
+                }
+                initialPermissions.allowedContracts = filteredContracts as any;
+              }
+            }
+
+            const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, initialPermissions, portfolioState);
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
             
             const { finalAction: action, consensusConfidence: conf, executedVia: via, recommendedContract: contract, debugVotes: votes, t2tLatencyMs: lat } = decision;
@@ -435,6 +448,7 @@ export function useAIQuantTerminalV3(
         scheduleRef.current = {};
         setLastDecision(null);
         setMemoryBuffer({ wins: [], losses: [] });
+        interlockLoggedRef.current = false;
         toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
     }, [clearActiveContracts, toast]);
 
@@ -692,8 +706,8 @@ export function useAIQuantTerminalV3(
             }
             const res = await fetch(url, { headers });
             if (res.ok) {
-                const data = await res.json();
-                setAvailableModels(data.models || []);
+                const data = await res.ok ? await res.json() : null;
+                if(data) setAvailableModels(data.models || []);
             }
         } catch (e) { console.error("Falha ao buscar modelos", e); }
     };

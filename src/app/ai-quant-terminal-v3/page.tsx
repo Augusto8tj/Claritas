@@ -77,14 +77,6 @@ function TerminalV3Content() {
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
 
-    const handleChatSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (chatInput.trim()) {
-            sendMessage(chatInput, chatTarget);
-            setChatInput('');
-        }
-    };
-
     const copyLogs = () => {
         if (filteredLogs.length === 0) {
             toast({ title: "Nada para copiar", description: "O log de raciocínio está vazio no momento.", variant: "destructive" });
@@ -98,7 +90,6 @@ function TerminalV3Content() {
         }).join('\n\n');
 
         navigator.clipboard.writeText(text).then(() => {
-            console.log(`[Quant V3] ${filteredLogs.length} entradas de log copiadas.`);
             toast({ title: "Log copiado", description: `${filteredLogs.length} entradas enviadas para a área de transferência.` });
         }).catch(err => {
             console.error("Falha ao copiar logs:", err);
@@ -137,7 +128,7 @@ function TerminalV3Content() {
                             </AccordionContent>
                         </AccordionItem>
                     </Accordion>
-                    <p className="font-mono">{mainContent}</p>
+                    <p className="font-mono whitespace-pre-wrap">{mainContent}</p>
                 </div>
             );
         }
@@ -148,6 +139,20 @@ function TerminalV3Content() {
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
+            {/* ALERTAS DE RISCO (MODO REAL) */}
+            {!isShadowMode && (
+              <Alert className="bg-red-500/10 border-red-500/30 text-red-600">
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle className="font-black uppercase tracking-tighter">MODO REAL: ORDENS REAIS SERÃO ENVIADAS</AlertTitle>
+                <AlertDescription className="text-xs">
+                  A execução automática em conta real está ativa. 
+                  {(allowedContracts.ACCUMULATORS || allowedContracts.MULTIPLIERS) && (
+                    <span className="font-bold block mt-1">⚠️ ATENÇÃO: Contratos do tipo Acumuladores e Multiplicadores ainda não possuem rotina de saída automática (TP/SL) nesta versão do Lab V3.</span>
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* RADAR DE OPORTUNIDADES V3 */}
             <Card className="bg-purple-500/5 border-purple-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-purple-500/10 border-b border-purple-500/20 flex flex-row items-center justify-between space-y-0">
@@ -224,7 +229,6 @@ function TerminalV3Content() {
                                         <span className="font-mono">{status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
                                     </div>
                                     
-                                    {/* SENTINEL SCORE CHIPS */}
                                     <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
                                         {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
                                             const cand = sent?.candidates.find(c => c.contract === cat);
@@ -251,6 +255,30 @@ function TerminalV3Content() {
                 </CardContent>
             </Card>
 
+            {/* BARRA DE CONTROLE COMPACTA (MOBILE/TABLET) */}
+            <div className="lg:hidden flex flex-wrap items-center gap-3 p-3 bg-muted/30 rounded-xl border">
+                <div className="flex items-center gap-2 bg-background p-2 rounded-lg border shadow-sm">
+                    <Label htmlFor="mobile-shadow-mode" className="text-[10px] font-black uppercase">Shadow</Label>
+                    <Switch id="mobile-shadow-mode" checked={isShadowMode} onCheckedChange={v3.toggleShadowMode} />
+                </div>
+                <Button 
+                    onClick={v3.toggleAutoMode} 
+                    size="sm"
+                    className={cn("flex-1 h-9 font-bold text-[10px] uppercase tracking-tighter", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white")}
+                >
+                    {isAutoMode ? <PauseCircle className="mr-1.5 h-4 w-4" /> : <PlayCircle className="mr-1.5 h-4 w-4" />}
+                    {isAutoMode ? 'Parar Conselho' : 'Ativar Conselho'}
+                </Button>
+                <div className="flex gap-1.5">
+                    <Badge variant={isShadowMode ? "outline" : "destructive"} className="text-[9px] h-9 px-3 border-2 uppercase font-black">
+                        {isShadowMode ? 'Shadow' : 'Real'}
+                    </Badge>
+                    <Badge variant={isAutoMode ? "default" : "secondary"} className="text-[9px] h-9 px-3 uppercase font-black">
+                        PILOTO {isAutoMode ? 'ON' : 'OFF'}
+                    </Badge>
+                </div>
+            </div>
+
             {/* HEADER CANÔNICO V3 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">
@@ -258,7 +286,7 @@ function TerminalV3Content() {
                         <TestTube className="h-8 w-8 text-purple-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.0</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.8</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -293,9 +321,9 @@ function TerminalV3Content() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* COLUNA ESQUERDA: CONTROLE DO CONSELHO */}
-                <div className="lg:col-span-1 space-y-6">
+                <div className="lg:col-span-3 space-y-6">
                     <Card className="border-purple-200 bg-purple-50/10 shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-purple-600 flex items-center gap-2">
@@ -353,7 +381,7 @@ function TerminalV3Content() {
                                         <span className="font-mono text-primary font-bold">~{scanEstimateSec}s</span>
                                     </div>
                                     {isScanOverloaded && (
-                                        <p className="text-[9px] text-amber-600 font-medium italic">
+                                        <p className="text-[9px] text-amber-600 font-medium italic animate-pulse">
                                             ⚠️ Ativos serão analisados em fila contínua.
                                         </p>
                                     )}
@@ -381,7 +409,7 @@ function TerminalV3Content() {
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
-                                                <Label htmlFor={`action-${action}`} className="text-sm font-medium leading-none cursor-pointer">
+                                                <Label htmlFor={`action-${action}`} className="text-[10px] font-medium leading-none cursor-pointer">
                                                     {action}
                                                 </Label>
                                             </div>
@@ -404,7 +432,7 @@ function TerminalV3Content() {
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
-                                                <Label htmlFor={`contract-${contract}`} className="text-sm font-medium leading-none cursor-pointer">
+                                                <Label htmlFor={`contract-${contract}`} className="text-[10px] font-medium leading-none cursor-pointer">
                                                     {contract}
                                                 </Label>
                                             </div>
@@ -415,7 +443,7 @@ function TerminalV3Content() {
 
                             <Button 
                                 onClick={v3.toggleAutoMode} 
-                                className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-destructive-foreground" : "bg-purple-600 text-white hover:bg-purple-700")}
+                                className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white hover:bg-purple-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
                                 {isAutoMode ? 'Parar Automação' : 'Ativar Conselho V3'}
@@ -423,140 +451,166 @@ function TerminalV3Content() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
-                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
-                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500 w-full">
-                                <Gauge className="h-3.5 w-3.5" />
-                                <span className="shrink-0">Hardware Node:</span>
-                                <div className="flex-1 flex items-center gap-2">
-                                    <Select 
-                                        value={ollamaConfig?.model || ""} 
-                                        onValueChange={(val) => {
-                                            if (val !== "none") updateOllamaConfig({ model: val });
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-6 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
-                                            <SelectValue placeholder="Model..." />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
-                                            {v3.availableModels && v3.availableModels.length > 0 ? (
-                                                v3.availableModels
-                                                    .filter((model: any, index: number, self: any[]) => 
-                                                        index === self.findIndex((m) => m.name === model.name)
-                                                    )
-                                                    .map((m: any) => (
-                                                        <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
-                                                            {m.name}
-                                                        </SelectItem>
-                                                    ))
-                                            ) : (
-                                                <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
-                                            )}
-                                        </SelectContent>
-                                    </Select>
-                                    <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-6 w-6 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
-                                        onClick={() => v3.fetchAvailableModels()}
-                                        title="Sincronizar"
-                                    >
-                                        <RefreshCw className="h-3 w-3" />
-                                    </Button>
-                                </div>
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 space-y-4 text-[11px]">
-                             <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="opacity-60 uppercase">TPS Intensity:</span>
-                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-amber-500")}>
-                                        {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
-                                    </span>
-                                </div>
-                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
-                            </div>
+                    {/* HARDWARE NODE */}
+                    <Accordion type="single" collapsible defaultValue="hardware" className="w-full">
+                        <AccordionItem value="hardware" className="border-none">
+                            <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
+                                <AccordionTrigger className="py-3 px-4 hover:no-underline hover:bg-slate-900 border-b border-slate-800">
+                                    <div className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
+                                        <Gauge className="h-3.5 w-3.5" /> Hardware Node
+                                    </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="p-4 space-y-4 text-[11px]">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <Select 
+                                                value={ollamaConfig?.model || ""} 
+                                                onValueChange={(val) => {
+                                                    if (val !== "none") updateOllamaConfig({ model: val });
+                                                }}
+                                            >
+                                                <SelectTrigger className="h-7 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
+                                                    <SelectValue placeholder="Model..." />
+                                                </SelectTrigger>
+                                                <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
+                                                    {v3.availableModels && v3.availableModels.length > 0 ? (
+                                                        v3.availableModels
+                                                            .filter((model: any, index: number, self: any[]) => 
+                                                                index === self.findIndex((m) => m.name === model.name)
+                                                            )
+                                                            .map((m: any) => (
+                                                                <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
+                                                                    {m.name}
+                                                                </SelectItem>
+                                                            ))
+                                                    ) : (
+                                                        <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
+                                                    )}
+                                                </SelectContent>
+                                            </Select>
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                className="h-7 w-7 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
+                                                onClick={() => v3.fetchAvailableModels()}
+                                                title="Sincronizar"
+                                            >
+                                                <RefreshCw className="h-3.5 w-3.5" />
+                                            </Button>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="opacity-60 uppercase">TPS Intensity:</span>
+                                            <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-amber-500")}>
+                                                {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
+                                            </span>
+                                        </div>
+                                        <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
+                                    </div>
 
-                            <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
-                                <div className="space-y-1">
-                                    <p className="opacity-50 uppercase text-[9px]">Consensus Entropy:</p>
-                                    <p className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
-                                        {telemetry.consensusEntropy.toFixed(3)}
+                                    <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+                                        <div className="space-y-1">
+                                            <p className="opacity-50 uppercase text-[9px]">Consensus Entropy:</p>
+                                            <p className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
+                                                {telemetry.consensusEntropy.toFixed(3)}
+                                            </p>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <p className="opacity-50 uppercase text-[9px]">Cycle Jitter:</p>
+                                            <p className="text-xs font-bold text-slate-100">{telemetry.jitterMs}ms</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <p className="text-[9px] text-slate-500 italic mt-2">
+                                        [STRICT] High entropy (&gt;0.7) prevents autopilot entry.
                                     </p>
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="opacity-50 uppercase text-[9px]">Cycle Jitter:</p>
-                                    <p className="text-xs font-bold text-slate-100">{telemetry.jitterMs}ms</p>
-                                </div>
-                            </div>
-                            
-                            <p className="text-[9px] text-slate-500 italic mt-2">
-                                [STRICT] High entropy (&gt;0.7) prevents autopilot entry.
-                            </p>
-                        </CardContent>
-                    </Card>
+                                </AccordionContent>
+                            </Card>
+                        </AccordionItem>
+                    </Accordion>
 
-                    <Card className="bg-card/50 border-border shadow-sm">
-                        <CardHeader className="pb-3">
-                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Activity className="h-4 w-4" /> Lab Session Risks
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                        <Wallet className="h-3 w-3" /> Stake
-                                    </Label>
-                                    <Input 
-                                        type="number" 
-                                        value={stakeValue} 
-                                        onChange={(e) => setStakeValue(Number(e.target.value))}
-                                        className="h-8 text-xs font-mono bg-background/50"
-                                        disabled={isAutoMode}
-                                    />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                        <Target className="h-3 w-3" /> Max Orders
-                                    </Label>
-                                    <Input 
-                                        type="number" 
-                                        value={maxConcurrentTrades} 
-                                        onChange={(e) => setMaxConcurrentTrades(Number(e.target.value))}
-                                        className="h-8 text-xs font-mono bg-background/50"
-                                        disabled={isAutoMode}
-                                    />
-                                </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">WR Session</p>
-                                    <p className="text-lg font-bold">
-                                      {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
-                                    </p>
-                                </div>
-                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center flex items-center justify-center">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm"
-                                        className="h-8 gap-2 text-[10px] font-bold border-destructive/20 text-destructive hover:bg-destructive/10"
-                                        onClick={resetSession}
-                                    >
-                                        <RefreshCw className="h-3 w-3" />
-                                        RESET LAB
-                                    </Button>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    {/* RISCO E SESSÃO (ACCORDION PARA MOBILE) */}
+                    <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="risk" className="border-none">
+                            <Card className="bg-card/50 border-border shadow-sm">
+                                <AccordionTrigger className="py-3 px-4 hover:no-underline hover:bg-muted/50 border-b">
+                                    <div className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                        <Activity className="h-4 w-4" /> Risco e sessão
+                                    </div>
+                                </AccordionTrigger>
+                                <AccordionContent className="p-4 space-y-4">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1.5">
+                                            <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                                <Wallet className="h-3 w-3" /> Stake
+                                            </Label>
+                                            <Input 
+                                                type="number" 
+                                                value={stakeValue} 
+                                                onChange={(e) => setStakeValue(Number(e.target.value))}
+                                                className="h-8 text-xs font-mono bg-background/50"
+                                                disabled={isAutoMode}
+                                            />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                                <Target className="h-3 w-3" /> Max Orders
+                                            </Label>
+                                            <Input 
+                                                type="number" 
+                                                value={maxConcurrentTrades} 
+                                                onChange={(e) => setMaxConcurrentTrades(Number(e.target.value))}
+                                                className="h-8 text-xs font-mono bg-background/50"
+                                                disabled={isAutoMode}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                            <p className="text-[10px] text-muted-foreground uppercase font-bold">WR Session</p>
+                                            <p className="text-lg font-bold">
+                                              {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
+                                            </p>
+                                        </div>
+                                        <div className="p-3 rounded-lg bg-muted/20 border border-border text-center flex items-center justify-center">
+                                            <Button 
+                                                variant="outline" 
+                                                size="sm"
+                                                className="h-8 gap-2 text-[10px] font-bold border-destructive/20 text-destructive hover:bg-destructive/10"
+                                                onClick={resetSession}
+                                            >
+                                                <RefreshCw className="h-3 w-3" />
+                                                RESET LAB
+                                            </Button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex gap-2 pt-2">
+                                        <div className="flex-1 p-2 rounded bg-green-50/50 border border-green-100 flex items-center justify-between">
+                                            <span className="text-[9px] uppercase font-black text-green-600">Wins</span>
+                                            <span className="text-xs font-black text-green-700">{memoryBuffer.wins.length}</span>
+                                        </div>
+                                        <div className="flex-1 p-2 rounded bg-red-50/50 border border-red-100 flex items-center justify-between">
+                                            <span className="text-[9px] uppercase font-black text-red-600">Losses</span>
+                                            <span className="text-xs font-black text-red-700">{memoryBuffer.losses.length}</span>
+                                        </div>
+                                    </div>
+                                </AccordionContent>
+                            </Card>
+                        </AccordionItem>
+                    </Accordion>
                 </div>
 
                 {/* COLUNA CENTRAL: GRÁFICO E CHAT */}
-                <div className="lg:col-span-2 space-y-6">
-                    <Card className="min-h-[400px] shadow-sm">
-                        <CardContent className="p-4">
+                <div className="lg:col-span-6 space-y-6">
+                    <Card className="min-h-[400px] shadow-sm overflow-hidden">
+                        <CardHeader className="bg-muted/10 py-3 border-b flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                                <LineChart className="h-4 w-4 text-purple-600" /> Ativo em Foco: {activeSymbol}
+                            </CardTitle>
+                            <Badge variant="outline" className="text-[10px] font-mono">{timePeriod}</Badge>
+                        </CardHeader>
+                        <CardContent className="p-0">
                             <MarketChart 
                                 activeSymbol={activeSymbol || ''}
                                 chartData={chartData}
@@ -573,7 +627,7 @@ function TerminalV3Content() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
+                    <Card className="bg-card border-border flex flex-col shadow-sm">
                         <CardHeader className="py-3 border-b border-border bg-purple-50/10">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-sm flex items-center gap-2">
@@ -593,7 +647,7 @@ function TerminalV3Content() {
                                 </Select>
                             </div>
                         </CardHeader>
-                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
+                        <CardContent className="h-[350px] overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-4 pb-4">
                                     {chatMessages.length === 0 && (
@@ -610,7 +664,11 @@ function TerminalV3Content() {
                                         )}>
                                             <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
                                                 {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
-                                                {msg.role === 'assistant' && !msg.isError && <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200">Verified</Badge>}
+                                                {msg.role === 'assistant' && !msg.isError && (
+                                                  <Badge variant="outline" className="h-3 text-[7px] py-0 px-1 border-purple-200 uppercase font-black tracking-tighter">
+                                                    {msg.agentName === 'SISTEMA' ? 'Dados do sistema' : 'IA · não verificado'}
+                                                  </Badge>
+                                                )}
                                                 {msg.isError && <AlertCircle className="h-3 w-3 text-red-500" />}
                                             </span>
                                             {msg.role === 'assistant' && !msg.isError ? renderMessageContent(msg.content) : <p className="font-mono">{msg.content}</p>}
@@ -642,8 +700,8 @@ function TerminalV3Content() {
                     </Card>
                 </div>
 
-                {/* COLUNA DIREITA: VEREDITO E MEMÓRIA */}
-                <div className="lg:col-span-1 space-y-6">
+                {/* COLUNA DIREITA: VEREDITO E LOG ENGINE */}
+                <div className="lg:col-span-3 space-y-6">
                     <Card className="border-purple-600/30 shadow-md">
                         <CardHeader className="bg-purple-600/5 border-b py-3">
                             <CardTitle className="text-sm flex items-center gap-2 text-purple-600">
@@ -683,26 +741,6 @@ function TerminalV3Content() {
                         </CardContent>
                     </Card>
 
-                    <Card className="shadow-sm border-purple-100">
-                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Database className="h-4 w-4" /> Lab Memory Buffer
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="p-3 rounded-lg bg-green-50/50 border border-green-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-green-600 block mb-1">Wins</span>
-                                    <p className="text-lg font-black text-green-700">{memoryBuffer.wins.length}/20</p>
-                                </div>
-                                <div className="p-3 rounded-lg bg-red-50/50 border border-red-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-red-600 block mb-1">Losses</span>
-                                    <p className="text-lg font-black text-red-700">{memoryBuffer.losses.length}/20</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-purple-200 h-96 flex flex-col">
                         <CardHeader className="py-2 px-4 border-b bg-card/50 flex flex-row items-center justify-between">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
@@ -713,7 +751,7 @@ function TerminalV3Content() {
                             </Button>
                         </CardHeader>
                         <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
-                             <div className="flex flex-wrap gap-2 text-[10px] font-mono text-muted-foreground">
+                             <div className="flex flex-wrap gap-2 text-[9px] font-mono text-muted-foreground leading-tight">
                                 <span>{councilStats.total} evals</span>
                                 <span>| HOLD {councilStats.total > 0 ? Math.round(councilStats.hold/councilStats.total*100) : 0}%</span>
                                 <span>| CALL {councilStats.call}</span>
@@ -727,7 +765,7 @@ function TerminalV3Content() {
                                     <Badge 
                                         key={f} 
                                         variant={logFilter === f ? 'default' : 'outline'} 
-                                        className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-bold"
+                                        className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-black tracking-tighter"
                                         onClick={() => setLogFilter(f as any)}
                                     >
                                         {f === 'decision' ? 'Conselho' : f === 'sentinel' ? 'Sentinela' : f === 'execution' ? 'Execução' : f === 'error' ? 'Erros' : 'Todos'}
@@ -746,7 +784,7 @@ function TerminalV3Content() {
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
                                                 {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-purple-200 text-purple-600">{log.symbol}</Badge>}
                                                 <span className={cn(
-                                                    "font-medium",
+                                                    "font-medium break-words",
                                                     log.type === 'decision' ? "text-purple-600 font-bold" : 
                                                     log.type === 'execution' ? "text-green-600 font-bold" : 
                                                     log.type === 'sentinel' ? "text-blue-500" :
