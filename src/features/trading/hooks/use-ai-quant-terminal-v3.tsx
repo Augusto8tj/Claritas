@@ -2,13 +2,13 @@
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.8 (COUNCIL EDITION)
- * V3.8: Comandos Determinísticos, RAG de Microestrutura e Rastreabilidade Multi-Ativo.
+ * @fileOverview TERMINAL QUANT V3.9.5 (COUNCIL EDITION)
+ * V3.9.5: Posições Órfãs, Backtest Pagina e Sentinela Histerese.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
-import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi, type AccountType, type ApiHistoricalData } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { useToast } from '@/hooks/use-toast';
@@ -76,6 +76,13 @@ export interface CouncilStats {
     avgLatencyMs: number;
 }
 
+const isOrphanOp = (op: Operation) => {
+    const ageMs = Date.now() - new Date(op.timestamp).getTime();
+    const isExpired = op.expirationTime && Date.now() > op.expirationTime + 60000;
+    const isVeryOld = ageMs > 24 * 3600 * 1000;
+    return isExpired || isVeryOld;
+};
+
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -117,7 +124,8 @@ export function useAIQuantTerminalV3(
         payoutPct: number;
         merged: RuleReport[] | null;
         perAsset: Record<string, RuleReport[]>;
-    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: null, perAsset: {} });
+        assetCounts: Record<string, number>;
+    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: null, perAsset: {}, assetCounts: {} });
 
     // LOGS E TELEMETRIA
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -153,7 +161,8 @@ export function useAIQuantTerminalV3(
     const chatBusyRef = useRef(false);
     const pendingChatOrderRef = useRef<{ symbol: string, ts: number } | null>(null);
     const lastSkipLogRef = useRef<Record<string, number>>({});
-    const sentinelAboveRef = useRef<Record<string, number>>({});
+    const sentinelEpisodeRef = useRef<Record<string, { start: number, lastAbove: number, peak: number }>>({});
+    const [sentinelCounts, setSentinelCounts] = useState<Record<string, number>>({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
     const interlockLoggedRef = useRef(false);
 
     const executeTradeRef = useRef(executeTrade);
@@ -252,39 +261,74 @@ export function useAIQuantTerminalV3(
         return (multi ?? []) as CandleData[];
     }, []);
 
-    const runBacktest = async (payoutPct = 85, count = 5000) => {
+    const fetchCandlesPaged = async (sym: string, target: number): Promise<CandleData[]> => {
+        let all: CandleData[] = [];
+        let endEpoch: number | undefined = undefined;
+        
+        for (let pageIdx = 0; pageIdx < 40; pageIdx++) {
+            const count = Math.min(5000, target - all.length);
+            if (count <= 0) break;
+            
+            const page = await getHistoricalData(sym, 'candles', count, '1m', endEpoch);
+            const valid = page.filter(h => h.open !== undefined && h.high !== undefined && h.low !== undefined && h.close !== undefined) as CandleData[];
+            
+            if (valid.length === 0) break;
+            
+            const minEpoch = Math.min(...valid.map(v => v.epoch));
+            const existingMin = all.length > 0 ? Math.min(...all.map(a => a.epoch)) : Infinity;
+            
+            if (minEpoch >= existingMin && all.length > 0) break;
+
+            all = [...valid, ...all].sort((a,b) => a.epoch - b.epoch);
+            const uniqueMap = new Map<number, CandleData>();
+            all.forEach(c => uniqueMap.set(c.epoch, c));
+            all = Array.from(uniqueMap.values());
+            
+            endEpoch = minEpoch - 1;
+            setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}: ${all.length}/${target}` }));
+            
+            if (all.length >= target) break;
+            await new Promise(r => setTimeout(r, 150));
+        }
+        return all;
+    };
+
+    const runBacktest = async (payoutPct = 85, targetCount = 20000, extraSymbols: string[] = []) => {
         if (backtest.running) return;
-        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct }));
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: null, perAsset: {}, assetCounts: {} }));
         const perAsset: Record<string, RuleReport[]> = {};
-        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+        const assetCounts: Record<string, number> = {};
+        
+        const baseSymbols = new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean));
+        extraSymbols.forEach(s => { if(s.trim()) baseSymbols.add(s.trim()); });
+        const symbols = Array.from(baseSymbols);
 
         try {
             for (const sym of symbols) {
                 if (!sym) continue;
                 setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}...` }));
-                const hist = await getHistoricalData(sym, 'candles', count, '1m');
-                const candles = hist.map(h => ({
-                    epoch: h.epoch,
-                    open: h.open!,
-                    high: h.high!,
-                    low: h.low!,
-                    close: h.close!
-                })).filter(c => c.open !== undefined && c.high !== undefined && c.low !== undefined && c.close !== undefined);
-
-                if (candles.length < 200) {
-                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${candles.length}/200).`, 'warning');
+                const candles = await fetchCandlesPaged(sym, targetCount);
+                
+                if (candles.length < 1000) {
+                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${candles.length}/1000).`, 'warning');
                     continue;
                 }
 
+                const dataIni = new Date(candles[0].epoch * 1000).toLocaleDateString();
+                const dataFim = new Date(candles[candles.length - 1].epoch * 1000).toLocaleDateString();
+                const dias = ((candles[candles.length-1].epoch - candles[0].epoch) / 86400).toFixed(1);
+                addLog(`[BACKTEST] ${sym}: ${candles.length} candles (${dias} dias, de ${dataIni} a ${dataFim})`, 'info', undefined, sym);
+
                 setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${candles.length} candles)...` }));
                 await new Promise(r => setTimeout(r, 0));
+                
                 perAsset[sym] = backtestCandles(candles as any, { payoutPct });
+                assetCounts[sym] = candles.length;
             }
 
             const merged = mergeStats(Object.values(perAsset), payoutPct);
-            setBacktest(prev => ({ ...prev, merged, perAsset, ts: Date.now(), progress: '' }));
+            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, ts: Date.now(), progress: '' }));
 
-            // Logs
             merged.forEach(r => {
                 const n = r.stat.n;
                 const x = (r.stat.rate * 100).toFixed(1);
@@ -299,7 +343,7 @@ export function useAIQuantTerminalV3(
                     '--- Por Ativo ---',
                     ...Object.entries(perAsset).map(([sym, reports]) => {
                         const ar = reports.find(x => x.rule === r.rule);
-                        return `${sym}: ${(ar?.stat.rate || 0 * 100).toFixed(1)}% (n=${ar?.stat.n || 0})`;
+                        return `${sym} (${assetCounts[sym]} candles): ${((ar?.stat.rate ?? 0) * 100).toFixed(1)}% (n=${ar?.stat.n || 0})`;
                     })
                 ];
                 addLog(msg, 'info', details);
@@ -314,7 +358,7 @@ export function useAIQuantTerminalV3(
 
     const buildBacktestReport = useCallback(() => {
         if (!backtest.merged) return "Nenhum backtest realizado.";
-        let report = "RELATÓRIO DE BACKTEST (Candles 1m)\n\n";
+        let report = `RELATÓRIO DE BACKTEST (Candles 1m)\n\n`;
         backtest.merged.forEach(r => {
             const n = r.stat.n;
             const x = (r.stat.rate * 100).toFixed(1);
@@ -323,6 +367,10 @@ export function useAIQuantTerminalV3(
             const b = (r.baseline * 100).toFixed(1);
             const e = r.breakeven ? (r.breakeven * 100).toFixed(1) : '';
             report += `${r.rule}: n=${n} acerto=${x}% IC95[${lo}%, ${hi}%] base=${b}%${r.breakeven ? ' equilíbrio='+e+'%' : ''} → ${r.verdict}\n`;
+        });
+        report += "\nPOR ATIVO:\n";
+        Object.keys(backtest.perAsset).forEach(sym => {
+            report += `- ${sym}: ${backtest.assetCounts[sym]} candles\n`;
         });
         report += `\nObservações:\nn conta episódios (anti-sobreposição de 5 candles).\nOpções = direção do candle de 60s seguinte; Multiplicadores = direção após 5 candles (sem TP/SL); Acumuladores = proxy de calma (não é o contrato real). Payout assumido ${backtest.payoutPct}%. Várias regras/faixas aumentam a chance de falso positivo.`;
         return report;
@@ -345,14 +393,22 @@ export function useAIQuantTerminalV3(
 
                 candidates.forEach(c => {
                     const logKey = `${sym}-${c.contract}`;
-                    if (c.score >= SIGNAL_TRIGGER_SCORE) {
-                        const lastLog = sentinelAboveRef.current[logKey] || 0;
-                        if (lastLog === 0 || now - lastLog > 300000) {
-                            addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
-                            sentinelAboveRef.current[logKey] = now;
+                    const episode = sentinelEpisodeRef.current[logKey];
+                    const HYS = 10; // Histerese
+
+                    if (c.score >= SIGNAL_TRIGGER_SCORE && !episode) {
+                        sentinelEpisodeRef.current[logKey] = { start: now, lastAbove: now, peak: c.score };
+                        setSentinelCounts(prev => ({ ...prev, [c.contract]: prev[c.contract] + 1 }));
+                        addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
+                    } else if (episode) {
+                        if (c.score >= SIGNAL_TRIGGER_SCORE - HYS) {
+                            episode.lastAbove = now;
+                            episode.peak = Math.max(episode.peak, c.score);
+                        } else if (now - episode.lastAbove > 30000) {
+                            const durS = Math.round((now - episode.start) / 1000);
+                            addLog(`[SENTINEL-FIM] ${sym} ${c.contract} duração ${durS}s pico ${episode.peak}`, 'sentinel', undefined, sym);
+                            delete sentinelEpisodeRef.current[logKey];
                         }
-                    } else {
-                        delete sentinelAboveRef.current[logKey];
                     }
                 });
             });
@@ -391,10 +447,11 @@ export function useAIQuantTerminalV3(
                 ...(feats ? { bbPos: feats.bbPos, bwPct: feats.bwPct, atrRatio: feats.atrRatio, er: feats.er, mom5: feats.mom5, mom15: feats.mom15, streak: feats.streak } : {})
             };
 
+            const nonOrphanOps = operationsLogRef.current.filter(op => !isOrphanOp(op));
             const portfolioState: PortfolioRiskState = {
-                openPositions: operationsLogRef.current.filter(op => op.status === 'pending').length,
+                openPositions: nonOrphanOps.filter(op => op.status === 'pending').length,
                 maxConcurrentPositions: maxConcurrentTrades,
-                totalExposure: operationsLogRef.current.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
+                totalExposure: nonOrphanOps.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
                 maxTotalExposure: dailyBalance,
                 lockedSymbols: new Set(),
                 plannedStake: stakeValue
@@ -463,7 +520,7 @@ export function useAIQuantTerminalV3(
                     default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                 }
 
-                const hasOpen = operationsLogRef.current.some(op => op.asset === symbol && op.status === 'pending' && op.contractType === finalContractType);
+                const hasOpen = operationsLogRef.current.filter(o => !isOrphanOp(o)).some(op => op.asset === symbol && op.status === 'pending' && op.contractType === finalContractType);
                 
                 if (!hasOpen) {
                     const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
@@ -551,6 +608,8 @@ export function useAIQuantTerminalV3(
         setLastDecision(null);
         setMemoryBuffer({ wins: [], losses: [] });
         interlockLoggedRef.current = false;
+        setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
+        sentinelEpisodeRef.current = {};
         toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
     }, [clearActiveContracts, toast]);
 
@@ -566,23 +625,23 @@ export function useAIQuantTerminalV3(
         const mode = isShadowMode ? 'SHADOW' : 'REAL';
         const pilot = isAutoMode ? 'ON' : 'OFF';
         const stats = councilStats;
+        const nonOrphanOps = operationsLogRef.current.filter(o => !isOrphanOp(o));
         const positions = operationsLogRef.current.filter(o => o.status === 'pending');
         const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
         
         let report = `RELATÓRIO ${nowStr} | ${mode} | piloto ${pilot} | conta ${accountType} | saldo $${accountBalance.balance}\n`;
         report += `Conselho: ${stats.total} avaliações | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | vetos ${stats.vetoes} | fallbacks ${stats.fallbacks} | ${(stats.avgLatencyMs/1000).toFixed(1)}s/ativo\n`;
-        report += `Posições abertas: ${positions.length}/${maxConcurrentTrades}\n\n`;
+        report += `Posições abertas: ${nonOrphanOps.filter(o => o.status === 'pending').length}/${maxConcurrentTrades}\n`;
+        report += `Episódios do Sentinela: O ${sentinelCounts.OPTIONS} | M ${sentinelCounts.MULTIPLIERS} | A ${sentinelCounts.ACCUMULATORS}\n\n`;
 
         if (positions.length > 0) {
             report += `POSIÇÕES ABERTAS (${positions.length}):\n`;
             positions.forEach(op => {
                 const ageMs = Date.now() - new Date(op.timestamp).getTime();
                 const min = Math.floor(ageMs / 60000);
-                let orphan = "";
-                if (min > 15 && (!op.expirationTime || op.expirationTime + 60000 < Date.now())) {
-                    orphan = " (possível órfã)";
-                }
-                report += `- #${op.id} ${op.asset} ${op.contractType || 'OPTIONS'} $${op.stake} há ${min}min por ${op.initiator}${orphan}\n`;
+                const orphan = isOrphanOp(op);
+                const ageStr = min > 1440 ? `${(min/1440).toFixed(1)}d` : `${min}min`;
+                report += `- #${op.id} ${op.asset} ${op.contractType || 'OPTIONS'} $${op.stake} há ${ageStr} por ${op.initiator}${orphan ? ' (órfã, ignorada nos limites)' : ''}\n`;
             });
             report += "\n";
         }
@@ -607,7 +666,7 @@ export function useAIQuantTerminalV3(
             } else {
                 report += `  Conselho: ainda não avaliou\n`;
             }
-            report += `  Posições: ${positions.filter(o => o.asset === sym).length}\n\n`;
+            report += `  Posições: ${nonOrphanOps.filter(o => o.status === 'pending' && o.asset === sym).length}\n\n`;
         });
 
         const candidates = Object.values(sentinel)
@@ -620,8 +679,8 @@ export function useAIQuantTerminalV3(
         if (candidates.length > 0) {
             candidates.forEach(c => {
                 const hist = lastDecisionBySymbolRef.current[c.symbol];
-                const consStatus = hist ? (hist.decision.finalAction === 'HOLD' ? 'HOLD' : 'confirmou') : 'ainda não avaliou';
-                report += `  ${c.symbol} ${c.contract} ${c.direction !== 'NONE' ? c.direction : 'sem direção'} score ${c.score} regra ${c.rule} (${c.reasons.join(', ')}) | Conselho: ${consStatus}\n`;
+                const lastAct = hist?.decision.finalAction || 'ainda não avaliou';
+                report += `  ${c.symbol} ${c.contract} ${c.direction !== 'NONE' ? c.direction : 'sem direção'} score ${c.score} regra ${c.rule} (${c.reasons.join(', ')}) | Conselho: não avalia candidatos (última varredura periódica: ${lastAct})\n`;
             });
         } else {
             report += `  nenhum candidato acima do gatilho\n`;
@@ -629,7 +688,7 @@ export function useAIQuantTerminalV3(
 
         report += `\nSinais são hipóteses sobre índices sintéticos aleatórios; validar no Shadow.`;
         return report;
-    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, councilStats, maxConcurrentTrades, sentinel, getCandlesFor]);
+    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, councilStats, maxConcurrentTrades, sentinel, getCandlesFor, sentinelCounts]);
 
     const buildAssetReport = useCallback((sym: string) => {
         const sentData = sentinel[sym];

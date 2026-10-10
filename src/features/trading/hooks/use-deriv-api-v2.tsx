@@ -94,7 +94,7 @@ export interface DerivApiContextTypeV2 {
     extraParams?: Record<string, any>
   ) => Promise<TradeResult>;
   sellContract: (contractId: number) => Promise<TradeResult>;
-  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod) => Promise<ApiHistoricalData[]>;
+  getHistoricalData: (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod, endEpoch?: number) => Promise<ApiHistoricalData[]>;
   clearActiveContracts: () => void;
   tradeAnnotations: TradeAnnotation[];
   durationLimits: DurationLimits | null;
@@ -336,7 +336,7 @@ export function useDerivApiV2State() {
     });
   }, []); 
 
-    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod): Promise<ApiHistoricalData[]> => {
+    const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod, endEpoch?: number): Promise<ApiHistoricalData[]> => {
         const ws = wsRef.current;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             return [];
@@ -344,7 +344,7 @@ export function useDerivApiV2State() {
 
         const request: any = {
             ticks_history: symbol,
-            end: "latest",
+            end: endEpoch ?? "latest",
             count,
             adjust_start_time: 1,
             style: style,

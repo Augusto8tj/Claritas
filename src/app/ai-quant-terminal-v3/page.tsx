@@ -64,7 +64,11 @@ function TerminalV3Content() {
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
+    
+    // Backtest Config
     const [payoutInput, setPayoutInput] = useState(85);
+    const [targetCount, setTargetCount] = useState(20000);
+    const [extraSymbolsInput, setExtraSymbolsInput] = useState("");
     
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -146,9 +150,8 @@ function TerminalV3Content() {
         return <p className="font-mono whitespace-pre-wrap">{content}</p>;
     };
 
-    // HANDLERS COM CONFIRMAÇÃO
     const handleShadowModeToggle = (checked: boolean) => {
-        if (isShadowMode && !checked) { // Switching to REAL
+        if (isShadowMode && !checked) { 
             const confirmed = window.confirm(`Ativar MODO REAL? Ordens reais (conta ${accountType}) serão enviadas quando o piloto for ligado.`);
             if (!confirmed) return;
         }
@@ -156,11 +159,16 @@ function TerminalV3Content() {
     };
 
     const handleAutoModeToggle = () => {
-        if (!isAutoMode && !isShadowMode) { // Turning ON in REAL
+        if (!isAutoMode && !isShadowMode) { 
             const confirmed = window.confirm(`Ligar o piloto em modo REAL (conta ${accountType})?`);
             if (!confirmed) return;
         }
         setIsAutoMode(!isAutoMode);
+    };
+
+    const handleRunBacktest = () => {
+        const extraSymbols = extraSymbolsInput.split(',').map(s => s.trim()).filter(Boolean);
+        runBacktest(payoutInput, targetCount, extraSymbols);
     };
 
     return (
@@ -313,7 +321,7 @@ function TerminalV3Content() {
                         <TestTube className="h-8 w-8 text-purple-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.9</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-purple-700">Quant Lab V3.9.5</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -555,7 +563,7 @@ function TerminalV3Content() {
                         </AccordionItem>
                     </Accordion>
 
-                    {/* RISCO E SESSÃO (ACCORDION PARA MOBILE) */}
+                    {/* RISCO E SESSÃO */}
                     <Accordion type="single" collapsible className="w-full">
                         <AccordionItem value="risk" className="border-none">
                             <Card className="bg-card/50 border-border shadow-sm">
@@ -775,26 +783,51 @@ function TerminalV3Content() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 space-y-4">
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout assumido (%)</Label>
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout (%)</Label>
+                                        <Input 
+                                            type="number" 
+                                            value={payoutInput} 
+                                            onChange={(e) => setPayoutInput(Number(e.target.value))}
+                                            className="h-8 text-xs font-mono"
+                                            min={50} max={100}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-[10px] uppercase font-bold text-muted-foreground">Candles por ativo</Label>
+                                        <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
+                                            <SelectTrigger className="h-8 text-xs font-mono">
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="5000">5k</SelectItem>
+                                                <SelectItem value="20000">20k</SelectItem>
+                                                <SelectItem value="50000">50k</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Ativos extra (vírgula)</Label>
                                     <Input 
-                                        type="number" 
-                                        value={payoutInput} 
-                                        onChange={(e) => setPayoutInput(Number(e.target.value))}
+                                        placeholder="frxEURUSD,cryBTCUSD,frxXAUUSD"
+                                        value={extraSymbolsInput}
+                                        onChange={e => setExtraSymbolsInput(e.target.value)}
                                         className="h-8 text-xs font-mono"
-                                        min={50} max={100}
                                     />
                                 </div>
                                 <Button 
-                                    onClick={() => runBacktest(payoutInput)} 
+                                    onClick={handleRunBacktest} 
                                     disabled={backtest.running}
                                     size="sm"
-                                    className="mt-5 h-8 bg-purple-600 text-white font-bold"
+                                    className="w-full h-8 bg-purple-600 text-white font-bold"
                                 >
                                     {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
                                 </Button>
                             </div>
+
                             {backtest.progress && <p className="text-[10px] text-center text-purple-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
                             
                             {backtest.merged && (
@@ -806,33 +839,40 @@ function TerminalV3Content() {
                                                     <TableHead className="text-[9px] h-7 px-2 uppercase">Regra</TableHead>
                                                     <TableHead className="text-[9px] h-7 px-1 uppercase text-center">n</TableHead>
                                                     <TableHead className="text-[9px] h-7 px-1 uppercase text-center">Acerto</TableHead>
-                                                    <TableHead className="text-[9px] h-7 px-1 uppercase text-right">Veredito</TableHead>
+                                                    <TableHead className="text-right text-[9px] h-7 px-2 uppercase">Leitura</TableHead>
                                                 </TableRow>
                                             </TableHeader>
                                             <TableBody>
-                                                {backtest.merged.map(r => (
-                                                    <TableRow key={r.rule} className="h-8">
-                                                        <TableCell className="text-[10px] font-bold p-2">{r.rule}</TableCell>
-                                                        <TableCell className="text-[10px] text-center p-1 font-mono">{r.stat.n}</TableCell>
-                                                        <TableCell className="text-[10px] text-center p-1 font-mono">
-                                                            {(r.stat.rate * 100).toFixed(1)}%
-                                                            <div className="text-[8px] text-muted-foreground">
-                                                                [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
-                                                            </div>
-                                                        </TableCell>
-                                                        <TableCell className="text-right p-2">
-                                                            <Badge variant="outline" className={cn(
-                                                                "text-[8px] h-4 px-1 border-none",
-                                                                r.verdict.includes('ACIMA') ? "bg-green-100 text-green-700" :
-                                                                r.verdict.includes('abaixo') ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"
-                                                            )}>
-                                                                {r.verdict.includes('equilibrio') ? 'EQUILIBRIO' : 
-                                                                 r.verdict.includes('acaso') ? 'ACASO' :
-                                                                 r.verdict.includes('insuficiente') ? 'n < 50' : 'RESULTADO'}
-                                                            </Badge>
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
+                                                {backtest.merged.map(r => {
+                                                    const verdict = r.verdict;
+                                                    let color = "text-muted-foreground";
+                                                    let text = "n < 50";
+                                                    
+                                                    if (r.stat.n >= 50) {
+                                                        if (verdict.includes('ABAIXO do equilíbrio')) { color = "text-red-600 font-bold"; text = "ABAIXO do equilíbrio"; }
+                                                        else if (verdict.includes('Indistinguível')) { color = "text-muted-foreground"; text = "Indistinguível do acaso"; }
+                                                        else if (verdict.includes('ACIMA do equilíbrio')) { color = "text-green-600 font-bold"; text = "ACIMA do equilíbrio"; }
+                                                        else if (verdict.includes('acima do acaso')) { color = "text-green-500"; text = "Acima do acaso"; }
+                                                        else if (verdict.includes('abaixo do acaso')) { color = "text-red-400"; text = "Abaixo do acaso"; }
+                                                        else { text = verdict; }
+                                                    }
+
+                                                    return (
+                                                        <TableRow key={r.rule} className="h-8">
+                                                            <TableCell className="text-[10px] font-bold p-2">{r.rule}</TableCell>
+                                                            <TableCell className="text-[10px] text-center p-1 font-mono">{r.stat.n}</TableCell>
+                                                            <TableCell className="text-[10px] text-center p-1 font-mono">
+                                                                {(r.stat.rate * 100).toFixed(1)}%
+                                                                <div className="text-[8px] text-muted-foreground">
+                                                                    [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
+                                                                </div>
+                                                            </TableCell>
+                                                            <TableCell className={cn("text-right p-2 text-[9px] leading-tight", color)}>
+                                                                {text}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    );
+                                                })}
                                             </TableBody>
                                         </Table>
                                     </ScrollArea>
@@ -857,7 +897,7 @@ function TerminalV3Content() {
                                                             <div className="opacity-60 space-y-0.5">
                                                                 {Object.entries(backtest.perAsset).map(([sym, reports]) => {
                                                                     const ar = reports.find(x => x.rule === r.rule);
-                                                                    return <div key={sym}>{sym}: {(ar?.stat.rate || 0 * 100).toFixed(1)}% (n={ar?.stat.n || 0})</div>
+                                                                    return <div key={sym}>{sym} ({backtest.assetCounts[sym]} candles): {((ar?.stat.rate ?? 0) * 100).toFixed(1)}% (n={ar?.stat.n || 0})</div>
                                                                 })}
                                                             </div>
                                                         </div>
