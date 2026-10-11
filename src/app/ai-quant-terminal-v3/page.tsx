@@ -51,7 +51,7 @@ function TerminalV3Content() {
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, setIsAutoMode, isShadowMode, setIsShadowMode,
         timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         backgroundIntervalSec, setBackgroundIntervalSec, sentinelIntervalSec, setSentinelIntervalSec,
-        radarStatus, sentinel, watchedSymbols, setWatchedSymbols, resetSession,
+        radarStatus, sentinel, watchedSymbols, setWatchedSymbols, resetSession, clearMemory,
         allowedActions, setAllowedActions,
         allowedContracts, setAllowedContracts, 
         maxConcurrentTrades, setMaxConcurrentTrades,
@@ -640,6 +640,15 @@ function TerminalV3Content() {
                                             <span className="text-xs font-black text-red-700">{memoryBuffer.losses.length}</span>
                                         </div>
                                     </div>
+
+                                    <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="w-full h-8 text-[9px] font-bold uppercase text-muted-foreground"
+                                        onClick={clearMemory}
+                                    >
+                                        Limpar Memória Tática
+                                    </Button>
                                 </AccordionContent>
                             </Card>
                         </AccordionItem>
@@ -716,7 +725,7 @@ function TerminalV3Content() {
                                                 )}
                                                 {msg.isError && <AlertCircle className="h-3 w-3 text-red-500" />}
                                             </div>
-                                            {msg.role === 'assistant' && !msg.isError ? renderMessageContent(msg.content) : <p className="font-mono">{msg.content}</p>}
+                                            {msg.role === 'assistant' && !msg.isError ? renderMessageContent(msg.content) : <p className="font-mono whitespace-pre-wrap">{msg.content}</p>}
                                         </div>
                                     ))}
                                     {isChatLoading && (
@@ -816,7 +825,10 @@ function TerminalV3Content() {
                                         <Input 
                                             type="number" 
                                             value={payoutInput} 
-                                            onChange={(e) => setPayoutInput(Number(e.target.value))}
+                                            onChange={(e) => {
+                                              const val = Math.max(50, Math.min(100, Number(e.target.value)));
+                                              setPayoutInput(val);
+                                            }}
                                             className="h-8 text-xs font-mono"
                                             min={50} max={100}
                                         />
@@ -831,7 +843,7 @@ function TerminalV3Content() {
                                                 <SelectItem value="5000">5k</SelectItem>
                                                 <SelectItem value="20000">20k</SelectItem>
                                                 <SelectItem value="40000">40k</SelectItem>
-                                                <SelectItem value="50000">5k</SelectItem>
+                                                <SelectItem value="50000">50k</SelectItem>
                                             </SelectContent>
                                         </Select>
                                     </div>
@@ -923,11 +935,29 @@ function TerminalV3Content() {
                                                 {['recent', 'older'].map(period => {
                                                     const reports = backtest.merged[group]?.[period as 'recent' | 'older'];
                                                     if (!reports) return null;
+
+                                                    const groupMeta = Object.entries(backtest.assetMeta)
+                                                      .filter(([sym]) => groupOf(sym) === group)
+                                                      .map(([, m]) => m);
+                                                    
+                                                    const minDate = groupMeta.reduce((acc, m) => {
+                                                      const d = (period === 'recent' ? (m.mid || m.from) : m.from);
+                                                      return !acc || d < acc ? d : acc;
+                                                    }, "");
+                                                    
+                                                    const maxDate = groupMeta.reduce((acc, m) => {
+                                                      const d = (period === 'recent' ? m.to : (m.mid || m.from));
+                                                      return !acc || d > acc ? d : acc;
+                                                    }, "");
+
                                                     return (
                                                         <div key={period} className="space-y-2">
-                                                            <div className="text-[10px] font-black uppercase text-muted-foreground flex items-center gap-1">
-                                                                {period === 'recent' ? 'Recente (50%)' : 'Anterior (Confirmação 50%)'}
-                                                                <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s,r)=>s+r.stat.n, 0)}</Badge>
+                                                            <div className="text-[10px] font-black uppercase text-muted-foreground flex items-center justify-between">
+                                                                <div className="flex items-center gap-1">
+                                                                  {period === 'recent' ? 'Recente (50%)' : 'Anterior (Confirmação 50%)'}
+                                                                  <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s,r)=>s+r.stat.n, 0)}</Badge>
+                                                                </div>
+                                                                <span className="opacity-60">{minDate} - {maxDate}</span>
                                                             </div>
                                                             <div className="border rounded-md overflow-hidden">
                                                                 <Table>
@@ -935,21 +965,23 @@ function TerminalV3Content() {
                                                                         <TableRow className="h-7">
                                                                             <TableHead className="text-[8px] h-7 px-2 uppercase">Regra</TableHead>
                                                                             <TableHead className="text-[8px] h-7 px-1 uppercase text-center">n</TableHead>
-                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Acerto</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Acerto [IC95]</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Acaso</TableHead>
+                                                                            <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Eq.</TableHead>
                                                                             <TableHead className="text-[8px] h-7 px-1 uppercase text-center">Mov. ATR (t)</TableHead>
                                                                             <TableHead className="text-right text-[8px] h-7 px-2 uppercase">Leitura</TableHead>
                                                                         </TableRow>
                                                                     </TableHeader>
                                                                     <TableBody>
                                                                         {reports.map(r => {
-                                                                            const verdict = r.verdict;
-                                                                            let color = "text-muted-foreground";
-                                                                            if (r.stat.n >= 50) {
-                                                                                if (verdict.includes('ABAIXO')) color = "text-red-600 font-bold";
-                                                                                else if (verdict.includes('ACIMA')) color = "text-green-600 font-bold";
-                                                                                else if (verdict.includes('acima do acaso')) color = "text-green-500";
-                                                                                else if (verdict.includes('abaixo do acaso')) color = "text-red-400";
-                                                                            }
+                                                                            const verdictLower = r.verdict.toLowerCase();
+                                                                            const isBad = verdictLower.includes('abaixo do ponto de equilibrio') || verdictLower.includes('abaixo do acaso');
+                                                                            const isGood = verdictLower.includes('acima do ponto de equilibrio') || verdictLower.includes('acima do acaso');
+                                                                            const isNeutral = !isBad && !isGood;
+
+                                                                            let verdictColor = "text-muted-foreground";
+                                                                            if (isBad) verdictColor = "text-red-600 font-bold";
+                                                                            else if (isGood) verdictColor = "text-green-600 font-bold";
 
                                                                             return (
                                                                                 <TableRow key={r.rule} className="h-8">
@@ -961,6 +993,8 @@ function TerminalV3Content() {
                                                                                             [{(r.stat.lo * 100).toFixed(0)}-{(r.stat.hi * 100).toFixed(0)}]
                                                                                         </div>
                                                                                     </TableCell>
+                                                                                    <TableCell className="text-[9px] text-center p-1 font-mono">{(r.baseline * 100).toFixed(1)}%</TableCell>
+                                                                                    <TableCell className="text-[9px] text-center p-1 font-mono">{r.breakeven ? (r.breakeven * 100).toFixed(1) + '%' : '—'}</TableCell>
                                                                                     <TableCell className="text-[9px] text-center p-1 font-mono">
                                                                                         {r.move ? (
                                                                                             <>
@@ -969,13 +1003,13 @@ function TerminalV3Content() {
                                                                                             </>
                                                                                         ) : '—'}
                                                                                     </TableCell>
-                                                                                    <TableCell className={cn("text-right p-1.5 text-[8px] leading-tight", color)}>
+                                                                                    <TableCell className={cn("text-right p-1.5 text-[8px] leading-tight", verdictColor)}>
                                                                                         {r.stat.n < 50 ? 'n < 50' : 
-                                                                                         verdict.includes('abaixo do ponto de equilibrio') ? 'ABAIXO do equilíbrio' :
-                                                                                         verdict.includes('ACIMA do ponto de equilibrio') ? 'ACIMA do equilíbrio' :
-                                                                                         verdict.includes('indistinguivel') ? 'Indistinguível' :
-                                                                                         verdict.includes('acima do acaso') ? 'Acima do acaso' :
-                                                                                         verdict.includes('abaixo do acaso') ? 'Abaixo do acaso' : verdict}
+                                                                                         verdictLower.includes('abaixo do ponto de equilibrio') ? 'ABAIXO do equilíbrio' :
+                                                                                         verdictLower.includes('acima do ponto de equilibrio') ? 'ACIMA do equilíbrio' :
+                                                                                         verdictLower.includes('indistinguivel') ? 'Indistinguível' :
+                                                                                         verdictLower.includes('acima do acaso') ? 'Acima do acaso' :
+                                                                                         verdictLower.includes('abaixo do acaso') ? 'Abaixo do acaso' : r.verdict}
                                                                                     </TableCell>
                                                                                 </TableRow>
                                                                             );
@@ -994,19 +1028,39 @@ function TerminalV3Content() {
                                         <AccordionItem value="breakdown" className="border-none">
                                             <AccordionTrigger className="py-1 text-[10px] font-bold uppercase hover:no-underline">Faixas e por ativo</AccordionTrigger>
                                             <AccordionContent className="pt-2">
-                                                <ScrollArea className="h-40 border rounded-md p-2 bg-muted/20 text-[9px] font-mono space-y-3">
-                                                    {Object.entries(backtest.perAsset).map(([sym, report]) => (
-                                                        <div key={sym} className="mb-4">
-                                                            <p className="font-bold text-purple-700 border-b pb-1 mb-1">{sym} ({backtest.assetCounts[sym]} candles)</p>
-                                                            <div className="space-y-2">
-                                                                {report.recent.map(r => (
-                                                                    <div key={r.rule} className="flex justify-between items-center bg-background/50 p-1 rounded px-2">
-                                                                        <span className="opacity-70">{r.rule}</span>
-                                                                        <span className="font-bold">{((r?.stat.rate ?? 0) * 100).toFixed(1)}% (n={r.stat.n})</span>
-                                                                    </div>
-                                                                ))}
+                                                <ScrollArea className="h-64 border rounded-md p-2 bg-muted/20 text-[9px] font-mono">
+                                                    {Object.entries(backtest.merged).map(([group, periods]) => (
+                                                      <div key={group} className="mb-6">
+                                                        <p className="font-black text-purple-700 mb-2 underline">MERCADO: {group}</p>
+                                                        {['recent', 'older'].map(pKey => {
+                                                          const reps = periods[pKey as 'recent' | 'older'];
+                                                          if (!reps) return null;
+                                                          return (
+                                                            <div key={pKey} className="ml-2 mb-4">
+                                                              <p className="font-bold text-muted-foreground mb-1">[{pKey.toUpperCase()}]</p>
+                                                              {reps.map(r => (
+                                                                <div key={r.rule} className="ml-2 mb-3 border-l pl-2 border-purple-200">
+                                                                  <p className="font-bold">{r.rule}</p>
+                                                                  <div className="flex gap-4 opacity-70 mb-1">
+                                                                    {r.buckets.map(b => <span key={b.label}>{b.label}: {(b.stat.rate*100).toFixed(1)}% (n={b.stat.n})</span>)}
+                                                                  </div>
+                                                                  <div className="space-y-0.5">
+                                                                    {Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group).map(sym => {
+                                                                      const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
+                                                                      return (
+                                                                        <div key={sym} className="flex justify-between max-w-[200px]">
+                                                                          <span>{sym}:</span>
+                                                                          <span className="font-bold">{assetRep ? `${((assetRep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${assetRep.stat.n})` : "sem período anterior"}</span>
+                                                                        </div>
+                                                                      );
+                                                                    })}
+                                                                  </div>
+                                                                </div>
+                                                              ))}
                                                             </div>
-                                                        </div>
+                                                          )
+                                                        })}
+                                                      </div>
                                                     ))}
                                                 </ScrollArea>
                                             </AccordionContent>

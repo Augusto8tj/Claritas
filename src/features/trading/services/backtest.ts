@@ -38,7 +38,7 @@ const verdictOf = (stat: Stat, baseline: number, breakeven: number | null): stri
   return stat.lo > baseline ? 'acima do acaso (investigar)' : 'abaixo do acaso';
 };
 
-export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = {}): RuleReport[] {
+function* backtestGen(candles: SignalCandle[], opt: BacktestOptions, yieldEvery: number): Generator<void, RuleReport[], void> {
   const minScore = opt.minScore ?? 40, optH = opt.optHorizon ?? 1, multH = opt.multHorizon ?? 5, accuH = opt.accuHorizon ?? 5, skip = opt.skip ?? 5;
   const n = candles.length;
   const closes = candles.map(c => Number(c.close));
@@ -56,6 +56,7 @@ export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = 
   };
 
   for (let i = 60; i < n - maxH - 1; i++) {
+    if (Number.isFinite(yieldEvery) && yieldEvery > 0 && (i - 60) % yieldEvery === 0) yield;   // cede o controle (modo assincrono)
     const f = computeSignalFeatures(candles.slice(Math.max(0, i - 139), i + 1));
     if (!f) continue;
     const atrRef = ((f.atrPct / 100) * f.price) / (f.atrRatio > 0 ? f.atrRatio : 1);   // ATR de referencia (mediana)
@@ -102,6 +103,22 @@ export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = 
     mkReport('MULT_TREND', 'MULTIPLIERS', multH, base.mult / nb, null),
     mkReport('ACCU_CALM', 'ACCUMULATORS', accuH, base.calm / nb, null),
   ];
+}
+
+// Versao sincrona (testes, Node): resultado identico a assincrona.
+export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = {}): RuleReport[] {
+  const g = backtestGen(candles, opt, Infinity);
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
+
+// Versao assincrona para o navegador: cede o controle a cada `yieldEvery` candles, sem travar a tela.
+export async function backtestCandlesAsync(candles: SignalCandle[], opt: BacktestOptions = {}, yieldEvery = 1500): Promise<RuleReport[]> {
+  const g = backtestGen(candles, opt, yieldEvery);
+  let r = g.next();
+  while (!r.done) { await new Promise<void>(res => setTimeout(res, 0)); r = g.next(); }
+  return r.value;
 }
 
 // Agrega ativos: acerto agrupado; taxa do acaso = media PONDERADA por n (nao media simples).

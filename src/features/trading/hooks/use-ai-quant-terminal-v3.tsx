@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION)
- * V3.9.5: Posições Órfãs, Backtest Pagina e Sentinela Histerese.
+ * V3.9.5: Posições Órfãs, Backtest Paginado e Sentinela Histerese.
  * V3.9.6: Detecção de Mercado Fechado / Stale Data.
  */
 
@@ -19,7 +19,7 @@ import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 import { computeSignalFeatures, evaluateSignals, SIGNAL_TRIGGER_SCORE, type SignalCandidate, type SignalFeatures } from '../services/signal-engine';
-import { backtestCandles, mergeStats, type RuleReport } from '../services/backtest';
+import { backtestCandlesAsync, mergeStats, type RuleReport } from '../services/backtest';
 
 const SETTINGS_KEY = 'quantV3Settings';
 const REAL_MARKET_RE = /^(frx|cry|OTC_)/;
@@ -131,7 +131,10 @@ export function useAIQuantTerminalV3(
         merged: Record<string, { recent: RuleReport[] | null, older: RuleReport[] | null }>;
         perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }>;
         assetCounts: Record<string, number>;
-    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: {}, perAsset: {}, assetCounts: {} });
+        assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }>;
+    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} });
+
+    const backtestRunningRef = useRef(false);
 
     // LOGS E TELEMETRIA
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -193,7 +196,10 @@ export function useAIQuantTerminalV3(
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
-            try { setOllamaConfigState(JSON.parse(savedOllama) as OllamaConfig); } catch (e) { console.error(e); }
+            try { 
+              const config = JSON.parse(savedOllama) as OllamaConfig;
+              setOllamaConfigState(config); 
+            } catch (e) { console.error(e); }
         }
 
         const savedSettings = localStorage.getItem(SETTINGS_KEY);
@@ -213,6 +219,19 @@ export function useAIQuantTerminalV3(
         }
     }, []);
 
+    // MEMÓRIA TÁTICA POR ATIVO
+    useEffect(() => {
+        if (!user || !activeSymbol) return;
+        TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
+    }, [user, activeSymbol]);
+
+    // HANDSHAKE AUTOMÁTICO OLLAMA
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl) {
+            fetchAvailableModels();
+        }
+    }, [ollamaConfig?.baseUrl]);
+
     // SEGURANÇA DE MODO: SHADOW -> REAL
     const prevShadowModeRef = useRef(isShadowMode);
     useEffect(() => {
@@ -221,7 +240,7 @@ export function useAIQuantTerminalV3(
             setReasoningLog(prev => [{
                 ts: `modo-${Date.now()}`,
                 time: new Date().toLocaleTimeString(),
-                message: "[MODO] REAL ativado: piloto automático desligado por segurança. Ligue manualmente se desejar.",
+                message: "[MODO] REAL ativado: piloto desligado, ligue manualmente",
                 type: 'warning'
             }, ...prev].slice(0, 300));
         }
@@ -268,9 +287,9 @@ export function useAIQuantTerminalV3(
         return (multi ?? []) as CandleData[];
     }, []);
 
-    const staleMinutes = useCallback((symbol: string): number => {
+    const staleMinutes = useCallback((symbol: string): number | null => {
         const candles = getCandlesFor(symbol);
-        if (candles.length === 0) return 999;
+        if (candles.length === 0) return null;
         const last = candles[candles.length - 1];
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
@@ -288,8 +307,8 @@ export function useAIQuantTerminalV3(
             
             if (valid.length === 0) break;
             
-            const minEpoch = Math.min(...valid.map(v => v.epoch));
-            const existingMin = all.length > 0 ? Math.min(...all.map(a => a.epoch)) : Infinity;
+            const minEpoch = valid.reduce((min, v) => v.epoch < min ? v.epoch : min, valid[0].epoch);
+            const existingMin = all.length > 0 ? all[0].epoch : Infinity;
             
             if (minEpoch >= existingMin && all.length > 0) break;
 
@@ -308,10 +327,12 @@ export function useAIQuantTerminalV3(
     };
 
     const runBacktest = async (payoutPct = 85, targetCount = 40000, extraSymbols: string[] = []) => {
-        if (backtest.running) return;
-        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: {}, perAsset: {}, assetCounts: {} }));
+        if (backtestRunningRef.current) return;
+        backtestRunningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} }));
         const perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }> = {};
         const assetCounts: Record<string, number> = {};
+        const assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }> = {};
         
         const baseSymbols = new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean));
         extraSymbols.forEach(s => { if(s.trim()) baseSymbols.add(s.trim()); });
@@ -335,22 +356,25 @@ export function useAIQuantTerminalV3(
                 const dias = ((candles[n-1].epoch - candles[0].epoch) / 86400).toFixed(1);
                 addLog(`[BACKTEST] ${sym}: ${n} candles (${dias} dias, de ${dataIni} a ${dataFim})`, 'info', undefined, sym);
 
+                let meta = { n, from: dataIni, to: dataFim };
+
                 if (n >= 30000) {
                     const mid = Math.floor(n / 2);
                     const olderCandles = candles.slice(0, mid);
                     const recentCandles = candles.slice(mid);
                     
                     setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Recente)...` }));
-                    const recentReport = backtestCandles(recentCandles as any, { payoutPct });
-                    await new Promise(r => setTimeout(r, 0));
+                    const recentReport = await backtestCandlesAsync(recentCandles as any, { payoutPct });
                     
                     setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Anterior)...` }));
-                    const olderReport = backtestCandles(olderCandles as any, { payoutPct });
+                    const olderReport = await backtestCandlesAsync(olderCandles as any, { payoutPct });
                     
                     perAsset[sym] = { recent: recentReport, older: olderReport };
+                    assetMeta[sym] = { ...meta, mid: new Date(candles[mid].epoch * 1000).toLocaleDateString() };
                 } else {
                     setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${n} candles)...` }));
-                    perAsset[sym] = { recent: backtestCandles(candles as any, { payoutPct }) };
+                    perAsset[sym] = { recent: await backtestCandlesAsync(candles as any, { payoutPct }) };
+                    assetMeta[sym] = meta;
                 }
             }
 
@@ -369,20 +393,20 @@ export function useAIQuantTerminalV3(
                     older: olderReports.length > 0 ? mergeStats(olderReports, payoutPct) : null
                 };
 
-                // Logs formatados
                 const logGroup = (period: 'RECENTE' | 'ANTERIOR', reports: RuleReport[]) => {
                     reports.forEach(r => {
                         const { n, rate, lo, hi } = r.stat;
                         const b = (r.baseline * 100).toFixed(1);
                         const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR t=${r.move.t.toFixed(1)}` : '';
-                        const msg = `[BACKTEST] [${g}] [${period}] ${r.rule}: n=${n} acerto=${(rate*100).toFixed(1)}% IC95[${(lo*100).toFixed(0)}%, ${(hi*100).toFixed(0)}%] base=${b}%${moveStr} → ${r.verdict}`;
+                        const msg = `[BACKTEST] [${g}] [${period}] ${r.rule}: n=${n} acerto=${(rate*100).toFixed(1)}% IC95[${(lo*100).toFixed(0)}%, ${(hi*100).toFixed(0)}%] base=${b}%${r.breakeven ? ' equilíbrio='+ (r.breakeven*100).toFixed(1) + '%' : ''}${moveStr} → ${r.verdict}`;
                         
                         const details = [
                             ...r.buckets.map(b => `${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})`),
                             '--- Por Ativo ---',
                             ...assetsInGroup.map(sym => {
                                 const rep = (period === 'RECENTE' ? perAsset[sym].recent : perAsset[sym].older)?.find(x => x.rule === r.rule);
-                                return `${sym}: ${((rep?.stat.rate ?? 0) * 100).toFixed(1)}% (n=${rep?.stat.n || 0})`;
+                                const val = rep ? `${((rep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${rep.stat.n})` : "sem período anterior";
+                                return `${sym}: ${val}`;
                             })
                         ];
                         addLog(msg, 'info', details);
@@ -393,86 +417,15 @@ export function useAIQuantTerminalV3(
                 if (merged[g].older) logGroup('ANTERIOR', merged[g].older!);
             });
 
-            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, ts: Date.now(), progress: '' }));
+            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, assetMeta, ts: Date.now(), progress: '' }));
 
         } catch (e: any) {
             addLog(`[BACKTEST] Erro fatal: ${e.message}`, 'error');
         } finally {
+            backtestRunningRef.current = false;
             setBacktest(prev => ({ ...prev, running: false, progress: '' }));
         }
     };
-
-    const buildBacktestReport = useCallback(() => {
-        if (!backtest.ts || Object.keys(backtest.merged).length === 0) return "Nenhum backtest realizado nesta sessão.";
-        
-        const now = new Date(backtest.ts).toLocaleString('pt-BR');
-        const symbolList = Object.keys(backtest.perAsset).join(', ');
-        const totalSample = Object.values(backtest.assetCounts).reduce((s, c) => s + c, 0);
-        
-        let report = `==================================================\n`;
-        report += `CLARITAS QUANT LAB V3 - RELATÓRIO DE BACKTEST\n`;
-        report += `GERADO EM: ${now}\n`;
-        report += `ATIVOS: ${symbolList}\n`;
-        report += `CONFIG: ${backtest.payoutPct}% Payout | ${totalSample} Candles Totais\n`;
-        report += `==================================================\n\n`;
-
-        Object.entries(backtest.merged).forEach(([group, periods]) => {
-            report += `>>> MERCADO: ${group}\n`;
-            report += `--------------------------------------------------\n`;
-            
-            ['recent', 'older'].forEach(pKey => {
-                const reports = periods[pKey as 'recent' | 'older'];
-                if (!reports || reports.length === 0) return;
-                
-                const pLabel = pKey === 'recent' ? 'PERÍODO RECENTE (50%)' : 'PERÍODO ANTERIOR (CONFIRMAÇÃO 50%)';
-                report += `[${pLabel}]\n\n`;
-                
-                reports.forEach(r => {
-                    const { n, rate, lo, hi } = r.stat;
-                    const bLine = (r.baseline * 100).toFixed(1);
-                    const bEven = r.breakeven !== null ? (r.breakeven * 100).toFixed(1) : null;
-                    const moveStr = r.move ? ` | Mov Médio: ${r.move.mean.toFixed(3)} ATR (t=${r.move.t.toFixed(1)})` : '';
-                    
-                    report += `REGRA: ${r.rule} (${r.contract})\n`;
-                    report += `- Amostra (n): ${n} episódios\n`;
-                    report += `- Taxa Acerto: ${(rate * 100).toFixed(1)}% [IC95: ${(lo * 100).toFixed(0)}% - ${(hi * 100).toFixed(0)}%]\n`;
-                    report += `- Taxa Acaso: ${bLine}%\n`;
-                    if (bEven) report += `- Ponto Equilíbrio: ${bEven}%\n`;
-                    if (r.move) report += `- Expectativa:${moveStr}\n`;
-                    report += `- LEITURA: ${r.verdict.toUpperCase()}\n`;
-                    
-                    report += `- Breakdown por Score:\n`;
-                    r.buckets.forEach(b => {
-                        report += `  * ${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})\n`;
-                    });
-                    
-                    report += `- Acerto por Ativo:\n`;
-                    const groupAssets = Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group);
-                    groupAssets.forEach(sym => {
-                        const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
-                        if (assetRep) {
-                            report += `  * ${sym}: ${((assetRep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${assetRep.stat.n})\n`;
-                        }
-                    });
-                    report += `\n`;
-                });
-                report += `--------------------------------------------------\n`;
-            });
-            report += `\n`;
-        });
-
-        report += `OBSERVAÇÕES TÉCNICAS:\n`;
-        report += `- 'n' conta episódios independentes (anti-sobreposição de 5 candles).\n`;
-        report += `- OPTIONS: Direção do candle de 60s seguinte.\n`;
-        report += `- MULTIPLIERS: Direção após 5 candles (sem TP/SL dinâmico).\n`;
-        report += `- ACCUMULATORS: Proxy de calma (não é o contrato real).\n`;
-        report += `- Payout assumido: ${backtest.payoutPct}%.\n`;
-        report += `- Várias regras/faixas aumentam a chance de falso positivo.\n`;
-        report += `- Resultados brutos, sem spread, comissão ou latência.\n`;
-        report += `==================================================`;
-        
-        return report;
-    }, [backtest]);
 
     // SENTINEL MONITOR (1s)
     useEffect(() => {
@@ -484,11 +437,10 @@ export function useAIQuantTerminalV3(
             symbols.forEach(sym => {
                 if (!sym) return;
                 const min = staleMinutes(sym);
-                const isStale = min > 2.5;
+                const isStale = min !== null && min > 2.5;
 
                 if (isStale) {
                     newSentinel[sym] = { features: null, candidates: [], ts: now, isStale: true, staleMin: Math.round(min) };
-                    // Se o mercado fechar, encerramos qualquer episódio ativo dele
                     Object.keys(sentinelEpisodeRef.current).forEach(key => {
                         if (key.startsWith(`${sym}-`)) {
                             const episode = sentinelEpisodeRef.current[key];
@@ -500,6 +452,11 @@ export function useAIQuantTerminalV3(
                     return;
                 }
 
+                if (min === null) {
+                   newSentinel[sym] = { features: null, candidates: [], ts: now };
+                   return;
+                }
+
                 const candles = getCandlesFor(sym);
                 const features = computeSignalFeatures(candles as any);
                 const candidates = features ? evaluateSignals(sym, features) : [];
@@ -509,7 +466,7 @@ export function useAIQuantTerminalV3(
                 candidates.forEach(c => {
                     const logKey = `${sym}-${c.contract}`;
                     const episode = sentinelEpisodeRef.current[logKey];
-                    const HYS = 10; // Histerese
+                    const HYS = 10; 
 
                     if (c.score >= SIGNAL_TRIGGER_SCORE && !episode) {
                         sentinelEpisodeRef.current[logKey] = { start: now, lastAbove: now, peak: c.score };
@@ -536,6 +493,15 @@ export function useAIQuantTerminalV3(
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false): Promise<CouncilDecision | undefined> => {
         const min = staleMinutes(symbol);
+        if (min === null) {
+            const now = Date.now();
+            if (now - (lastSkipLogRef.current[symbol] || 0) > 60000) {
+                addLog(`[SKIP] ${symbol}: carregando dados...`, 'info', undefined, symbol);
+                lastSkipLogRef.current[symbol] = now;
+            }
+            return undefined;
+        }
+
         if (min > 2.5) {
             addLog(`[SKIP-ANALISE] ${symbol}: mercado fechado ou defasado (${Math.round(min)} min).`, 'warning', undefined, symbol);
             return undefined;
@@ -581,7 +547,7 @@ export function useAIQuantTerminalV3(
             const initialPermissions: AssetExecutionPermission = {
                 symbol, enabled: true, maxStake: stakeValue * 2,
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
-                allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedContracts]) as any[]
+                allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
             if (!isShadowMode) {
@@ -606,6 +572,7 @@ export function useAIQuantTerminalV3(
             if (isFocused) {
                 setLastDecision(decision);
                 setTelemetry(decision.telemetry);
+                setMemoryBuffer(buffer);
             }
 
             setRadarStatus(prev => ({
@@ -647,6 +614,8 @@ export function useAIQuantTerminalV3(
                 
                 if (!hasOpen) {
                     const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
+                    addLog(`[STAKE] base=$${stakeValue} ratio=${decision.stakeRatio} final=$${stake}`, 'info', undefined, symbol);
+                    
                     if (isShadowMode) {
                         addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
                     } else {
@@ -670,9 +639,9 @@ export function useAIQuantTerminalV3(
 
     // RADAR SCANNER (5s)
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current || chatBusyRef.current || !isConnected || !ollamaConfig) {
+        if (executionLockRef.current || chatBusyRef.current || !isConnected) {
             const now = Date.now();
-            const reason = chatBusyRef.current ? 'chat em andamento' : !isConnected ? 'WebSocket desconectado' : !ollamaConfig ? 'ollamaConfig ausente' : null;
+            const reason = chatBusyRef.current ? 'chat em andamento' : !isConnected ? 'WebSocket desconectado' : null;
             if (reason && now - (lastSkipLogRef.current[reason] || 0) > 30000) {
                 addLog(`[CICLO-PULADO] ${reason}`, 'warning');
                 lastSkipLogRef.current[reason] = now;
@@ -684,42 +653,40 @@ export function useAIQuantTerminalV3(
         const startTime = Date.now();
         try {
             const currentActive = activeSymbolRef.current;
-            const watchListDue = watchedSymbolsRef.current.filter(sym => (scheduleRef.current[sym] || 0) <= startTime);
-            const focusIsDue = currentActive && !watchListDue.includes(currentActive) && (scheduleRef.current[currentActive] || 0) <= startTime;
-            const dueSymbols = focusIsDue ? [currentActive, ...watchListDue] : watchListDue;
+            const symbols = Array.from(new Set([...watchedSymbolsRef.current, currentActive].filter(Boolean)));
             
-            if (dueSymbols.length === 0) {
-                executionLockRef.current = false;
-                return;
-            }
+            const liveDue = symbols.filter(sym => (staleMinutes(sym) ?? 0) <= 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
+            const staleDue = symbols.filter(sym => (staleMinutes(sym) ?? 999) > 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
 
-            addLog(`[CICLO] due=[${dueSymbols.join(', ')}]`, 'info');
-            dueSymbols.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
+            if (liveDue.length > 0) {
+                addLog(`[CICLO] due=[${liveDue.join(', ')}]`, 'info');
+                liveDue.sort((a, b) => (a === currentActive ? -1 : (b === currentActive ? 1 : 0)));
 
-            for (const symbol of dueSymbols) {
-                const min = staleMinutes(symbol);
-                if (min > 2.5) {
-                    const now = Date.now();
-                    if (now - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
-                        addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol);
-                        lastMarketClosedLogRef.current[symbol] = now;
+                for (const symbol of liveDue) {
+                    const candles = getCandlesFor(symbol);
+                    if (candles && candles.length >= 30) {
+                        const isFoco = symbol === currentActive;
+                        const nextInt = Math.max(10, isFoco ? analysisIntervalRef.current : backgroundIntervalRef.current);
+                        scheduleRef.current[symbol] = Date.now() + nextInt * 1000;
+                        try { await runAnalysisForSymbol(symbol, candles as CandleData[]); } catch (e: any) {}
                     }
-                    scheduleRef.current[symbol] = Date.now() + 60000;
-                    continue;
-                }
-
-                const candles = getCandlesFor(symbol);
-                if (candles && candles.length >= 30) {
-                    const isFoco = symbol === currentActive;
-                    const nextInt = Math.max(10, isFoco ? analysisIntervalRef.current : backgroundIntervalRef.current);
-                    scheduleRef.current[symbol] = Date.now() + nextInt * 1000;
-                    try { await runAnalysisForSymbol(symbol, candles as CandleData[]); } catch (e: any) {}
                 }
             }
+
+            staleDue.forEach(symbol => {
+                const min = staleMinutes(symbol) ?? 999;
+                const now = Date.now();
+                if (now - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
+                    addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol);
+                    lastMarketClosedLogRef.current[symbol] = now;
+                }
+                scheduleRef.current[symbol] = Date.now() + 60000;
+            });
+
         } finally {
             executionLockRef.current = false;
         }
-    }, [isConnected, ollamaConfig, runAnalysisForSymbol, getCandlesFor, addLog, staleMinutes]);
+    }, [isConnected, runAnalysisForSymbol, getCandlesFor, addLog, staleMinutes]);
 
     const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
     useEffect(() => { runMultiAssetCycleRef.current = runMultiAssetCycle; }, [runMultiAssetCycle]);
@@ -740,13 +707,19 @@ export function useAIQuantTerminalV3(
         setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
         scheduleRef.current = {};
         setLastDecision(null);
-        setMemoryBuffer({ wins: [], losses: [] });
         interlockLoggedRef.current = false;
         setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
         sentinelEpisodeRef.current = {};
         lastMarketClosedLogRef.current = {};
         toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
     }, [clearActiveContracts, toast]);
+
+    const clearMemory = useCallback(async () => {
+      if (!user) return;
+      await TradeMemoryManager.clearBuffer(user.uid);
+      setMemoryBuffer({ wins: [], losses: [] });
+      toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
+    }, [user, toast]);
 
     const getScoreLabel = (cat: string, cands: SignalCandidate[]) => {
         const c = cands.find(x => x.contract === cat);
@@ -784,10 +757,11 @@ export function useAIQuantTerminalV3(
         symbols.forEach(sym => {
             if (!sym) return;
             const sentData = sentinel[sym];
-            const isStale = staleMinutes(sym) > 2.5;
+            const min = staleMinutes(sym);
+            const isStale = min !== null && min > 2.5;
 
             if (isStale) {
-                report += `${sym} [MERCADO FECHADO (último candle há ${Math.round(staleMinutes(sym))} min)]\n\n`;
+                report += `${sym} [MERCADO FECHADO (último candle há ${Math.round(min)} min)]\n\n`;
                 return;
             }
 
@@ -836,11 +810,12 @@ export function useAIQuantTerminalV3(
         const sentData = sentinel[sym];
         const hist = lastDecisionBySymbolRef.current[sym];
         const lastCandle = getCandlesFor(sym).slice(-1)[0];
-        const isStale = staleMinutes(sym) > 2.5;
+        const min = staleMinutes(sym);
+        const isStale = min !== null && min > 2.5;
         
         let report = `ANÁLISE DETALHADA: ${sym}\n`;
         if (isStale) {
-            report += `STATUS: MERCADO FECHADO (último candle há ${Math.round(staleMinutes(sym))} min)\n\n`;
+            report += `STATUS: MERCADO FECHADO (último candle há ${Math.round(min)} min)\n\n`;
         } else {
             report += `Preço: $${(lastCandle?.close || 0).toFixed(4)}\n\n`;
         }
@@ -881,15 +856,86 @@ export function useAIQuantTerminalV3(
         return report;
     }, [sentinel, getCandlesFor, staleMinutes]);
 
+    const buildBacktestReport = useCallback(() => {
+        if (!backtest.ts || Object.keys(backtest.merged).length === 0) return "Nenhum backtest realizado nesta sessão.";
+        
+        const now = new Date(backtest.ts).toLocaleString('pt-BR');
+        let report = `==================================================\n`;
+        report += `QUANT LAB V3 - RELATÓRIO DE BACKTEST\n`;
+        report += `GERADO EM: ${now}\n`;
+        report += `CONFIG: ${backtest.payoutPct}% Payout\n`;
+        report += `==================================================\n\n`;
+
+        Object.entries(backtest.assetMeta).forEach(([sym, meta]) => {
+            report += `${sym}: ${meta.n} candles, de ${meta.from} a ${meta.to}\n`;
+        });
+        report += `\n`;
+
+        Object.entries(backtest.merged).forEach(([group, periods]) => {
+            report += `>>> MERCADO: ${group}\n`;
+            report += `--------------------------------------------------\n`;
+            
+            ['recent', 'older'].forEach(pKey => {
+                const reports = periods[pKey as 'recent' | 'older'];
+                if (!reports) return;
+                
+                const hasDivision = Object.values(backtest.assetMeta).some(m => m.mid);
+                const pLabel = !hasDivision ? "PERÍODO ÚNICO" : (pKey === 'recent' ? "RECENTE (50%)" : "ANTERIOR (CONFIRMAÇÃO, 50%)");
+                report += `[${pLabel}]\n\n`;
+                
+                reports.forEach(r => {
+                    const { n, rate, lo, hi } = r.stat;
+                    const bLine = (r.baseline * 100).toFixed(1);
+                    const bEven = r.breakeven !== null ? (r.breakeven * 100).toFixed(1) : null;
+                    const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR t=${r.move.t.toFixed(1)}` : '';
+                    
+                    report += `REGRA: ${r.rule} (${r.contract})\n`;
+                    report += `- Amostra: n=${n} | Acerto: ${(rate * 100).toFixed(1)}% [IC95: ${(lo * 100).toFixed(0)}%-${(hi * 100).toFixed(0)}%]\n`;
+                    report += `- Acaso: ${bLine}% | Equilíbrio: ${bEven ? bEven + '%' : '—'}${moveStr}\n`;
+                    report += `- LEITURA: ${r.verdict.toUpperCase()}\n`;
+                    
+                    report += `- Breakdown por Score:\n`;
+                    r.buckets.forEach(b => {
+                        report += `  * ${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})\n`;
+                    });
+                    
+                    report += `- Acerto por Ativo:\n`;
+                    const groupAssets = Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group);
+                    groupAssets.forEach(sym => {
+                        const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
+                        const val = assetRep ? `${((assetRep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${assetRep.stat.n})` : "sem período anterior";
+                        report += `  * ${sym}: ${val}\n`;
+                    });
+                    report += `\n`;
+                });
+                report += `--------------------------------------------------\n`;
+            });
+            report += `\n`;
+        });
+
+        report += `OBSERVAÇÕES TÉCNICAS:\n`;
+        report += `- 'n' conta episódios independentes (anti-sobreposição de 5 candles).\n`;
+        report += `- OPTIONS: direção do candle de 60s seguinte.\n`;
+        report += `- MULTIPLIERS: direção após 5 candles (sem TP/SL);\n`;
+        report += `- ACCUMULATORS: proxy de calma (não é o contrato real).\n`;
+        report += `- Payout assumido: ${backtest.payoutPct}%.\n`;
+        report += `- Várias regras/faixas aumentam a chance de falso positivo.\n`;
+        report += `==================================================`;
+        
+        return report;
+    }, [backtest]);
+
     const buildShortContextForLLM = useCallback(() => {
         const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
         let context = "LEGENDA: Sentinela = pontuação 0-100 por tipo de contrato (Opções, Multiplicadores, Acumuladores); >= 55 é gatilho; ↑ CALL, ↓ PUT; Acumuladores não têm direção. %B 0-1 (posição nas bandas); ER 0-1 (1 = tendência limpa); vol xN = volatilidade atual / mediana; mom15 em ATRs.\n\n";
         
         symbols.forEach(sym => {
             if (!sym) return;
-            const isStale = staleMinutes(sym) > 2.5;
+            const min = staleMinutes(sym);
+            const isStale = min !== null && min > 2.5;
+
             if (isStale) {
-                context += `${sym}: MERCADO FECHADO (último candle há ${Math.round(staleMinutes(sym))} min)\n\n`;
+                context += `${sym}: MERCADO FECHADO (último candle há ${Math.round(min)} min)\n\n`;
                 return;
             }
 
@@ -916,7 +962,7 @@ export function useAIQuantTerminalV3(
     }, [sentinel, staleMinutes]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
-        if (!ollamaConfig || !content.trim() || !user) return;
+        if (!content.trim()) return;
         
         const time = new Date().toLocaleTimeString();
         const userMsg: ChatMessage = { role: 'user', content, time };
@@ -937,12 +983,12 @@ export function useAIQuantTerminalV3(
                 if (decision) {
                     setChatMessages(prev => [...prev, { 
                         role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                        content: `[REAL] Execução para ${sym} via chat: ${decision?.finalAction} ${decision?.consensusConfidence}% via=${decision?.executedVia}.`
+                        content: `[REAL] Execução para ${sym} via chat: ${decision.finalAction} ${decision.consensusConfidence}% via=${decision.executedVia}.`
                     }]);
                 } else {
                      setChatMessages(prev => [...prev, { 
                         role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                        content: `Não foi possível executar para ${sym}. Verifique os logs.`
+                        content: `Sem avaliação para ${sym}: mercado fechado/defasado, dados insuficientes ou Ollama indisponível (veja o log).`
                     }]);
                 }
                 pendingChatOrderRef.current = null;
@@ -973,10 +1019,17 @@ export function useAIQuantTerminalV3(
                 const symbol = found[0];
                 if (isShadowMode) {
                     const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
-                    setChatMessages(prev => [...prev, { 
-                        role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                        content: `[SHADOW] Auditoria para ${symbol}: ${decision?.finalAction} ${decision?.consensusConfidence}% (${decision?.recommendedContract}) votos:[${decision?.debugVotes}] ${decision?.holdReason ? 'hold='+decision.holdReason : ''}`
-                    }]);
+                    if (decision) {
+                      setChatMessages(prev => [...prev, { 
+                          role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                          content: `[SHADOW] Auditoria para ${symbol}: ${decision.finalAction} ${decision.consensusConfidence}% (${decision.recommendedContract}) votos:[${decision.debugVotes}] ${decision.holdReason ? 'hold='+decision.holdReason : ''}`
+                      }]);
+                    } else {
+                      setChatMessages(prev => [...prev, { 
+                          role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+                          content: `Sem avaliação para ${symbol}: mercado fechado/defasado, dados insuficientes ou Ollama indisponível (veja o log).`
+                      }]);
+                    }
                 } else {
                     pendingChatOrderRef.current = { symbol, ts: Date.now() };
                     setChatMessages(prev => [...prev, { 
@@ -1013,6 +1066,14 @@ export function useAIQuantTerminalV3(
             return;
         }
 
+        if (!ollamaConfig) {
+          setChatMessages(prev => [...prev, { 
+              role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
+              content: "Ollama não configurado: relatórios e comandos continuam disponíveis, mas a análise via IA exige configuração no Cockpit."
+          }]);
+          return;
+        }
+
         setIsChatLoading(true);
         chatBusyRef.current = true;
         try {
@@ -1044,7 +1105,7 @@ export function useAIQuantTerminalV3(
     };
 
     const fetchAvailableModels = async () => {
-        if (!ollamaConfig) return;
+        if (!ollamaConfig?.baseUrl) return;
         try {
             const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
             const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
@@ -1077,7 +1138,7 @@ export function useAIQuantTerminalV3(
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, sentinel,
-        watchedSymbols, setWatchedSymbols, resetSession, chatMessages, isChatLoading, sendMessage,
+        watchedSymbols, setWatchedSymbols, resetSession, clearMemory, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         setAccountType, accountType, runBacktest, backtest, buildBacktestReport, staleMinutes
