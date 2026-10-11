@@ -581,7 +581,7 @@ export function useAIQuantTerminalV3(
             const initialPermissions: AssetExecutionPermission = {
                 symbol, enabled: true, maxStake: stakeValue * 2,
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
-                allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
+                allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedContracts]) as any[]
             };
 
             if (!isShadowMode) {
@@ -914,78 +914,6 @@ export function useAIQuantTerminalV3(
         
         return context.slice(0, 2200);
     }, [sentinel, staleMinutes]);
-
-    const buildBacktestReport = useCallback(() => {
-        if (!backtest.ts || Object.keys(backtest.merged).length === 0) return "Nenhum backtest realizado nesta sessão.";
-        
-        const now = new Date(backtest.ts).toLocaleString('pt-BR');
-        const symbolList = Object.keys(backtest.perAsset).join(', ');
-        const totalSample = Object.values(backtest.assetCounts).reduce((s, c) => s + c, 0);
-        
-        let report = `==================================================\n`;
-        report += `CLARITAS QUANT LAB V3 - RELATÓRIO DE BACKTEST\n`;
-        report += `GERADO EM: ${now}\n`;
-        report += `ATIVOS: ${symbolList}\n`;
-        report += `CONFIG: ${backtest.payoutPct}% Payout | ${totalSample} Candles Totais\n`;
-        report += `==================================================\n\n`;
-
-        Object.entries(backtest.merged).forEach(([group, periods]) => {
-            report += `>>> MERCADO: ${group}\n`;
-            report += `--------------------------------------------------\n`;
-            
-            ['recent', 'older'].forEach(pKey => {
-                const reports = periods[pKey as 'recent' | 'older'];
-                if (!reports || reports.length === 0) return;
-                
-                const pLabel = pKey === 'recent' ? 'PERÍODO RECENTE (50%)' : 'PERÍODO ANTERIOR (CONFIRMAÇÃO 50%)';
-                report += `[${pLabel}]\n\n`;
-                
-                reports.forEach(r => {
-                    const { n, rate, lo, hi } = r.stat;
-                    const bLine = (r.baseline * 100).toFixed(1);
-                    const bEven = r.breakeven !== null ? (r.breakeven * 100).toFixed(1) : null;
-                    const moveStr = r.move ? ` | Mov Médio: ${r.move.mean.toFixed(3)} ATR (t=${r.move.t.toFixed(1)})` : '';
-                    
-                    report += `REGRA: ${r.rule} (${r.contract})\n`;
-                    report += `- Amostra (n): ${n} episódios\n`;
-                    report += `- Taxa Acerto: ${(rate * 100).toFixed(1)}% [IC95: ${(lo * 100).toFixed(0)}% - ${(hi * 100).toFixed(0)}%]\n`;
-                    report += `- Taxa Acaso: ${bLine}%\n`;
-                    if (bEven) report += `- Ponto Equilíbrio: ${bEven}%\n`;
-                    if (r.move) report += `- Expectativa:${moveStr}\n`;
-                    report += `- LEITURA: ${r.verdict.toUpperCase()}\n`;
-                    
-                    report += `- Breakdown por Score:\n`;
-                    r.buckets.forEach(b => {
-                        report += `  * ${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})\n`;
-                    });
-                    
-                    report += `- Acerto por Ativo:\n`;
-                    const groupAssets = Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group);
-                    groupAssets.forEach(sym => {
-                        const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
-                        if (assetRep) {
-                            report += `  * ${sym}: ${((assetRep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${assetRep.stat.n})\n`;
-                        }
-                    });
-                    report += `\n`;
-                });
-                report += `--------------------------------------------------\n`;
-            });
-            report += `\n`;
-        });
-
-        report += `OBSERVAÇÕES TÉCNICAS:\n`;
-        report += `- 'n' conta episódios independentes (anti-sobreposição de 5 candles).\n`;
-        report += `- OPTIONS: Direção do candle de 60s seguinte.\n`;
-        report += `- MULTIPLIERS: Direção após 5 candles (sem TP/SL dinâmico).\n`;
-        report += `- ACCUMULATORS: Proxy de calma (não é o contrato real).\n`;
-        report += `- Payout assumido: ${backtest.payoutPct}%.\n`;
-        report += `- Várias regras/faixas aumentam a chance de falso positivo.\n`;
-        report += `- Resultados brutos, sem spread, comissão ou latência.\n`;
-        report += `==================================================`;
-        
-        return report;
-    }, [backtest]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!ollamaConfig || !content.trim() || !user) return;
