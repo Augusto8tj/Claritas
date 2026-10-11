@@ -1,4 +1,3 @@
-
 // src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
@@ -58,7 +57,7 @@ function TerminalV3Content() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
-        updateOllamaConfig, backtest, runBacktest, staleMinutes
+        updateOllamaConfig, backtest, runBacktest, buildBacktestReport, staleMinutes
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -788,10 +787,26 @@ function TerminalV3Content() {
                     </Card>
 
                     <Card className="border-purple-200 bg-purple-50/5 shadow-sm">
-                        <CardHeader className="py-3 border-b">
+                        <CardHeader className="py-3 border-b flex flex-row items-center justify-between space-y-0">
                             <CardTitle className="text-xs font-bold uppercase tracking-widest text-purple-600 flex items-center gap-2">
                                 <TestTube className="h-4 w-4" /> Backtest das regras (1m)
                             </CardTitle>
+                            {Object.keys(backtest.merged).length > 0 && (
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="h-6 w-6 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
+                                    onClick={() => {
+                                        const report = buildBacktestReport();
+                                        navigator.clipboard.writeText(report).then(() => {
+                                            toast({ title: "Relatório Copiado", description: "O sumário estatístico foi enviado para a área de transferência." });
+                                        });
+                                    }}
+                                    title="Copiar Relatório Completo"
+                                >
+                                    <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
                         </CardHeader>
                         <CardContent className="p-4 space-y-4">
                             <div className="space-y-4">
@@ -1083,4 +1098,3 @@ export default function AIQuantTerminalV3Page() {
         </DerivApiProvider>
     );
 }
-
