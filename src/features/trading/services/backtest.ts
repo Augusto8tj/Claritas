@@ -113,7 +113,7 @@ export function backtestCandles(candles: SignalCandle[], opt: BacktestOptions = 
   return r.value;
 }
 
-// Versao assincrona para o navegador: cede o controle a cada `yieldEvery` candles, sem travar a tela.
+// Versao assincrona para o navegador: cede o controle a cada yieldEvery candles, sem travar a tela.
 export async function backtestCandlesAsync(candles: SignalCandle[], opt: BacktestOptions = {}, yieldEvery = 1500): Promise<RuleReport[]> {
   const g = backtestGen(candles, opt, yieldEvery);
   let r = g.next();

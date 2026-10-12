@@ -1,4 +1,3 @@
-// src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -36,6 +35,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { groupOf } from '@/features/trading/services/report-builders';
 
 function TerminalV3Content() {
     const { 
@@ -977,8 +977,7 @@ function TerminalV3Content() {
                                                                             const verdictLower = r.verdict.toLowerCase();
                                                                             const isBad = verdictLower.includes('abaixo do ponto de equilibrio') || verdictLower.includes('abaixo do acaso');
                                                                             const isGood = verdictLower.includes('acima do ponto de equilibrio') || verdictLower.includes('acima do acaso');
-                                                                            const isNeutral = !isBad && !isGood;
-
+                                                                            
                                                                             let verdictColor = "text-muted-foreground";
                                                                             if (isBad) verdictColor = "text-red-600 font-bold";
                                                                             else if (isGood) verdictColor = "text-green-600 font-bold";

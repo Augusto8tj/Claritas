@@ -1,10 +1,10 @@
-// src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION)
+ * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION) - MODULARIZED
  * V3.9.5: Posições Órfãs, Backtest Paginado e Sentinela Histerese.
  * V3.9.6: Detecção de Mercado Fechado / Stale Data.
+ * V4.0.0: Split estrutural, builders puros e runner especializado.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -19,39 +19,10 @@ import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-
 import { CouncilDecision, TradeMemoryBuffer, AgentOpinion, CouncilTelemetry, AllowedContractsV3, AllowedActionsV3, PortfolioRiskState, AssetExecutionPermission } from '../types/council';
 import { getOllamaResponse } from '@/app/actions';
 import { computeSignalFeatures, evaluateSignals, SIGNAL_TRIGGER_SCORE, type SignalCandidate, type SignalFeatures } from '../services/signal-engine';
-import { backtestCandlesAsync, mergeStats, type RuleReport } from '../services/backtest';
+import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
+import { useBacktestRunner } from './use-backtest-runner';
 
 const SETTINGS_KEY = 'quantV3Settings';
-const REAL_MARKET_RE = /^(frx|cry|OTC_)/;
-
-const AGENT_PERSONAS = {
-  CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
-  MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
-  RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
-  ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
-};
-
-export interface RadarAssetStatus {
-    symbol: string;
-    lastAction: 'RISE' | 'FALL' | 'HOLD';
-    lastPrice?: number;
-    confidence: number;
-    timestamp: number;
-    isQualified: boolean;
-    executedVia: string;
-    opinions: AgentOpinion[];
-    recommendedContract?: string;
-    holdReason?: string;
-    debugVotes?: string;
-    indicators?: {
-        rsi: number;
-        bbw: number;
-        adx: number;
-    };
-    isFallback?: boolean;
-    isStale?: boolean;
-    staleMin?: number;
-}
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -87,7 +58,12 @@ const isOrphanOp = (op: Operation) => {
     return isExpired || isVeryOld;
 };
 
-const groupOf = (sym: string) => REAL_MARKET_RE.test(sym) ? 'REAIS' : 'SINTETICOS';
+const AGENT_PERSONAS = {
+  CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
+  MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
+  RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
+  ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
+};
 
 export function useAIQuantTerminalV3(
     activeSymbol: string | null,
@@ -122,19 +98,8 @@ export function useAIQuantTerminalV3(
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     
-    // BACKTEST
-    const [backtest, setBacktest] = useState<{
-        running: boolean;
-        progress: string;
-        ts: number | null;
-        payoutPct: number;
-        merged: Record<string, { recent: RuleReport[] | null, older: RuleReport[] | null }>;
-        perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }>;
-        assetCounts: Record<string, number>;
-        assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }>;
-    }>({ running: false, progress: '', ts: null, payoutPct: 85, merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} });
-
-    const backtestRunningRef = useRef(false);
+    // BACKTEST RUNNER (Specialized Hook)
+    const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
 
     // LOGS E TELEMETRIA
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -148,7 +113,7 @@ export function useAIQuantTerminalV3(
     
     // MEMÓRIA E RADAR
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
-    const [radarStatus, setRadarStatus] = useState<Record<string, RadarAssetStatus>>({});
+    const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
     const [sentinel, setSentinel] = useState<Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number, isStale?: boolean, staleMin?: number }>>({});
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
@@ -225,48 +190,49 @@ export function useAIQuantTerminalV3(
         TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
     }, [user, activeSymbol]);
 
+    // RESET FUNCTIONS (Upwards)
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        interlockLoggedRef.current = false;
+        setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
+        sentinelEpisodeRef.current = {};
+        lastMarketClosedLogRef.current = {};
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
+    }, [clearActiveContracts, toast]);
+
+    const clearMemory = useCallback(async () => {
+      if (!user) return;
+      await TradeMemoryManager.clearBuffer(user.uid);
+      setMemoryBuffer({ wins: [], losses: [] });
+      toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
+    }, [user, toast]);
+
     // HANDSHAKE AUTOMÁTICO OLLAMA
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl) {
-            fetchAvailableModels();
-        }
-    }, [ollamaConfig?.baseUrl]);
-
-    // SEGURANÇA DE MODO: SHADOW -> REAL
-    const prevShadowModeRef = useRef(isShadowMode);
-    useEffect(() => {
-        if (prevShadowModeRef.current === true && isShadowMode === false) {
-            setIsAutoMode(false);
-            setReasoningLog(prev => [{
-                ts: `modo-${Date.now()}`,
-                time: new Date().toLocaleTimeString(),
-                message: "[MODO] REAL ativado: piloto desligado, ligue manualmente",
-                type: 'warning'
-            }, ...prev].slice(0, 300));
-        }
-        prevShadowModeRef.current = isShadowMode;
-    }, [isShadowMode]);
-
-    // MÉTRICAS DE PERFORMANCE (Agregadas)
-    const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && op.initiator === 'Conselho_V3'
-        );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
-        const total = finishedTrades.length;
-        const winRate = total > 0 ? (wins / total) * 100 : null;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
-        return { pnl: Number(pnl) || 0, winRate, total };
-    }, [operationsLog]);
+    const fetchAvailableModels = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableModels(data.models || []);
+            }
+        } catch (e) {}
+    }, [ollamaConfig]);
 
     useEffect(() => {
-        const settings = {
-            analysisInterval, backgroundIntervalSec, sentinelIntervalSec,
-            stakeValue, maxConcurrentTrades, dailyBalance, dailyTarget,
-            allowedActions, allowedContracts
-        };
-        localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    }, [analysisInterval, backgroundIntervalSec, sentinelIntervalSec, stakeValue, maxConcurrentTrades, dailyBalance, dailyTarget, allowedActions, allowedContracts]);
+        if (ollamaConfig?.baseUrl) fetchAvailableModels();
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
@@ -293,203 +259,6 @@ export function useAIQuantTerminalV3(
         const last = candles[candles.length - 1];
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
-
-    const fetchCandlesPaged = async (sym: string, target: number): Promise<CandleData[]> => {
-        let all: CandleData[] = [];
-        let endEpoch: number | undefined = undefined;
-        
-        for (let pageIdx = 0; pageIdx < 40; pageIdx++) {
-            const count = Math.min(5000, target - all.length);
-            if (count <= 0) break;
-            
-            const page = await getHistoricalData(sym, 'candles', count, '1m', endEpoch);
-            const valid = page.filter(h => h.open !== undefined && h.high !== undefined && h.low !== undefined && h.close !== undefined) as CandleData[];
-            
-            if (valid.length === 0) break;
-            
-            const minEpoch = valid.reduce((min, v) => v.epoch < min ? v.epoch : min, valid[0].epoch);
-            const existingMin = all.length > 0 ? all[0].epoch : Infinity;
-            
-            if (minEpoch >= existingMin && all.length > 0) break;
-
-            all = [...valid, ...all].sort((a,b) => a.epoch - b.epoch);
-            const uniqueMap = new Map<number, CandleData>();
-            all.forEach(c => uniqueMap.set(c.epoch, c));
-            all = Array.from(uniqueMap.values());
-            
-            endEpoch = minEpoch - 1;
-            setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}: ${all.length}/${target}` }));
-            
-            if (all.length >= target) break;
-            await new Promise(r => setTimeout(r, 150));
-        }
-        return all;
-    };
-
-    const runBacktest = async (payoutPct = 85, targetCount = 40000, extraSymbols: string[] = []) => {
-        if (backtestRunningRef.current) return;
-        backtestRunningRef.current = true;
-        setBacktest(prev => ({ ...prev, running: true, progress: 'Iniciando...', payoutPct, merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} }));
-        const perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }> = {};
-        const assetCounts: Record<string, number> = {};
-        const assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }> = {};
-        
-        const baseSymbols = new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean));
-        extraSymbols.forEach(s => { if(s.trim()) baseSymbols.add(s.trim()); });
-        const symbols = Array.from(baseSymbols);
-
-        try {
-            for (const sym of symbols) {
-                if (!sym) continue;
-                setBacktest(prev => ({ ...prev, progress: `Baixando ${sym}...` }));
-                const candles = await fetchCandlesPaged(sym, targetCount);
-                const n = candles.length;
-                assetCounts[sym] = n;
-                
-                if (n < 1000) {
-                    addLog(`[BACKTEST] ${sym}: histórico insuficiente (${n}/1000).`, 'warning');
-                    continue;
-                }
-
-                const dataIni = new Date(candles[0].epoch * 1000).toLocaleDateString();
-                const dataFim = new Date(candles[n - 1].epoch * 1000).toLocaleDateString();
-                const dias = ((candles[n-1].epoch - candles[0].epoch) / 86400).toFixed(1);
-                addLog(`[BACKTEST] ${sym}: ${n} candles (${dias} dias, de ${dataIni} a ${dataFim})`, 'info', undefined, sym);
-
-                let meta = { n, from: dataIni, to: dataFim };
-
-                if (n >= 30000) {
-                    const mid = Math.floor(n / 2);
-                    const olderCandles = candles.slice(0, mid);
-                    const recentCandles = candles.slice(mid);
-                    
-                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Recente)...` }));
-                    const recentReport = await backtestCandlesAsync(recentCandles as any, { payoutPct });
-                    
-                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (período Anterior)...` }));
-                    const olderReport = await backtestCandlesAsync(olderCandles as any, { payoutPct });
-                    
-                    perAsset[sym] = { recent: recentReport, older: olderReport };
-                    assetMeta[sym] = { ...meta, mid: new Date(candles[mid].epoch * 1000).toLocaleDateString() };
-                } else {
-                    setBacktest(prev => ({ ...prev, progress: `Calculando ${sym} (${n} candles)...` }));
-                    perAsset[sym] = { recent: await backtestCandlesAsync(candles as any, { payoutPct }) };
-                    assetMeta[sym] = meta;
-                }
-            }
-
-            const groups = ['SINTETICOS', 'REAIS'];
-            const merged: Record<string, { recent: RuleReport[] | null, older: RuleReport[] | null }> = {};
-
-            groups.forEach(g => {
-                const assetsInGroup = Object.keys(perAsset).filter(sym => groupOf(sym) === g);
-                if (assetsInGroup.length === 0) return;
-
-                const recentReports = assetsInGroup.map(sym => perAsset[sym].recent);
-                const olderReports = assetsInGroup.map(sym => perAsset[sym].older).filter(Boolean) as RuleReport[][];
-
-                merged[g] = {
-                    recent: mergeStats(recentReports, payoutPct),
-                    older: olderReports.length > 0 ? mergeStats(olderReports, payoutPct) : null
-                };
-
-                const logGroup = (period: 'RECENTE' | 'ANTERIOR', reports: RuleReport[]) => {
-                    reports.forEach(r => {
-                        const { n, rate, lo, hi } = r.stat;
-                        const b = (r.baseline * 100).toFixed(1);
-                        const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR t=${r.move.t.toFixed(1)}` : '';
-                        const msg = `[BACKTEST] [${g}] [${period}] ${r.rule}: n=${n} acerto=${(rate*100).toFixed(1)}% IC95[${(lo*100).toFixed(0)}%, ${(hi*100).toFixed(0)}%] base=${b}%${r.breakeven ? ' equilíbrio='+ (r.breakeven*100).toFixed(1) + '%' : ''}${moveStr} → ${r.verdict}`;
-                        
-                        const details = [
-                            ...r.buckets.map(b => `${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})`),
-                            '--- Por Ativo ---',
-                            ...assetsInGroup.map(sym => {
-                                const rep = (period === 'RECENTE' ? perAsset[sym].recent : perAsset[sym].older)?.find(x => x.rule === r.rule);
-                                const val = rep ? `${((rep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${rep.stat.n})` : "sem período anterior";
-                                return `${sym}: ${val}`;
-                            })
-                        ];
-                        addLog(msg, 'info', details);
-                    });
-                };
-
-                if (merged[g].recent) logGroup('RECENTE', merged[g].recent!);
-                if (merged[g].older) logGroup('ANTERIOR', merged[g].older!);
-            });
-
-            setBacktest(prev => ({ ...prev, merged, perAsset, assetCounts, assetMeta, ts: Date.now(), progress: '' }));
-
-        } catch (e: any) {
-            addLog(`[BACKTEST] Erro fatal: ${e.message}`, 'error');
-        } finally {
-            backtestRunningRef.current = false;
-            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
-        }
-    };
-
-    // SENTINEL MONITOR (1s)
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
-            const newSentinel: Record<string, any> = {};
-            const now = Date.now();
-
-            symbols.forEach(sym => {
-                if (!sym) return;
-                const min = staleMinutes(sym);
-                const isStale = min !== null && min > 2.5;
-
-                if (isStale) {
-                    newSentinel[sym] = { features: null, candidates: [], ts: now, isStale: true, staleMin: Math.round(min) };
-                    Object.keys(sentinelEpisodeRef.current).forEach(key => {
-                        if (key.startsWith(`${sym}-`)) {
-                            const episode = sentinelEpisodeRef.current[key];
-                            const durS = Math.round((now - episode.start) / 1000);
-                            addLog(`[MERCADO-FECHADO] Encerrando episódio em ${sym}: duração ${durS}s`, 'warning', undefined, sym);
-                            delete sentinelEpisodeRef.current[key];
-                        }
-                    });
-                    return;
-                }
-
-                if (min === null) {
-                   newSentinel[sym] = { features: null, candidates: [], ts: now };
-                   return;
-                }
-
-                const candles = getCandlesFor(sym);
-                const features = computeSignalFeatures(candles as any);
-                const candidates = features ? evaluateSignals(sym, features) : [];
-                
-                newSentinel[sym] = { features, candidates, ts: now };
-
-                candidates.forEach(c => {
-                    const logKey = `${sym}-${c.contract}`;
-                    const episode = sentinelEpisodeRef.current[logKey];
-                    const HYS = 10; 
-
-                    if (c.score >= SIGNAL_TRIGGER_SCORE && !episode) {
-                        sentinelEpisodeRef.current[logKey] = { start: now, lastAbove: now, peak: c.score };
-                        setSentinelCounts(prev => ({ ...prev, [c.contract]: prev[c.contract] + 1 }));
-                        addLog(`[SENTINEL] ${sym} ${c.contract} ${c.direction} score=${c.score} rule=${c.rule} (${c.reasons.join(', ')})`, 'sentinel', undefined, sym);
-                    } else if (episode) {
-                        if (c.score >= SIGNAL_TRIGGER_SCORE - HYS) {
-                            episode.lastAbove = now;
-                            episode.peak = Math.max(episode.peak, c.score);
-                        } else if (now - episode.lastAbove > 30000) {
-                            const durS = Math.round((now - episode.start) / 1000);
-                            addLog(`[SENTINEL-FIM] ${sym} ${c.contract} duração ${durS}s pico ${episode.peak}`, 'sentinel', undefined, sym);
-                            delete sentinelEpisodeRef.current[logKey];
-                        }
-                    }
-                });
-            });
-
-            setSentinel(newSentinel);
-        }, sentinelIntervalSec * 1000);
-
-        return () => clearInterval(interval);
-    }, [getCandlesFor, addLog, sentinelIntervalSec, staleMinutes]);
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManualTrigger: boolean = false): Promise<CouncilDecision | undefined> => {
         const min = staleMinutes(symbol);
@@ -550,17 +319,6 @@ export function useAIQuantTerminalV3(
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
-            if (!isShadowMode) {
-              const filteredContracts = initialPermissions.allowedContracts.filter(c => c === 'OPTIONS');
-              if (filteredContracts.length < initialPermissions.allowedContracts.length) {
-                if (!interlockLoggedRef.current) {
-                   addLog(`[INTERLOCK] Bloqueando categorias sem saída automática em modo REAL.`, 'warning', undefined, symbol);
-                   interlockLoggedRef.current = true;
-                }
-                initialPermissions.allowedContracts = filteredContracts as any;
-              }
-            }
-
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, isFocused, initialPermissions, portfolioState);
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
             
@@ -603,31 +361,23 @@ export function useAIQuantTerminalV3(
             const shouldExecute = isManualTrigger || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= MIN_EXEC_CONFIDENCE);
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                let finalContractType = 'CALL';
-                switch (decision.recommendedContract) {
-                    case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
-                    case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
-                    default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
-                }
-
-                const hasOpen = operationsLogRef.current.filter(o => !isOrphanOp(o)).some(op => op.asset === symbol && op.status === 'pending' && op.contractType === finalContractType);
+                const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
+                addLog(`[STAKE] base=$${stakeValue} ratio=${decision.stakeRatio} final=$${stake}`, 'info', undefined, symbol);
                 
-                if (!hasOpen) {
-                    const stake = Math.max(0.35, Number((stakeValue * (decision.stakeRatio || 1)).toFixed(2)));
-                    addLog(`[STAKE] base=$${stakeValue} ratio=${decision.stakeRatio} final=$${stake}`, 'info', undefined, symbol);
-                    
-                    if (isShadowMode) {
-                        addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
-                    } else {
-                        const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
-                        const optionsDuration = (indicators.adx || 20) > 40 ? 10 : (indicators.adx || 20) > 25 ? 15 : 30;
-                        const minS = durationLimitsRef.current?.s?.min ?? 15;
-                        const finalDuration = decision.recommendedContract === 'OPTIONS' ? Math.max(minS, optionsDuration) : 15;
-
-                        const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, finalDuration, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
-                        if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
-                        else addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
+                if (isShadowMode) {
+                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
+                } else {
+                    let finalContractType = 'CALL';
+                    switch (decision.recommendedContract) {
+                        case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
+                        case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
+                        default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     }
+
+                    const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                    const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, 15, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
+                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
+                    else addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
                 }
             }
             return decision;
@@ -639,15 +389,7 @@ export function useAIQuantTerminalV3(
 
     // RADAR SCANNER (5s)
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current || chatBusyRef.current || !isConnected) {
-            const now = Date.now();
-            const reason = chatBusyRef.current ? 'chat em andamento' : !isConnected ? 'WebSocket desconectado' : null;
-            if (reason && now - (lastSkipLogRef.current[reason] || 0) > 30000) {
-                addLog(`[CICLO-PULADO] ${reason}`, 'warning');
-                lastSkipLogRef.current[reason] = now;
-            }
-            return;
-        }
+        if (executionLockRef.current || chatBusyRef.current || !isConnected) return;
         executionLockRef.current = true;
 
         const startTime = Date.now();
@@ -688,278 +430,11 @@ export function useAIQuantTerminalV3(
         }
     }, [isConnected, runAnalysisForSymbol, getCandlesFor, addLog, staleMinutes]);
 
-    const runMultiAssetCycleRef = useRef(runMultiAssetCycle);
-    useEffect(() => { runMultiAssetCycleRef.current = runMultiAssetCycle; }, [runMultiAssetCycle]);
-
     useEffect(() => {
-        const first = setTimeout(() => { runMultiAssetCycleRef.current(); }, 1500);
-        const id = setInterval(() => { runMultiAssetCycleRef.current(); }, 5000);
+        const first = setTimeout(() => { runMultiAssetCycle(); }, 1500);
+        const id = setInterval(() => { runMultiAssetCycle(); }, 5000);
         return () => { clearTimeout(first); clearInterval(id); };
-    }, []);
-
-    const resetSession = useCallback(() => {
-        setIsAutoMode(false);
-        setIsShadowMode(true);
-        clearActiveContracts();
-        setRadarStatus({});
-        setReasoningLog([]);
-        setChatMessages([]);
-        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
-        scheduleRef.current = {};
-        setLastDecision(null);
-        interlockLoggedRef.current = false;
-        setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
-        sentinelEpisodeRef.current = {};
-        lastMarketClosedLogRef.current = {};
-        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
-    }, [clearActiveContracts, toast]);
-
-    const clearMemory = useCallback(async () => {
-      if (!user) return;
-      await TradeMemoryManager.clearBuffer(user.uid);
-      setMemoryBuffer({ wins: [], losses: [] });
-      toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
-    }, [user, toast]);
-
-    const getScoreLabel = (cat: string, cands: SignalCandidate[]) => {
-        const c = cands.find(x => x.contract === cat);
-        if (!c) return "--";
-        const arrow = c.direction === 'CALL' ? '↑CALL' : (c.direction === 'PUT' ? '↓PUT' : '');
-        return `${c.score}${arrow}`;
-    };
-
-    const buildStatusReport = useCallback(() => {
-        const nowStr = new Date().toLocaleTimeString('pt-BR', { hour12: false });
-        const mode = isShadowMode ? 'SHADOW' : 'REAL';
-        const pilot = isAutoMode ? 'ON' : 'OFF';
-        const stats = councilStats;
-        const nonOrphanOps = operationsLogRef.current.filter(o => !isOrphanOp(o));
-        const positions = operationsLogRef.current.filter(o => o.status === 'pending');
-        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
-        
-        let report = `RELATÓRIO ${nowStr} | ${mode} | piloto ${pilot} | conta ${accountType} | saldo $${accountBalance.balance}\n`;
-        report += `Conselho: ${stats.total} avaliações | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | vetos ${stats.vetoes} | fallbacks ${stats.fallbacks} | ${(stats.avgLatencyMs/1000).toFixed(1)}s/ativo\n`;
-        report += `Posições abertas: ${nonOrphanOps.filter(o => o.status === 'pending').length}/${maxConcurrentTrades}\n`;
-        report += `Episódios do Sentinela: O ${sentinelCounts.OPTIONS} | M ${sentinelCounts.MULTIPLIERS} | A ${sentinelCounts.ACCUMULATORS}\n\n`;
-
-        if (positions.length > 0) {
-            report += `POSIÇÕES ABERTAS (${positions.length}):\n`;
-            positions.forEach(op => {
-                const ageMs = Date.now() - new Date(op.timestamp).getTime();
-                const min = Math.floor(ageMs / 60000);
-                const orphan = isOrphanOp(op);
-                const ageStr = min > 1440 ? `${(min/1440).toFixed(1)}d` : `${min}min`;
-                report += `- #${op.id} ${op.asset} ${op.contractType || 'OPTIONS'} $${op.stake} há ${ageStr} por ${op.initiator}${orphan ? ' (órfã, ignorada nos limites)' : ''}\n`;
-            });
-            report += "\n";
-        }
-
-        symbols.forEach(sym => {
-            if (!sym) return;
-            const sentData = sentinel[sym];
-            const min = staleMinutes(sym);
-            const isStale = min !== null && min > 2.5;
-
-            if (isStale) {
-                report += `${sym} [MERCADO FECHADO (último candle há ${Math.round(min)} min)]\n\n`;
-                return;
-            }
-
-            const price = sentData?.features?.price ?? (getCandlesFor(sym).slice(-1)[0]?.close || 0);
-            report += `${sym} $${price.toFixed(4)}\n`;
-            if (sentData?.features) {
-                const f = sentData.features;
-                report += `  RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} ATR | seq ${f.streak}\n`;
-                report += `  Sentinela: Opções ${getScoreLabel('OPTIONS', sentData.candidates)} | Multiplicadores ${getScoreLabel('MULTIPLIERS', sentData.candidates)} | Acumuladores ${getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
-            }
-            
-            const hist = lastDecisionBySymbolRef.current[sym];
-            if (hist) {
-                const age = Math.round((Date.now() - hist.ts) / 1000);
-                const d = hist.decision;
-                const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-                report += `  Conselho: há ${age}s ${d.finalAction} ${d.consensusConfidence}% ${contractDisplay} votos[${d.debugVotes}] ${d.holdReason ? d.holdReason.slice(0, 100) : ''}\n`;
-            } else {
-                report += `  Conselho: ainda não avaliou\n`;
-            }
-            report += `  Posições: ${nonOrphanOps.filter(o => o.status === 'pending' && o.asset === sym).length}\n\n`;
-        });
-
-        const candidates = Object.values(sentinel)
-            .flatMap(s => s.candidates)
-            .filter(c => c.score >= 55)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, 3);
-
-        report += `MELHORES CANDIDATOS (score >= 55):\n`;
-        if (candidates.length > 0) {
-            candidates.forEach(c => {
-                const hist = lastDecisionBySymbolRef.current[c.symbol];
-                const lastAct = hist?.decision.finalAction || 'ainda não avaliou';
-                report += `  ${c.symbol} ${c.contract} ${c.direction !== 'NONE' ? c.direction : 'sem direção'} score ${c.score} regra ${c.rule} (${c.reasons.join(', ')}) | Conselho: não avalia candidatos (última varredura periódica: ${lastAct})\n`;
-            });
-        } else {
-            report += `  nenhum candidato acima do gatilho\n`;
-        }
-
-        report += `\nSinais são hipóteses sobre índices sintéticos aleatórios; validar no Shadow.`;
-        return report;
-    }, [isShadowMode, isAutoMode, accountType, accountBalance.balance, councilStats, maxConcurrentTrades, sentinel, getCandlesFor, sentinelCounts, staleMinutes]);
-
-    const buildAssetReport = useCallback((sym: string) => {
-        const sentData = sentinel[sym];
-        const hist = lastDecisionBySymbolRef.current[sym];
-        const lastCandle = getCandlesFor(sym).slice(-1)[0];
-        const min = staleMinutes(sym);
-        const isStale = min !== null && min > 2.5;
-        
-        let report = `ANÁLISE DETALHADA: ${sym}\n`;
-        if (isStale) {
-            report += `STATUS: MERCADO FECHADO (último candle há ${Math.round(min)} min)\n\n`;
-        } else {
-            report += `Preço: $${(lastCandle?.close || 0).toFixed(4)}\n\n`;
-        }
-
-        if (sentData?.features && !isStale) {
-            const f = sentData.features;
-            report += `MÉTRICAS AO VIVO:\n`;
-            report += `- RSI: ${f.rsi}\n- %B (Posição Bandas): ${f.bbPos.toFixed(3)}\n- ER (Eficiência): ${f.er.toFixed(2)}\n- Volatilidade: x${f.atrRatio.toFixed(2)}\n- Momentum 15: ${f.mom15.toFixed(1)} ATR\n- Streak: ${f.streak}\n\n`;
-            
-            report += `SENTINELA (CANDIDATOS):\n`;
-            sentData.candidates.forEach(c => {
-                report += `- ${c.contract}: score ${c.score} [${c.rule}] -> ${c.reasons.join(', ')}\n`;
-            });
-            report += '\n';
-        }
-
-        if (hist) {
-            const d = hist.decision;
-            const age = Math.round((Date.now() - hist.ts) / 1000);
-            const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-            report += `ÚLTIMA DELIBERAÇÃO (há ${age}s):\n`;
-            report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${contractDisplay})\n`;
-            if (d.holdReason) report += `Hold Reason: ${d.holdReason}\n`;
-            
-            report += `\nOPINIÕES DOS AGENTES:\n`;
-            d.opinions.forEach(o => {
-                report += `- ${o.agentName}: ${o.action} ${o.confidence}% ${o.action === 'HOLD' ? '—' : o.recommendedContract} — ${o.reasoning.slice(0, 160)}\n`;
-            });
-
-            if (d.trace && d.trace.length > 0) {
-                report += `\nTRACE DO CHAIRMAN:\n`;
-                d.trace.forEach(t => report += `  > ${t}\n`);
-            }
-        } else {
-            report += `Conselho ainda não realizou varredura para este ativo.`;
-        }
-
-        return report;
-    }, [sentinel, getCandlesFor, staleMinutes]);
-
-    const buildBacktestReport = useCallback(() => {
-        if (!backtest.ts || Object.keys(backtest.merged).length === 0) return "Nenhum backtest realizado nesta sessão.";
-        
-        const now = new Date(backtest.ts).toLocaleString('pt-BR');
-        let report = `==================================================\n`;
-        report += `QUANT LAB V3 - RELATÓRIO DE BACKTEST\n`;
-        report += `GERADO EM: ${now}\n`;
-        report += `CONFIG: ${backtest.payoutPct}% Payout\n`;
-        report += `==================================================\n\n`;
-
-        Object.entries(backtest.assetMeta).forEach(([sym, meta]) => {
-            report += `${sym}: ${meta.n} candles, de ${meta.from} a ${meta.to}\n`;
-        });
-        report += `\n`;
-
-        Object.entries(backtest.merged).forEach(([group, periods]) => {
-            report += `>>> MERCADO: ${group}\n`;
-            report += `--------------------------------------------------\n`;
-            
-            ['recent', 'older'].forEach(pKey => {
-                const reports = periods[pKey as 'recent' | 'older'];
-                if (!reports) return;
-                
-                const hasDivision = Object.values(backtest.assetMeta).some(m => m.mid);
-                const pLabel = !hasDivision ? "PERÍODO ÚNICO" : (pKey === 'recent' ? "RECENTE (50%)" : "ANTERIOR (CONFIRMAÇÃO, 50%)");
-                report += `[${pLabel}]\n\n`;
-                
-                reports.forEach(r => {
-                    const { n, rate, lo, hi } = r.stat;
-                    const bLine = (r.baseline * 100).toFixed(1);
-                    const bEven = r.breakeven !== null ? (r.breakeven * 100).toFixed(1) : null;
-                    const moveStr = r.move ? ` | mov=${r.move.mean.toFixed(3)} ATR t=${r.move.t.toFixed(1)}` : '';
-                    
-                    report += `REGRA: ${r.rule} (${r.contract})\n`;
-                    report += `- Amostra: n=${n} | Acerto: ${(rate * 100).toFixed(1)}% [IC95: ${(lo * 100).toFixed(0)}%-${(hi * 100).toFixed(0)}%]\n`;
-                    report += `- Acaso: ${bLine}% | Equilíbrio: ${bEven ? bEven + '%' : '—'}${moveStr}\n`;
-                    report += `- LEITURA: ${r.verdict.toUpperCase()}\n`;
-                    
-                    report += `- Breakdown por Score:\n`;
-                    r.buckets.forEach(b => {
-                        report += `  * ${b.label}: ${(b.stat.rate * 100).toFixed(1)}% (n=${b.stat.n})\n`;
-                    });
-                    
-                    report += `- Acerto por Ativo:\n`;
-                    const groupAssets = Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group);
-                    groupAssets.forEach(sym => {
-                        const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
-                        const val = assetRep ? `${((assetRep.stat.rate ?? 0) * 100).toFixed(1)}% (n=${assetRep.stat.n})` : "sem período anterior";
-                        report += `  * ${sym}: ${val}\n`;
-                    });
-                    report += `\n`;
-                });
-                report += `--------------------------------------------------\n`;
-            });
-            report += `\n`;
-        });
-
-        report += `OBSERVAÇÕES TÉCNICAS:\n`;
-        report += `- 'n' conta episódios independentes (anti-sobreposição de 5 candles).\n`;
-        report += `- OPTIONS: direção do candle de 60s seguinte.\n`;
-        report += `- MULTIPLIERS: direção após 5 candles (sem TP/SL);\n`;
-        report += `- ACCUMULATORS: proxy de calma (não é o contrato real).\n`;
-        report += `- Payout assumido: ${backtest.payoutPct}%.\n`;
-        report += `- Várias regras/faixas aumentam a chance de falso positivo.\n`;
-        report += `==================================================`;
-        
-        return report;
-    }, [backtest]);
-
-    const buildShortContextForLLM = useCallback(() => {
-        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
-        let context = "LEGENDA: Sentinela = pontuação 0-100 por tipo de contrato (Opções, Multiplicadores, Acumuladores); >= 55 é gatilho; ↑ CALL, ↓ PUT; Acumuladores não têm direção. %B 0-1 (posição nas bandas); ER 0-1 (1 = tendência limpa); vol xN = volatilidade atual / mediana; mom15 em ATRs.\n\n";
-        
-        symbols.forEach(sym => {
-            if (!sym) return;
-            const min = staleMinutes(sym);
-            const isStale = min !== null && min > 2.5;
-
-            if (isStale) {
-                context += `${sym}: MERCADO FECHADO (último candle há ${Math.round(min)} min)\n\n`;
-                return;
-            }
-
-            const sentData = sentinel[sym];
-            const price = sentData?.features?.price ?? 0;
-            const hist = lastDecisionBySymbolRef.current[sym];
-            
-            context += `${sym}: $${price.toFixed(4)}\n`;
-            if (sentData?.features) {
-                const f = sentData.features;
-                context += `  Metrics: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} | streak ${f.streak}\n`;
-                context += `  Sentinel: O:${getScoreLabel('OPTIONS', sentData.candidates)} M:${getScoreLabel('MULTIPLIERS', sentData.candidates)} A:${getScoreLabel('ACCUMULATORS', sentData.candidates)}\n`;
-            }
-            if (hist) {
-                const age = Math.round((Date.now() - hist.ts) / 1000);
-                const d = hist.decision;
-                const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-                context += `  Council (${age}s ago): ${d.finalAction} ${d.consensusConfidence}% [${d.debugVotes}] ${d.holdReason || ''} contract=${contractDisplay}\n`;
-            }
-            context += "\n";
-        });
-        
-        return context.slice(0, 2200);
-    }, [sentinel, staleMinutes]);
+    }, [runMultiAssetCycle]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim()) return;
@@ -993,10 +468,7 @@ export function useAIQuantTerminalV3(
                 }
                 pendingChatOrderRef.current = null;
             } else {
-                setChatMessages(prev => [...prev, { 
-                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                    content: "Nenhum pedido pendente ou modo Real desativado."
-                }]);
+                setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: "Nenhum pedido pendente ou modo Real desativado." }]);
                 pendingChatOrderRef.current = null;
             }
             return;
@@ -1006,36 +478,21 @@ export function useAIQuantTerminalV3(
         if (cmdMatch) {
             const found = symbols.filter(s => s && content.toUpperCase().includes(s.toUpperCase()));
             if (found.length === 0) {
-                setChatMessages(prev => [...prev, { 
-                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                    content: `Informe o ativo (ex.: compre 1HZ10V). Ativos monitorados: ${symbols.join(', ')}`
-                }]);
+                setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `Informe o ativo (ex.: compre 1HZ10V). Ativos monitorados: ${symbols.join(', ')}` }]);
             } else if (found.length > 1) {
-                setChatMessages(prev => [...prev, { 
-                    role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                    content: `Múltiplos ativos detectados (${found.join(', ')}). Por favor, escolha apenas UM para o comando.`
-                }]);
+                setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `Múltiplos ativos detectados (${found.join(', ')}). Por favor, escolha apenas UM para o comando.` }]);
             } else {
                 const symbol = found[0];
                 if (isShadowMode) {
                     const decision = await runAnalysisForSymbol(symbol, getCandlesFor(symbol), true);
                     if (decision) {
-                      setChatMessages(prev => [...prev, { 
-                          role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                          content: `[SHADOW] Auditoria para ${symbol}: ${decision.finalAction} ${decision.consensusConfidence}% (${decision.recommendedContract}) votos:[${decision.debugVotes}] ${decision.holdReason ? 'hold='+decision.holdReason : ''}`
-                      }]);
+                      setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `[SHADOW] Auditoria para ${symbol}: ${decision.finalAction} ${decision.consensusConfidence}% (${decision.recommendedContract}) votos:[${decision.debugVotes}] ${decision.holdReason ? 'hold='+decision.holdReason : ''}` }]);
                     } else {
-                      setChatMessages(prev => [...prev, { 
-                          role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                          content: `Sem avaliação para ${symbol}: mercado fechado/defasado, dados insuficientes ou Ollama indisponível (veja o log).`
-                      }]);
+                      setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `Sem avaliação para ${symbol}: mercado fechado/defasado, dados insuficientes ou Ollama indisponível (veja o log).` }]);
                     }
                 } else {
                     pendingChatOrderRef.current = { symbol, ts: Date.now() };
-                    setChatMessages(prev => [...prev, { 
-                        role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                        content: `⚠️ Ordem REAL para ${symbol} detectada. Digite "CONFIRMO" em até 60s para autorizar a execução. O Conselho decidirá a direção final.`
-                    }]);
+                    setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `⚠️ Ordem REAL para ${symbol} detectada. Digite "CONFIRMO" em até 60s para autorizar a execução. O Conselho decidirá a direção final.` }]);
                 }
             }
             return;
@@ -1045,41 +502,35 @@ export function useAIQuantTerminalV3(
         if (hasSym && content.match(WHY)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildAssetReport(hasSym)
+                content: buildAssetReport({ sym: hasSym, sentData: sentinel[hasSym], hist: lastDecisionBySymbolRef.current[hasSym], lastCandleClose: getCandlesFor(hasSym).slice(-1)[0]?.close, staleMin: staleMinutes(hasSym) })
             }]);
             return;
         }
 
         if (content.match(BACKTEST_RE)) {
-            setChatMessages(prev => [...prev, { 
-                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: (Object.keys(backtest.merged).length > 0) ? buildBacktestReport() : "Rode o backtest no painel."
-            }]);
+            setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }) }]);
             return;
         }
 
         if (content.match(REPORT)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildStatusReport()
+                content: buildStatusReport({ isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, stats: councilStats, openPositions: operationsLog.filter(o => o.status === 'pending'), maxConcurrentTrades, sentinel, sentinelCounts, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes })
             }]);
             return;
         }
 
         if (!ollamaConfig) {
-          setChatMessages(prev => [...prev, { 
-              role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-              content: "Ollama não configurado: relatórios e comandos continuam disponíveis, mas a análise via IA exige configuração no Cockpit."
-          }]);
+          setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: "Ollama não configurado: relatórios e comandos continuam disponíveis." }]);
           return;
         }
 
         setIsChatLoading(true);
         chatBusyRef.current = true;
         try {
-            const context = buildShortContextForLLM();
+            const context = buildShortContext({ sentinel, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil, em primeira pessoa.\n\n${context}\n\nREGRAS: usar somente estes dados; citar números; se faltar dado, dizer que não tem. Ao explicar uma decisão, cite os votos, os números e o motivo do HOLD. Não preveja preço (cenários "se X, então Y" como hipóteses); índices sintéticos aleatórios, nunca afirmar certeza de lucro; sinais são hipóteses a validar no Shadow. Até 120 palavras, salvo pedido de relatório.`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}\n\nREGRAS: use estes dados; cite números. Máximo 120 palavras.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -1097,27 +548,22 @@ export function useAIQuantTerminalV3(
         }
     };
 
+    const sessionStatsLocal = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && op.initiator === 'Conselho_V3'
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : null;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate, total };
+    }, [operationsLog]);
+
     const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
         if (!ollamaConfig) return;
         const newConfig = { ...ollamaConfig, ...updates };
         setOllamaConfigState(newConfig);
         localStorage.setItem('ollamaConfig', JSON.stringify(newConfig));
-    };
-
-    const fetchAvailableModels = async () => {
-        if (!ollamaConfig?.baseUrl) return;
-        try {
-            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-            if (ollamaConfig.apiKey) {
-                headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
-            }
-            const res = await fetch(url, { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setAvailableModels(data.models || []);
-            }
-        } catch (e) { console.error("Falha ao buscar modelos", e); }
     };
 
     useEffect(() => {
@@ -1137,10 +583,10 @@ export function useAIQuantTerminalV3(
         allowedContracts, setAllowedContracts, 
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
-        sessionStats, councilStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, sentinel,
+        sessionStats: sessionStatsLocal, councilStats, reasoningLog, memoryBuffer, accountBalance, radarStatus, sentinel,
         watchedSymbols, setWatchedSymbols, resetSession, clearMemory, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        setAccountType, accountType, runBacktest, backtest, buildBacktestReport, staleMinutes
+        setAccountType, accountType, runBacktest: (p, t, e) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e), p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes
     };
 }
