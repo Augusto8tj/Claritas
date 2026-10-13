@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -54,6 +55,32 @@ function CryptoLabContent() {
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
+
+    // --- PRÉ-SELEÇÃO AUTOMÁTICA DE CRIPTOS ---
+    const initialSelectionDone = useRef(false);
+    useEffect(() => {
+        if (!isAssetsLoading && assetGroups.length > 0 && !initialSelectionDone.current) {
+            const allAssets = assetGroups.flatMap(g => g.options);
+            const cryptoAssets = allAssets.filter(a => a.value.startsWith('cry'));
+            
+            if (cryptoAssets.length > 0) {
+                // Seleciona os primeiros 5 ativos cripto para o radar
+                const topCryptos = cryptoAssets.slice(0, 5).map(a => a.value);
+                setWatchedSymbols(topCryptos);
+                
+                // Define o ativo em foco como Bitcoin se disponível
+                const btc = cryptoAssets.find(a => a.value === 'cryBTCUSD');
+                if (btc) {
+                    setActiveSymbol(btc.value);
+                } else if (topCryptos.length > 0) {
+                    setActiveSymbol(topCryptos[0]);
+                }
+                
+                initialSelectionDone.current = true;
+                console.log("🚀 [Crypto Lab] Ativos cripto pré-selecionados para monitoramento.");
+            }
+        }
+    }, [isAssetsLoading, assetGroups, setWatchedSymbols, setActiveSymbol]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
