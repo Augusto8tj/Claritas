@@ -1,0 +1,82 @@
+================================================================================
+CLARITAS COPILOT - ESPECIFICAÇÃO TÉCNICA: CRYPTO LAB V4.2 (SUPREME)
+================================================================================
+
+1. ARQUITETURA DE ARQUIVOS E MÓDULOS
+--------------------------------------------------------------------------------
+- src/app/ai-quant-terminal-v4/page.tsx: View mestre, dashboard de sensores de gravidade e cockpit de comando concorrente.
+- src/features/trading/hooks/use-crypto-radar-v4.tsx: Orquestrador de estado, gerencia o conselho multi-agente e o ciclo de scan paralelo.
+- src/features/trading/services/crypto-gravity-engine.ts: Motor matemático que calcula o vetor de momentum do Bitcoin e correlação com Altcoins.
+- src/features/trading/services/crypto-signal-engine.ts: Especialização de regras estatísticas (Sentinel) para ativos do setor cripto.
+- src/features/trading/services/quant-council-engine.ts: Motor de inferência paralela que sintetiza opiniões de agentes especializados.
+- src/features/trading/services/trade-memory-service.ts: Gerenciador de buffer tático (wins/losses) persistido no Firestore.
+- src/hooks/useAdaptiveResilience.ts: Módulo de governança que protege contra baixa liquidez e ajusta o rigor da IA.
+
+2. MAPEAMENTO DE RECURSOS (FEATURES)
+--------------------------------------------------------------------------------
+- CONSELHO TÁTICO MULTI-AGENTE:
+  * Três agentes de IA (MOMENTUM, RISK_CRITIC, ARCHIVIST) avaliam o mercado em paralelo.
+  * Estados: lastDecision (CouncilDecision), opinions (AgentOpinion[]).
+- BITCOIN GRAVITY RADAR:
+  * Monitora o BTC (Líder) para validar sinais em Altcoins (Betas).
+  * Estados: radarStatus (Record<string, BitcoinGravity>), isBtcExploding (boolean).
+- EXECUÇÃO POLIMÓRFICA CRYPTO:
+  * Seleciona dinamicamente entre OPTIONS, ACCUMULATORS ou MULTIPLIERS.
+  * Lógica: Compressão sistêmica (BTC) ativa Acumuladores; Explosão alinhada ativa Multiplicadores.
+- VARREDURA CONCORRENTE (HFT READY):
+  * Ciclo de scan utiliza Promise.all para eliminar latência sequencial de hardware (Ollama).
+  * Estados: scheduleRef (Record<string, number>), executionLockRef (boolean).
+- MEMÓRIA TÁTICA SETORIAL:
+  * Injeção de histórico de trades recentes (Post-Mortem) no contexto do prompt dos agentes.
+  * Estados: memoryBuffer (TradeMemoryBuffer).
+
+3. CONTRATOS DE DADOS, TYPES E INTERFACES
+--------------------------------------------------------------------------------
+[Bitcoin Gravity]
+export interface BitcoinGravity {
+  btcVector: 'BULL_DRAG' | 'BEAR_DRAG' | 'COMPRESSION' | 'DIVERGENT';
+  betaScore: number; // Correlação de Pearson (-1 a 1)
+  isBtcExploding: boolean; // Movimento > 1.5 ATRs em 3 velas
+  momentum: { m1: number; m5: number; m15: number; };
+}
+
+[Council Decision]
+export interface CouncilDecision {
+  finalAction: 'CALL' | 'PUT' | 'HOLD';
+  recommendedContract: 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS';
+  consensusConfidence: number;
+  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO';
+  telemetry: CouncilTelemetry;
+  stakeRatio: number;
+}
+
+[Adaptive Resilience]
+- MIN_RIGOR: 0.65 (65% de confiança mínima)
+- MAX_RIGOR: 0.85 (85% de confiança máxima)
+- LIQUIDITY_GAP: 2500ms (Bloqueio de execução se delay > threshold)
+
+4. REGRAS DE NEGÓCIO ATUAIS (POLÍTICAS)
+--------------------------------------------------------------------------------
+- VETO DE DIVERGÊNCIA GRAVITACIONAL:
+  * Se isBtcExploding = true e direção da Altcoin != vetor do BTC, forçar HOLD.
+- BOOST ESTATÍSTICO (ACCU_CALM):
+  * Se btcVector === 'COMPRESSION', adicionar +15% ao score da regra Sentinel.
+- FILTRO MULTIPLIERS ALINHADO:
+  * Regra MULT_TREND só é válida se a direção estiver idêntica ao momentum do BTC.
+- GOVERNANÇA DE RIGOR:
+  * Punição: 2 losses seguidos -> Rigor +10% (até 85%).
+  * Recompensa: 1 win -> Rigor -5% (até 65%).
+- SEGURANÇA DE LIQUIDEZ:
+  * Ativo marcado como "Instável" bloqueia preventivamente o Autopilot.
+
+5. INDICADORES DE PERFORMANCE E TELEMETRIA
+--------------------------------------------------------------------------------
+- ENTROPIA DE CONSENSO: Mede a divergência entre os 3 agentes de IA (ideal < 0.4).
+- TPS (Tokens Per Second): Intensidade de processamento do hardware node local.
+- T2T (Tick-to-Trade): Latência ponta-a-ponta da decisão à execução via WebSocket.
+- SHADOW PNL: Rastreamento de lucro/prejuízo teórico para validação de estratégias.
+- WIN RATE BAYESIANO: Taxa de acerto ajustada por intervalo de confiança Beta.
+
+================================================================================
+GERADO PELO ARQUITETO CLARITAS - PRONTO PARA CONSUMO VIA CLAUDE SONNET 5.5
+================================================================================
