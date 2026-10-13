@@ -1,0 +1,86 @@
+================================================================================
+CLARITAS COPILOT - MAPA TÉCNICO E ARQUITETURA: LABORATÓRIO V4.0 (RESILIÊNCIA)
+================================================================================
+
+1. ARQUITETURA DE ARQUIVOS E MÓDULOS PRINCIPAIS
+--------------------------------------------------------------------------------
+- src/app/ai-quant-terminal-v3/page.tsx: View principal, dashboard do radar tático e cockpit de comando.
+- src/features/trading/hooks/use-ai-quant-terminal-v3.tsx: Orquestrador de estado multi-ativo e governança de risco.
+- src/features/trading/hooks/use-backtest-runner.ts: Gerenciador de download paginado e coordenação de simulações estatísticas.
+- src/features/trading/services/report-builders.ts: Serviço de funções puras para geração de relatórios técnicos em linguagem natural.
+- src/hooks/useAdaptiveResilience.ts: Módulo de inteligência cética, threshold adaptativo e sensor de liquidez.
+- src/features/trading/services/backtest.ts: Motor V5.0 assíncrono para processamento massivo de dados via geradores.
+- src/features/trading/services/quant-council-engine.ts: Motor de inferência paralela multi-agente (Momentum, Risk, Archivist).
+- src/features/trading/services/signal-engine.ts: Calculador de features e identificador polimórfico de contratos (Sentinel).
+
+2. MAPEAMENTO DE RECURSOS (FEATURES)
+--------------------------------------------------------------------------------
+- MOTOR DE BACKTEST ASSÍNCRONO V5.0:
+  * Executa simulações determinísticas de até 50.000 candles sem travar a UI.
+  * Estados: backtest.running (boolean), backtest.progress (string), backtest.merged (Record).
+- RADAR TÁTICO MULTI-ATIVO:
+  * Ciclo de varredura assíncrona (Background Scan) em ativos de índices sintéticos.
+  * Estados: radarStatus (Record), scheduleRef (useRef).
+- GOVERNANÇA DE LIMIAR ADAPTATIVO (NEURO-SKEPTIC):
+  * Ajusta o rigor da IA baseado na performance real (punição por loss, recompensa por win).
+  * Estados: adaptiveThresholds (Record<string, number>), consecutiveLosses (Record).
+- SENSOR DE ESTRESSE DE LIQUIDEZ:
+  * Monitora gaps temporais entre atualizações (pulsação do mercado) para evitar slippage.
+  * Estados: lastTickTimestamps (useRef), liquidityStatus (Map).
+- CHAIRMAN HYBRID CHAT:
+  * Interface de comando por linguagem natural para execução de ordens e relatórios.
+  * Estados: chatMessages (Array), isChatLoading (boolean).
+
+3. CONTRATOS DE DADOS, TYPES E INTERFACES
+--------------------------------------------------------------------------------
+[Council Decision & Opinions]
+export interface CouncilDecision {
+  finalAction: 'CALL' | 'PUT' | 'HOLD';
+  recommendedContract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
+  consensusConfidence: number;
+  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO';
+  t2tLatencyMs: number;
+}
+
+export interface AgentOpinion {
+  agentName: 'MOMENTUM' | 'RISK_CRITIC' | 'ARCHIVIST';
+  action: 'CALL' | 'PUT' | 'HOLD';
+  confidence: number;
+  vetoTriggered?: boolean;
+}
+
+[Backtest Statistics]
+export interface RuleReport {
+  rule: string; 
+  contract: string; 
+  stat: { n: number; wins: number; rate: number; lo: number; hi: number; };
+  baseline: number;
+  breakeven: number | null;
+  verdict: string;
+}
+
+4. REGRAS DE NEGÓCIO ATUAIS (POLÍTICAS DE GOVERNANÇA)
+--------------------------------------------------------------------------------
+- LIMITES DE CONFIANÇA (RIGOR):
+  * Piso Mínimo (Reward limit): 65% (0.65).
+  * Teto Máximo (Punishment limit): 85% (0.85).
+- AJUSTE DE THRESHOLD:
+  * Punição: 2 losses consecutivos em um ativo -> Aumenta threshold em +10%.
+  * Recompensa: 1 win no ativo -> Reduz threshold em -5%.
+- ESTRESSE DE LIQUIDEZ:
+  * Latência Crítica: Delta entre ticks > 2500ms.
+  * Ação: Marca ativo como "Instável" e veta execuções automáticas no Pilot Gate.
+- GATE DE EXECUÇÃO:
+  * Exige: isAutoMode = true && Ativo "Estável" && Confiança >= AdaptiveThreshold.
+
+5. INDICADORES DE PERFORMANCE E TELEMETRIA
+--------------------------------------------------------------------------------
+- ASSERTIVIDADE: Taxa de acerto (Win Rate) com Intervalo de Confiança Wilson (IC95).
+- EXPECTATIVA ATR: Movimento médio capturado por sinal em unidades de volatilidade.
+- ENTROPIA DO CONSELHO: Medida de desordem (caos) entre os agentes MOMENTUM e RISK_CRITIC.
+- T2T LATENCY (Tick-to-Trade): Tempo total desde a recepção do dado até o despacho da ordem.
+- STALE DATA MONITOR: Detecção de mercado fechado ou delay de rede via timestamp de velas.
+
+================================================================================
+GERADO AUTOMATICAMENTE PELO ARQUITETO DO CLARITAS QUANT LAB
+================================================================================
