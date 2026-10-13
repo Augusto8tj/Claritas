@@ -238,12 +238,15 @@ function TerminalV3Content() {
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                         {watchedSymbols.map((symbol) => {
                             const status = radarStatus[symbol];
-                            const isStale = status?.isStale;
+                            const sent = sentinel[symbol];
+                            const min = staleMinutes(symbol);
+                            const isStale = min !== null && min > 2.5;
+
                             return (
                                 <div 
                                     key={symbol} 
                                     onClick={() => setActiveSymbol(symbol)}
-                                    title={isStale ? `Mercado Defasado: ${status?.staleMin} min` : `${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
+                                    title={isStale ? `Mercado Defasado: ${Math.round(min || 0)} min` : `${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
                                     className={cn(
                                         "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
                                         symbol === activeSymbol ? "bg-purple-600 border-purple-600 text-white shadow-md" : "bg-card border-border hover:border-purple-400",
@@ -269,8 +272,29 @@ function TerminalV3Content() {
                                         <span className="text-sm font-black">{isStale ? 'FECHADO' : (status?.lastAction || 'SCAN')}</span>
                                     </div>
                                     <div className="mt-1 flex items-center justify-between text-[9px] opacity-60">
-                                        <span className="truncate">{isStale ? `${status?.staleMin} min atrás` : (status?.lastAction === 'HOLD' ? '—' : (status?.recommendedContract || 'Analisando...'))}</span>
+                                        <span className="truncate">{isStale ? `${Math.round(min || 0)} min atrás` : (status?.lastAction === 'HOLD' ? '—' : (status?.recommendedContract || 'Analisando...'))}</span>
                                         <span className="font-mono">{!isStale && status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
+                                    </div>
+
+                                    {/* SENTINEL SCORE BAR - RESTAURADA */}
+                                    <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
+                                        {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
+                                            const cand = sent?.candidates.find(c => c.contract === cat);
+                                            const score = isStale ? 'fechado' : (cand?.score ?? '--');
+                                            const isHigh = !isStale && typeof score === 'number' && score >= 55;
+                                            return (
+                                                <Badge 
+                                                    key={cat} 
+                                                    variant="outline" 
+                                                    className={cn(
+                                                        "text-[9px] px-1 h-3.5 border-none", 
+                                                        isHigh ? "bg-green-500/20 text-green-600" : "bg-muted/30 text-muted-foreground opacity-50"
+                                                    )}
+                                                >
+                                                    {cat[0]} {score}
+                                                </Badge>
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );

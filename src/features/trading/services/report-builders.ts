@@ -14,7 +14,7 @@ interface StatusReportParams {
     stats: CouncilStats;
     openPositions: Operation[];
     maxConcurrentTrades: number;
-    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number, isStale?: boolean, staleMin?: number }>;
+    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number }>;
     sentinelCounts: Record<string, number>;
     lastDecisions: Record<string, { ts: number, decision: CouncilDecision }>;
     staleMinutes: (sym: string) => number | null;
@@ -255,7 +255,7 @@ export function buildShortContext(params: {
                 const c = sentData.candidates.find(x => x.contract === cat);
                 return c ? `${c.score}${c.direction === 'CALL' ? '↑C' : c.direction === 'PUT' ? '↓P' : ''}` : "--";
             };
-            report += `  Sentinel: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
+            context += `  Sentinel: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
         }
         if (hist) {
             const age = Math.round((Date.now() - hist.ts) / 1000);

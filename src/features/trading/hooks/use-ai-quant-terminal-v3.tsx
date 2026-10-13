@@ -157,6 +157,34 @@ export function useAIQuantTerminalV3(
     const [ollamaConfig, setOllamaConfigState] = useState<OllamaConfig | null>(null);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
     
+    // RESET FUNCTIONS (Upwards)
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        interlockLoggedRef.current = false;
+        setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
+        sentinelEpisodeRef.current = {};
+        lastMarketClosedLogRef.current = {};
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
+    }, [clearActiveContracts, toast]);
+
+    const clearMemory = useCallback(async () => {
+      if (!user) return;
+      await TradeMemoryManager.clearBuffer(user.uid);
+      setMemoryBuffer({ wins: [], losses: [] });
+      toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
+    }, [user, toast]);
+
+    const resetSessionRef = useRef(resetSession);
+    resetSessionRef.current = resetSession;
+
     // PERSISTÊNCIA DE CONFIGURAÇÕES
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
@@ -189,31 +217,6 @@ export function useAIQuantTerminalV3(
         if (!user || !activeSymbol) return;
         TradeMemoryManager.getBuffer(user.uid, activeSymbol).then(setMemoryBuffer);
     }, [user, activeSymbol]);
-
-    // RESET FUNCTIONS (Upwards)
-    const resetSession = useCallback(() => {
-        setIsAutoMode(false);
-        setIsShadowMode(true);
-        clearActiveContracts();
-        setRadarStatus({});
-        setReasoningLog([]);
-        setChatMessages([]);
-        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
-        scheduleRef.current = {};
-        setLastDecision(null);
-        interlockLoggedRef.current = false;
-        setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
-        sentinelEpisodeRef.current = {};
-        lastMarketClosedLogRef.current = {};
-        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
-    }, [clearActiveContracts, toast]);
-
-    const clearMemory = useCallback(async () => {
-      if (!user) return;
-      await TradeMemoryManager.clearBuffer(user.uid);
-      setMemoryBuffer({ wins: [], losses: [] });
-      toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
-    }, [user, toast]);
 
     // HANDSHAKE AUTOMÁTICO OLLAMA
     const fetchAvailableModels = useCallback(async () => {
