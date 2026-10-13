@@ -1,3 +1,4 @@
+// /src/components/RadarResilienceBadges.tsx
 'use client';
 
 import React from 'react';

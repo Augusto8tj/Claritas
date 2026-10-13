@@ -1,3 +1,4 @@
+// /src/features/trading/services/crypto-gravity-engine.ts
 /**
  * @fileOverview Crypto Gravity Engine
  * Calcula a influência do Bitcoin (Líder) sobre as Altcoins (Betas).

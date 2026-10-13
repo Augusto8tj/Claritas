@@ -1,3 +1,4 @@
+// /src/hooks/useAdaptiveResilience.ts
 'use client';
 
 import { useState, useCallback, useRef } from 'react';

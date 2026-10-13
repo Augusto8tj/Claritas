@@ -1,3 +1,4 @@
+// /src/features/trading/services/crypto-signal-engine.ts
 /**
  * @fileOverview Crypto Signal Engine V4
  * Especialização das regras estatísticas para o ecossistema Cripto.

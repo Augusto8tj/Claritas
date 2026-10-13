@@ -1,4 +1,4 @@
-// src/app/actions/goal-actions.ts
+// /src/app/actions/goal-actions.ts
 'use server';
 
 import { z } from 'zod';
@@ -40,4 +40,3 @@ export async function generateGoalDataWithAIImage(data: { userId: string; name: 
     return { error: e.message || 'Não foi possível gerar a imagem da meta.' };
   }
 }
-    

@@ -1,3 +1,4 @@
+// /src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
