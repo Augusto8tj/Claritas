@@ -1,12 +1,11 @@
-
 'use client';
 
 /**
- * @fileOverview TERMINAL QUANT V4 - CRYPTO LAB
- * Dashboard especializado em inteligência de correlação Bitcoin.
+ * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
+ * UI consolidada com recursos dos laboratórios V2 e V3.
  */
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,15 +18,15 @@ import {
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, PauseCircle, Cpu, RefreshCw,
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
-    TestTube, Radar, TrendingUp, TrendingDown, 
+    Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Info, ChevronRight, Copy, Globe, Coins
+    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useCryptoRadarV4 } from "@/features/trading/hooks/use-crypto-radar-v4";
+import { useCryptoRadarV4, type StrategicProfile } from "@/features/trading/hooks/use-crypto-radar-v4";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -35,64 +34,66 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useToast } from '@/hooks/use-toast';
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
 function CryptoLabContent() {
     const { 
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, isConnected, operationsLog, tradeAnnotations, priceTicks,
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod,
-        accountType, accountBalance, setAccountType, watchedSymbols, setWatchedSymbols
+        accountType, accountBalance, setAccountType, setWatchedSymbols, watchedSymbols
     } = useDerivApi();
 
     const v4 = useCryptoRadarV4(activeSymbol, priceTicks, chartData as any);
-    const { toast } = useToast();
     const { 
-        lastDecision, reasoningLog, memoryBuffer, isAutoMode, setIsAutoMode, isShadowMode, setIsShadowMode,
-        radarStatus, sentinel, telemetry, resetSession, analysisInterval, setAnalysisInterval
+        lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
+        isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
+        isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
+        confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-    const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+    const [chatInput, setChatInput] = useState("");
 
-    // --- PRÉ-SELEÇÃO AUTOMÁTICA DE CRIPTOS ---
+    // Auto-seleção de criptos ao iniciar
     const initialSelectionDone = useRef(false);
     useEffect(() => {
         if (!isAssetsLoading && assetGroups.length > 0 && !initialSelectionDone.current) {
             const allAssets = assetGroups.flatMap(g => g.options);
             const cryptoAssets = allAssets.filter(a => a.value.startsWith('cry'));
-            
             if (cryptoAssets.length > 0) {
-                // Seleciona os primeiros 5 ativos cripto para o radar
                 const topCryptos = cryptoAssets.slice(0, 5).map(a => a.value);
                 setWatchedSymbols(topCryptos);
-                
-                // Define o ativo em foco como Bitcoin se disponível
                 const btc = cryptoAssets.find(a => a.value === 'cryBTCUSD');
-                if (btc) {
-                    setActiveSymbol(btc.value);
-                } else if (topCryptos.length > 0) {
-                    setActiveSymbol(topCryptos[0]);
-                }
-                
+                if (btc) setActiveSymbol(btc.value);
                 initialSelectionDone.current = true;
-                console.log("🚀 [Crypto Lab] Ativos cripto pré-selecionados para monitoramento.");
             }
         }
     }, [isAssetsLoading, assetGroups, setWatchedSymbols, setActiveSymbol]);
 
+    useEffect(() => {
+        if (chatScrollRef.current) chatScrollRef.current.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
+
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+
+    const handleChatSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (chatInput.trim()) {
+            sendMessage(chatInput);
+            setChatInput("");
+        }
+    };
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
-            {/* RADAR DE GRAVIDADE BITCOIN (V4) */}
+            {/* RADAR DE GRAVIDADE BITCOIN (V4.2 CONCURRENTE) */}
             <Card className="bg-orange-500/5 border-orange-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-orange-500/10 border-b border-orange-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
-                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar (V4.2)
+                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V4.2
                     </CardTitle>
                     <div className="flex items-center gap-4">
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
@@ -103,7 +104,7 @@ function CryptoLabContent() {
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
                                 <Command>
-                                    <CommandInput placeholder="Filtrar criptos (prefixo 'cry')..." />
+                                    <CommandInput placeholder="Filtrar criptos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
                                         {assetGroups.map((group) => (
@@ -138,7 +139,6 @@ function CryptoLabContent() {
                         {watchedSymbols.map((symbol) => {
                             const status = radarStatus[symbol];
                             const gravity = status?.gravity;
-                            
                             return (
                                 <div 
                                     key={symbol} 
@@ -159,7 +159,6 @@ function CryptoLabContent() {
                                          <Minus className="h-4 w-4 text-muted-foreground" />}
                                         <span className="text-sm font-black">{status?.finalAction || 'SCAN'}</span>
                                     </div>
-                                    
                                     {gravity && (
                                         <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
                                             <div className="flex justify-between text-[8px] uppercase font-black">
@@ -182,7 +181,7 @@ function CryptoLabContent() {
                 </CardContent>
             </Card>
 
-            {/* HEADER CANÔNICO V4 */}
+            {/* HEADER CANÔNICO V4.2 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">
                     <div className="bg-orange-500/10 p-2 rounded-xl border border-orange-500/20 shadow-sm">
@@ -222,7 +221,7 @@ function CryptoLabContent() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* COLUNA ESQUERDA: CONTROLE */}
+                {/* COLUNA ESQUERDA: COCKPIT DO PILOTO */}
                 <div className="lg:col-span-3 space-y-6">
                     <Card className="border-orange-200 bg-orange-50/10 shadow-sm">
                         <CardHeader className="pb-3">
@@ -236,7 +235,22 @@ function CryptoLabContent() {
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas V4</span>
                                 </Label>
-                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={setIsShadowMode} />
+                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={toggleShadowMode} />
+                            </div>
+
+                            <div className="space-y-3">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Perfil Estratégico (Conselho)</Label>
+                                <ToggleGroup 
+                                    type="single" 
+                                    value={strategicProfile} 
+                                    onValueChange={(v: StrategicProfile) => v && setStrategicProfile(v)}
+                                    className="grid grid-cols-3 gap-1"
+                                    disabled={isAutoMode}
+                                >
+                                    <ToggleGroupItem value="conservative" className="text-[10px] h-7">CONSER</ToggleGroupItem>
+                                    <ToggleGroupItem value="balanced" className="text-[10px] h-7">BALANC</ToggleGroupItem>
+                                    <ToggleGroupItem value="aggressive" className="text-[10px] h-7 text-destructive">AGRESS</ToggleGroupItem>
+                                </ToggleGroup>
                             </div>
 
                             <div className="space-y-3 p-3 rounded-lg border border-orange-200 bg-card/50">
@@ -248,11 +262,12 @@ function CryptoLabContent() {
                                     value={[analysisInterval]} 
                                     min={30} max={600} step={30} 
                                     onValueChange={(v) => setAnalysisInterval(v[0])}
+                                    disabled={isAutoMode}
                                 />
                             </div>
 
                             <Button 
-                                onClick={() => setIsAutoMode(!isAutoMode)} 
+                                onClick={toggleAutoMode} 
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
@@ -277,17 +292,39 @@ function CryptoLabContent() {
                             </div>
                             <div className="flex justify-between border-t border-slate-800 pt-3">
                                 <span className="opacity-50 uppercase text-[9px]">Consensus Entropy:</span>
-                                <span className="text-xs font-bold text-slate-100">{telemetry.consensusEntropy.toFixed(3)}</span>
+                                <span className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
+                                    {telemetry.consensusEntropy.toFixed(3)}
+                                </span>
+                            </div>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="shadow-sm border-orange-100">
+                        <CardHeader className="pb-2">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <Database className="h-4 w-4" /> Lab Memory Buffer
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="p-3 rounded-lg bg-green-50/50 border border-green-100 text-center">
+                                    <span className="text-[10px] uppercase font-bold text-green-600 block mb-1">Wins</span>
+                                    <p className="text-lg font-black text-green-700">{memoryBuffer.wins.length}/20</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-red-50/50 border border-red-100 text-center">
+                                    <span className="text-[10px] uppercase font-bold text-red-600 block mb-1">Losses</span>
+                                    <p className="text-lg font-black text-red-700">{memoryBuffer.losses.length}/20</p>
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
                 </div>
 
-                {/* COLUNA CENTRAL: GRÁFICO */}
+                {/* COLUNA CENTRAL: VISUALIZAÇÃO E CHAT */}
                 <div className="lg:col-span-6 space-y-6">
                     <Card className="min-h-[450px] shadow-sm">
                         <CardHeader className="py-3 border-b flex flex-row items-center justify-between">
-                             <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2">
+                             <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-600">
                                 <LineChart className="h-4 w-4 text-orange-600" /> Ativo: {activeSymbol}
                             </CardTitle>
                             <Badge variant="outline" className="text-[10px] font-mono">{timePeriod}</Badge>
@@ -309,6 +346,104 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
+                    <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
+                        <CardHeader className="py-3 border-b border-border bg-orange-50/10">
+                            <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
+                                <MessageSquare className="h-4 w-4" />
+                                Diálogo Tático com o Conselho (V4.2)
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
+                            <ScrollArea className="h-full p-4">
+                                <div className="space-y-6 py-4">
+                                    {chatMessages.length === 0 && (
+                                        <div className="text-center space-y-4 pt-12">
+                                            <div className="bg-orange-500/5 h-20 w-20 rounded-full flex items-center justify-center mx-auto border border-orange-500/10">
+                                                <Brain className="h-10 w-10 text-orange-500/30" />
+                                            </div>
+                                            <p className="text-sm text-muted-foreground px-8">O conselho está pronto para analisar tendências e correlações com o Bitcoin.</p>
+                                        </div>
+                                    )}
+                                    {chatMessages.map((m, i) => (
+                                        <div key={i} className={cn(
+                                            "flex flex-col max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm border",
+                                            m.role === 'user' ? "bg-orange-600 text-white ml-auto rounded-tr-none" : "bg-card mr-auto rounded-tl-none border-border"
+                                        )}>
+                                            <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] font-bold uppercase">
+                                                {m.role === 'user' ? <User className="h-3 w-3"/> : <BotIcon className="h-3 w-3"/>}
+                                                {m.role === 'user' ? 'Comando' : (m.agentName || 'Conselho')} • {m.time}
+                                            </div>
+                                            <p className="font-mono whitespace-pre-wrap">{m.content}</p>
+                                        </div>
+                                    ))}
+                                    {isChatLoading && (
+                                        <div className="flex items-center gap-2 text-xs text-orange-600 animate-pulse font-mono">
+                                            <RefreshCw className="h-3 w-3 animate-spin"/> Chairman está processando...
+                                        </div>
+                                    )}
+                                    <div ref={chatScrollRef} />
+                                </div>
+                            </ScrollArea>
+                        </CardContent>
+                        <CardFooter className="p-3 border-t border-border">
+                            <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
+                                <Input 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder="Dê um comando estratégico..."
+                                    className="bg-background border-border h-9 text-xs"
+                                    disabled={isChatLoading}
+                                />
+                                <Button type="submit" size="icon" className="h-9 w-9 bg-orange-600 hover:bg-orange-700" disabled={isChatLoading || !chatInput.trim()}>
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </form>
+                        </CardFooter>
+                    </Card>
+                </div>
+
+                {/* COLUNA DIREITA: VEREDITO E RACIOCÍNIO */}
+                <div className="lg:col-span-3 space-y-6">
+                    <Card className="border-orange-600/30 shadow-md overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-yellow-500" />
+                        <CardHeader className="bg-orange-600/5 border-b py-3">
+                            <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
+                                <ShieldCheck className="h-4 w-4" /> Chairman Veredict V4.2
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-6 space-y-4">
+                            {lastDecision ? (
+                                <>
+                                    <div className={cn(
+                                        "p-4 rounded-xl text-center border shadow-inner transition-all",
+                                        lastDecision.finalAction === 'CALL' ? "bg-green-50 border-green-200 text-green-700" :
+                                        lastDecision.finalAction === 'PUT' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
+                                    )}>
+                                        <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
+                                        <p className="text-3xl font-black">{lastDecision.finalAction}</p>
+                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.consensusConfidence}%</p>
+                                    </div>
+                                    <div className="bg-orange-50/50 p-3 rounded-lg border border-orange-100 text-[11px] text-orange-800 italic text-center">
+                                        "{lastDecision.zenThought || 'A fluidez do mercado cripto exige vigilância.'}"
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Badge variant="outline" className="justify-center py-1 text-[10px] uppercase font-bold border-orange-200">
+                                            {lastDecision.recommendedContract}
+                                        </Badge>
+                                        <Badge variant="outline" className="justify-center py-1 text-[10px] uppercase font-bold border-orange-200">
+                                            {strategicProfile}
+                                        </Badge>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-center py-10 opacity-30">
+                                    <RefreshCw className="h-10 w-10 mx-auto mb-2 animate-spin" />
+                                    <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Analizando Vetores...</p>
+                                </div>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200">
                         <CardHeader className="py-2 px-4 border-b bg-card/50">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
@@ -316,7 +451,7 @@ function CryptoLabContent() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <ScrollArea className="h-48 p-4 text-[10px]">
+                            <ScrollArea className="h-64 p-4 text-[10px]">
                                 {reasoningLog.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Sincronizando nó de inferência paralela...</p>
                                 ) : (
@@ -336,63 +471,15 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
                 </div>
-
-                {/* COLUNA DIREITA: VEREDITO */}
-                <div className="lg:col-span-3 space-y-6">
-                    <Card className="border-orange-600/30 shadow-md">
-                        <CardHeader className="bg-orange-600/5 border-b py-3">
-                            <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
-                                <ShieldCheck className="h-4 w-4 text-orange-600" /> Chairman Veredict V4
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6 space-y-4">
-                            {lastDecision ? (
-                                <>
-                                    <div className={cn(
-                                        "p-4 rounded-xl text-center border shadow-inner transition-all",
-                                        lastDecision.finalAction === 'CALL' ? "bg-green-50 border-green-200 text-green-700" :
-                                        lastDecision.finalAction === 'PUT' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
-                                    )}>
-                                        <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
-                                        <p className="text-3xl font-black">{lastDecision.finalAction}</p>
-                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.consensusConfidence}%</p>
-                                    </div>
-                                    <div className="bg-muted/30 p-3 rounded-lg border text-[11px] text-muted-foreground italic text-center">
-                                        "{lastDecision.zenThought}"
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="text-center py-10 opacity-30">
-                                    <RefreshCw className="h-10 w-10 mx-auto mb-2 animate-spin" />
-                                    <p className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Analizando Vetores...</p>
-                                </div>
-                            )}
-                        </CardContent>
-                    </Card>
-
-                    <Card className="shadow-sm border-orange-100">
-                        <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Database className="h-4 w-4" /> Lab Memory
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="p-3 rounded-lg bg-green-50/50 border border-green-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-green-600 block mb-1">Wins</span>
-                                    <p className="text-lg font-black text-green-700">{memoryBuffer.wins.length}</p>
-                                </div>
-                                <div className="p-3 rounded-lg bg-red-50/50 border border-red-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-red-600 block mb-1">Losses</span>
-                                    <p className="text-lg font-black text-red-700">{memoryBuffer.losses.length}</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
             </div>
         </div>
     );
+}
+
+function BotIcon(props: any) {
+  return (
+    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+  );
 }
 
 export default function CryptoLabV4Page() {
