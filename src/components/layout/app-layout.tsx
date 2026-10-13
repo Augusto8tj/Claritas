@@ -1,4 +1,3 @@
-
 'use client';
 
 import { usePathname } from "next/navigation";
@@ -86,6 +85,11 @@ const navItems = [
     href: "/ai-quant-terminal-v3",
     icon: TestTube,
     label: "Quant Radar V3 (Laboratório)",
+  },
+  {
+    href: "/ai-quant-terminal-v4",
+    icon: Zap,
+    label: "Crypto Lab (V4 - Concorrente)",
   },
   {
     href: "/analysis",
