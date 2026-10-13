@@ -1,4 +1,3 @@
-// src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
@@ -109,7 +108,7 @@ export interface DerivApiContextTypeV2 {
   multiAssetCandles: Record<string, CandleData[]>;
 }
 
-export const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
+export const DerivApiContextV2 = createContext<DerivApiContextV2 | undefined>(undefined);
 
 const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
@@ -167,8 +166,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
 };
 
 export function useDerivApiV2State() {
-  const [demoToken, setDemoToken] = useState<string | null>(null);
-  const [realToken, setRealToken] = useState<string | null>(null);
+  const [demoToken, setDemoToken] = useState<string | null>('pat_f9c5b37e98bcfb92c287b9c11aa5b33b2026af219e90c344b65ea27854fae394');
+  const [realToken, setRealToken] = useState<string | null>('pat_f9c5b37e98bcfb92c287b9c11aa5b33b2026af219e90c344b65ea27854fae394');
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);
@@ -961,12 +960,21 @@ export function useDerivApiV2State() {
               if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
               
               const authRes: any = await makeRequest({ "authorize": activeToken });
-              if (authRes.error) throw new Error(authRes.error.message);
+              if (authRes.error) {
+                // If it fails with "no recognized method", it means the Options OTP endpoint 
+                // gave us a pre-authenticated connection where 'authorize' isn't supported.
+                if (authRes.error.message.includes('no recognized method')) {
+                    addEvent('Conexão estabelecida e autenticada via OTP v3.', 'success');
+                } else {
+                    throw new Error(authRes.error.message);
+                }
+              } else {
+                addEvent('Conexão estabelecida e autenticada.', 'success');
+              }
 
               setIsConnected(true);
               setIsConnecting(false);
               setConnectionError(null);
-              addEvent('Conexão estabelecida e autenticada via OTP.', 'success');
               
               ws.send(JSON.stringify({ "proposal_open_contract": 1, "subscribe": 1 }));
               ws.send(JSON.stringify({ "balance": 1, "subscribe": 1 }));

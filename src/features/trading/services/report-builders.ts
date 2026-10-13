@@ -1,5 +1,5 @@
 import { SignalCandidate, SignalFeatures } from './signal-engine';
-import { CouncilDecision, AgentOpinion, CouncilStats } from '../types/council';
+import { CouncilDecision, CouncilStats } from '../types/council';
 import { RuleReport } from './backtest';
 import { Operation } from '@/lib/types';
 
@@ -166,10 +166,8 @@ export function buildBacktestReport(params: {
 
     Object.entries(assetMeta).forEach(([sym, meta]) => {
         const candles = meta.n;
-        const start = new Date(meta.from);
-        const end = new Date(meta.to);
-        const days = ((end.getTime() - start.getTime()) / 86400000).toFixed(1);
-        report += `${sym}: ${candles} candles, ${days} dias, de ${meta.from} a ${meta.to}\n`;
+        const days = meta.from && meta.to ? ((new Date(meta.to).getTime() - new Date(meta.from).getTime()) / 86400000).toFixed(1) : "0";
+        report += `${sym}: ${candles} candles, ${days} dias, de ${meta.from || '?'} a ${meta.to || '?'}\n`;
     });
     report += `\n`;
 
@@ -257,7 +255,7 @@ export function buildShortContext(params: {
                 const c = sentData.candidates.find(x => x.contract === cat);
                 return c ? `${c.score}${c.direction === 'CALL' ? '↑C' : c.direction === 'PUT' ? '↓P' : ''}` : "--";
             };
-            context += `  Sentinel: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
+            report += `  Sentinel: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
         }
         if (hist) {
             const age = Math.round((Date.now() - hist.ts) / 1000);
