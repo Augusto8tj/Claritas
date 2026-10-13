@@ -276,7 +276,6 @@ function TerminalV3Content() {
                                         <span className="font-mono">{!isStale && status?.confidence ? `${status.confidence.toFixed(0)}%` : '--'}</span>
                                     </div>
 
-                                    {/* SENTINEL SCORE BAR - RESTAURADA */}
                                     <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
                                         {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
                                             const cand = sent?.candidates.find(c => c.contract === cat);
@@ -494,7 +493,7 @@ function TerminalV3Content() {
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white hover:bg-purple-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {isAutoMode ? 'Parar Automação' : 'Ativar Conselho V3'}
+                                {isAutoMode ? 'Parar Automação' : 'Ativar Conselho'}
                             </Button>
                         </CardContent>
                     </Card>
