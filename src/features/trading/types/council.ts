@@ -1,3 +1,4 @@
+// /src/features/trading/types/council.ts
 export interface TradePostMortem {
   id: string;
   timestamp: number;
@@ -47,8 +48,9 @@ export interface CouncilDecision {
   telemetry: CouncilTelemetry;
   zenThought?: string;
   holdReason?: string; // Motivo detalhado se a decisão for HOLD
-  debugVotes?: string; // NOVO: Formato "M:CALL/78 R:HOLD/20 A:HOLD/0"
+  debugVotes?: string; // Formato "M:CALL/78 R:HOLD/20 A:HOLD/0"
   trace?: string[];
+  backtestEdge?: 'positive' | 'negative' | 'neutral';
 }
 
 /**
