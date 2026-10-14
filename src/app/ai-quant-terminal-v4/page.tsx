@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * UI consolidada com recursos de resiliência, gravidade de Bitcoin e Go-Live Gate.
+ * UI consolidada com controles de parâmetros de contrato definidos pelo usuário.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -15,13 +15,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
+import { Checkbox } from "@/components/ui/checkbox";
 import { 
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, PauseCircle, Cpu, RefreshCw,
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock
+    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -33,10 +34,8 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RadarResilienceBadges } from '@/components/RadarResilienceBadges';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function CryptoLabContent() {
     const { 
@@ -52,7 +51,9 @@ function CryptoLabContent() {
         isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
-        resilience, stakeValue, setStakeValue, kellyFraction, setKellyFraction, goLiveGates
+        resilience, stakeValue, setStakeValue, kellyFraction, setKellyFraction,
+        multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
+        allowedActions, setAllowedActions, allowedContracts, setAllowedContracts
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -93,7 +94,7 @@ function CryptoLabContent() {
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
-            {/* RADAR DE GRAVIDADE BITCOIN (V4.2 CONCURRENTE) */}
+            {/* RADAR DE GRAVIDADE BITCOIN */}
             <Card className="bg-orange-500/5 border-orange-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-orange-500/10 border-b border-orange-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
@@ -134,7 +135,7 @@ function CryptoLabContent() {
                             </PopoverContent>
                         </Popover>
                         <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-700 uppercase">
-                            Concorrência Prioritária
+                            Filtro de Correlação Ativo
                         </Badge>
                     </div>
                 </CardHeader>
@@ -161,8 +162,8 @@ function CryptoLabContent() {
                                         {gravity?.isBtcExploding && <Zap className="h-3 w-3 text-yellow-400 fill-current animate-pulse" />}
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        {status?.finalAction === 'RISE' || status?.finalAction === 'CALL' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
-                                         status?.finalAction === 'FALL' || status?.finalAction === 'PUT' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                        {status?.finalAction === 'RISE' || status?.finalAction === 'CALL' || status?.finalAction === 'MULTUP' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
+                                         status?.finalAction === 'FALL' || status?.finalAction === 'PUT' || status?.finalAction === 'MULTDOWN' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
                                          <Minus className="h-4 w-4 text-muted-foreground" />}
                                         <span className="text-sm font-black">{status?.finalAction || 'SCAN'}</span>
                                     </div>
@@ -174,13 +175,9 @@ function CryptoLabContent() {
                                             <div className="flex justify-between text-[8px] uppercase font-black">
                                                 <span className="opacity-70">BTC Vector:</span>
                                                 <span className={cn(
-                                                    gravity.btcVector.includes('UP') ? "text-green-500" :
-                                                    gravity.btcVector.includes('DOWN') ? "text-red-500" : "text-muted-foreground"
+                                                    gravity.btcVector.includes('UP') || gravity.btcVector.includes('BULL') ? "text-green-500" :
+                                                    gravity.btcVector.includes('DOWN') || gravity.btcVector.includes('BEAR') ? "text-red-500" : "text-muted-foreground"
                                                 )}>{gravity.btcVector}</span>
-                                            </div>
-                                            <div className="flex justify-between text-[8px] uppercase font-black">
-                                                <span className="opacity-70">Beta/Lag:</span>
-                                                <span className="font-mono">{gravity.betaReal.toFixed(2)} | {gravity.leadLagSeconds}s</span>
                                             </div>
                                         </div>
                                     )}
@@ -191,7 +188,7 @@ function CryptoLabContent() {
                 </CardContent>
             </Card>
 
-            {/* HEADER CANÔNICO V4.2 */}
+            {/* HEADER CANÔNICO */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">
                     <div className="bg-orange-500/10 p-2 rounded-xl border border-orange-500/20 shadow-sm">
@@ -243,7 +240,7 @@ function CryptoLabContent() {
                             <div className="flex items-center justify-between p-3 rounded-lg bg-card border shadow-sm">
                                 <Label htmlFor="shadow-mode" className="flex flex-col gap-0.5">
                                     <span className="text-xs font-bold uppercase">Shadow Mode</span>
-                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas para acúmulo estatístico</span>
+                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas V4</span>
                                 </Label>
                                 <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={toggleShadowMode} />
                             </div>
@@ -300,25 +297,91 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl font-mono">
-                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
-                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
-                                <Gauge className="h-3.5 w-3.5" /> Hardware Telemetry
+                    <Card className="bg-card/50 border-border shadow-sm">
+                        <CardHeader className="pb-3">
+                            <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
+                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Parâmetros de Contrato (cry*)
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-4 space-y-4 text-[11px]">
-                             <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="opacity-60 uppercase">TPS Intensity:</span>
-                                    <span className="text-green-500 font-bold">{telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span></span>
+                        <CardContent className="space-y-6">
+                            <div className="space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <Label className="text-xs uppercase font-bold opacity-70">Stake (Mín $1)</Label>
+                                    <span className="font-mono font-bold">${stakeValue.toFixed(2)}</span>
                                 </div>
-                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
+                                <Input 
+                                    type="number" 
+                                    min="1" 
+                                    step="0.5" 
+                                    value={stakeValue} 
+                                    onChange={(e) => setStakeValue(Math.max(1, parseFloat(e.target.value) || 1))}
+                                    className="h-8 font-mono text-xs"
+                                    disabled={isAutoMode}
+                                />
                             </div>
-                            <div className="flex justify-between border-t border-slate-800 pt-3">
-                                <span className="opacity-50 uppercase text-[9px]">Consensus Entropy:</span>
-                                <span className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
-                                    {telemetry.consensusEntropy.toFixed(3)}
-                                </span>
+
+                            <Separator />
+
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Multiplicador</Label>
+                                        <span className="font-mono font-bold text-orange-600">x{multiplier}</span>
+                                    </div>
+                                    <Slider 
+                                        value={[multiplier]} 
+                                        min={100} max={500} step={100} 
+                                        onValueChange={(v) => setMultiplier(v[0])}
+                                        disabled={isAutoMode}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Alvo Lucro (TP)</Label>
+                                        <span className="font-mono font-bold text-green-600">{takeProfitPct}%</span>
+                                    </div>
+                                    <Slider 
+                                        value={[takeProfitPct]} 
+                                        min={5} max={100} step={5} 
+                                        onValueChange={(v) => setTakeProfitPct(v[0])}
+                                        disabled={isAutoMode}
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Proteção (SL)</Label>
+                                        <span className="font-mono font-bold text-red-600">{stopLossPct}%</span>
+                                    </div>
+                                    <Slider 
+                                        value={[stopLossPct]} 
+                                        min={10} max={100} step={5} 
+                                        onValueChange={(v) => setStopLossPct(v[0])}
+                                        disabled={isAutoMode}
+                                    />
+                                </div>
+                            </div>
+
+                            <Separator />
+
+                            <div className="space-y-3">
+                                <Label className="text-[10px] uppercase font-bold opacity-70">Categorias Permitidas</Label>
+                                <div className="space-y-2">
+                                    {Object.entries(allowedContracts).map(([key, val]) => (
+                                        <div key={key} className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id={`check-${key}`} 
+                                                checked={val} 
+                                                onCheckedChange={(checked) => setAllowedContracts(prev => ({ ...prev, [key]: !!checked }))}
+                                                disabled={isAutoMode || key === 'ACCUMULATORS'} 
+                                            />
+                                            <Label htmlFor={`check-${key}`} className="text-xs font-medium cursor-pointer">
+                                                {key} {key === 'ACCUMULATORS' && '(Bloqueado p/ cry*)'}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </CardContent>
                     </Card>
@@ -398,7 +461,7 @@ function CryptoLabContent() {
                     </Card>
                 </div>
 
-                {/* COLUNA DIREITA: VEREDITO E GO-LIVE GATE */}
+                {/* COLUNA DIREITA: VEREDITO E TELEMETRIA */}
                 <div className="lg:col-span-3 space-y-6">
                     <Card className="border-orange-600/30 shadow-md overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-yellow-500" />
@@ -412,8 +475,8 @@ function CryptoLabContent() {
                                 <>
                                     <div className={cn(
                                         "p-4 rounded-xl text-center border shadow-inner transition-all",
-                                        lastDecision.finalAction === 'CALL' ? "bg-green-50 border-green-200 text-green-700" :
-                                        lastDecision.finalAction === 'PUT' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
+                                        lastDecision.finalAction === 'CALL' || lastDecision.finalAction === 'MULTUP' ? "bg-green-50 border-green-200 text-green-700" :
+                                        lastDecision.finalAction === 'PUT' || lastDecision.finalAction === 'MULTDOWN' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
                                     )}>
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
                                         <p className="text-3xl font-black">{lastDecision.finalAction}</p>
@@ -441,33 +504,26 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    {/* GO-LIVE GATE MONITOR */}
-                    <Card className="border-cyan-500/30 bg-cyan-500/5 shadow-sm">
-                        <CardHeader className="py-3 border-b border-cyan-500/20">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-700">
-                                <Lock className="h-4 w-4" /> Go-Live Gate V5
+                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl font-mono">
+                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
+                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
+                                <Gauge className="h-3.5 w-3.5" /> Hardware Telemetry
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="p-4 space-y-4">
-                            {Object.entries(goLiveGates).slice(0, 3).map(([key, gate]) => (
-                                <div key={key} className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[9px] font-bold font-mono opacity-60 truncate max-w-[140px]">{key}</span>
-                                        {gate.allowed ? <Unlock className="h-3 w-3 text-green-500" /> : <Lock className="h-3 w-3 text-red-500" />}
-                                    </div>
-                                    <div className="flex items-center justify-between text-[10px]">
-                                        <span className={cn("font-black", gate.allowed ? "text-green-600" : "text-red-600")}>
-                                            {gate.allowed ? "PRONTO" : "BLOQUEADO"}
-                                        </span>
-                                        <span className="font-mono">N={gate.metrics.n}</span>
-                                    </div>
-                                    {!gate.allowed && <p className="text-[9px] text-muted-foreground italic leading-tight">{gate.reason}</p>}
-                                    <Separator className="opacity-20" />
+                        <CardContent className="p-4 space-y-4 text-[11px]">
+                             <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="opacity-60 uppercase">TPS Intensity:</span>
+                                    <span className="text-green-500 font-bold">{telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span></span>
                                 </div>
-                            ))}
-                            {Object.keys(goLiveGates).length === 0 && (
-                                <p className="text-[10px] text-center text-muted-foreground italic py-4">Aguardando amostragem sombra...</p>
-                            )}
+                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
+                            </div>
+                            <div className="flex justify-between border-t border-slate-800 pt-3">
+                                <span className="opacity-50 uppercase text-[9px]">Consensus Entropy:</span>
+                                <span className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
+                                    {telemetry.consensusEntropy.toFixed(3)}
+                                </span>
+                            </div>
                         </CardContent>
                     </Card>
 
