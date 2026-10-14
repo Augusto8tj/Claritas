@@ -5,6 +5,7 @@
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * UI migrada: Backtest e Log de Auditoria Avançado.
  * CORREÇÃO: Adicionados controles para dailyBalance e maxConcurrentTrades.
+ * FIX: Adicionado ícone TestTube ausente nas importações.
  */
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -23,7 +24,8 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X
+    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
+    TestTube
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
