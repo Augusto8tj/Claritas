@@ -4,9 +4,10 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * UI migrada: Backtest e Log de Auditoria Avançado.
+ * CORREÇÃO: Adicionados controles para dailyBalance e maxConcurrentTrades.
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +60,8 @@ function CryptoLabContent() {
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
         resilience, stakeValue, setStakeValue, kellyFraction, setKellyFraction,
+        dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
+        maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes
@@ -294,17 +297,33 @@ function CryptoLabContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Parâmetros de Contrato (cry*)
+                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Governança de Risco (cry*)
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            <div className="space-y-3">
-                                <div className="flex justify-between items-center">
-                                    <Label className="text-xs uppercase font-bold opacity-70">Stake (Mín $1)</Label>
-                                    <span className="font-mono font-bold">${stakeValue.toFixed(2)}</span>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stake (USD)</Label>
+                                    <Input type="number" min="1" step="0.5" value={stakeValue} onChange={(e) => setStakeValue(parseFloat(e.target.value) || 1)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
                                 </div>
-                                <Input type="number" min="1" step="0.5" value={stakeValue} onChange={(e) => setStakeValue(Math.max(1, parseFloat(e.target.value) || 1))} className="h-8 font-mono text-xs" disabled={isAutoMode} />
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Max Ordens</Label>
+                                    <Input type="number" min="1" max="10" value={maxConcurrentTrades} onChange={(e) => setMaxConcurrentTrades(parseInt(e.target.value) || 1)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
+                                </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stop Diário</Label>
+                                    <Input type="number" value={dailyBalance} onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 100)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Alvo Lucro</Label>
+                                    <Input type="number" value={dailyTarget} onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 50)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
+                                </div>
+                            </div>
+
+                            <Separator />
+
                             <div className="space-y-4">
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-center text-xs"><Label className="uppercase font-bold opacity-70">Multiplicador</Label><span className="font-mono font-bold text-orange-600">x{multiplier}</span></div>

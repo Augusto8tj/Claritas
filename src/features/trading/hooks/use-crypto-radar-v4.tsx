@@ -4,6 +4,7 @@
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Migração de Recursos V3: Backtest, Stats do Conselho e Log Avançado.
+ * CORREÇÃO: Adicionados estados de dailyBalance e maxConcurrentTrades ausentes.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -55,6 +56,13 @@ export interface CouncilStats {
 
 const memoryCache: Record<string, { buffer: TradeMemoryBuffer, ts: number }> = {};
 
+const isOrphanOp = (op: Operation) => {
+    const ageMs = Date.now() - new Date(op.timestamp).getTime();
+    const isExpired = op.expirationTime && Date.now() > op.expirationTime + 60000;
+    const isVeryOld = ageMs > 24 * 3600 * 1000;
+    return isExpired || isVeryOld;
+};
+
 export function useCryptoRadarV4(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -84,12 +92,15 @@ export function useCryptoRadarV4(
     const [takeProfitPct, setTakeProfitPct] = useState(25);
     const [stopLossPct, setStopLossPct] = useState(50);
 
-    // GOVERNANÇA E STATS (MIGRADO V3)
+    // GOVERNANÇA E RISCO (MIGRADO V3)
+    const [dailyBalance, setDailyBalance] = useState(100.0);
+    const [dailyTarget, setDailyTarget] = useState(50.0);
+    const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'MULTIPLIERS': true, 'ACCUMULATORS': false });
-    const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     
-    // BACKTEST RUNNER
+    // STATS E BACKTEST
+    const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
 
     // TELEMETRIA E LOGS
@@ -113,6 +124,7 @@ export function useCryptoRadarV4(
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
+    const lastProcessedOpIdRef = useRef<number | null>(null);
 
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
 
@@ -205,10 +217,11 @@ export function useCryptoRadarV4(
                 adaptiveRigor: resilience.thresholds[symbol] || 0.65
             };
 
+            const nonOrphanOps = operationsLog.filter(op => !isOrphanOp(op));
             const portfolio: PortfolioRiskState = {
-                openPositions: operationsLog.filter(op => op.status === 'pending').length,
+                openPositions: nonOrphanOps.filter(op => op.status === 'pending').length,
                 maxConcurrentPositions: maxConcurrentTrades,
-                totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0),
+                totalExposure: nonOrphanOps.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0),
                 maxTotalExposure: dailyBalance,
                 lockedSymbols: new Set()
             };
@@ -256,25 +269,25 @@ export function useCryptoRadarV4(
               } 
             }));
 
-            if (shouldExecute && decision.finalAction !== 'HOLD') {
+            if (shouldExecute && action !== 'HOLD') {
                 if (isShadowMode) {
-                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar', undefined, symbol);
+                    addLog(`[SHADOW] ${symbol}: ${action} simulado.`, 'radar', undefined, symbol);
                 } else {
                     let finalContractType = 'CALL';
                     const extraProposalParams: Record<string, any> = {};
 
                     if (decision.recommendedContract === 'MULTIPLIERS') {
-                        finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN';
+                        finalContractType = action === 'CALL' ? 'MULTUP' : 'MULTDOWN';
                         extraProposalParams.multiplier = multiplier;
                     }
 
-                    const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                    const tradeDirection: 'rise' | 'fall' = action === 'CALL' ? 'rise' : 'fall';
                     const res = await executeTrade(
                         finalContractType, stakeValue, symbol, tradeDirection, 15, 's', 
                         'Conselho_V4', `V42_${decision.executedVia}`, extraProposalParams
                     );
                     
-                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
+                    if (res.success) addLog(`[EXEC] ${symbol} ${action} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
                     else addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
                 }
             }
@@ -329,6 +342,9 @@ export function useCryptoRadarV4(
         takeProfitPct, setTakeProfitPct,
         stopLossPct, setStopLossPct,
         kellyFraction, setKellyFraction,
+        dailyBalance, setDailyBalance,
+        dailyTarget, setDailyTarget,
+        maxConcurrentTrades, setMaxConcurrentTrades,
         allowedActions, setAllowedActions,
         allowedContracts, setAllowedContracts,
         lastDecision, radarStatus, reasoningLog, telemetry, memoryBuffer,
