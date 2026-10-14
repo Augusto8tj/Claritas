@@ -303,6 +303,48 @@ export const PredictiveTradeLogSchema = z.object({
 });
 export type PredictiveTradeLog = z.infer<typeof PredictiveTradeLogSchema>;
 
+/**
+ * Shadow Trade V4.2
+ */
+export interface CryptoShadowTrade {
+  id?: string;
+  symbol: string;
+  direction: 'CALL' | 'PUT' | 'NONE';
+  contract: 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS';
+  entryPrice: number;
+  exitPrice?: number;
+  timestamp: string;
+  duration: number;
+  durationUnit: string;
+  gravityState: string;
+  rule: string;
+  score: number;
+  confidence: number;
+  payoutRatio: number;
+  ev: number;
+  result?: 'won' | 'lost';
+  pnl?: number;
+  status: 'pending' | 'completed';
+}
+
+/**
+ * Edge Metrics V4.2
+ */
+export interface RuleEdgeStats {
+  rule: string;
+  gravityState: string;
+  symbol: string;
+  n: number;
+  wins: number;
+  pnl: number;
+  posteriorMean: number; // p-hat
+  lowerBound: number;    // Wilson Lower Limit
+  avgProfit: number;
+  avgLoss: number;
+  profitFactor: number;
+  maxDrawdown: number;
+}
+
 export const EnhancedRobotPerformanceSchema = z.object({
   id: z.string(),
   strategyType: z.string(),

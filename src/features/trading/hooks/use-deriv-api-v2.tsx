@@ -1,3 +1,4 @@
+// /src/features/trading/hooks/use-deriv-api-v2.tsx
 'use client';
 
 import { createContext, useContext, useState, useEffect, type ReactNode, useCallback, useRef, useMemo } from 'react';
@@ -106,6 +107,11 @@ export interface DerivApiContextTypeV2 {
   watchedSymbols: string[];
   setWatchedSymbols: (symbols: string[]) => void;
   multiAssetCandles: Record<string, CandleData[]>;
+  
+  // V4.2 New Helpers
+  makeRequest: <T>(request: object, noResponse?: boolean) => Promise<T>;
+  getContractsFor: (symbol: string) => Promise<any>;
+  getProposal: (params: any) => Promise<any>;
 }
 
 export const DerivApiContextV2 = createContext<DerivApiContextV2 | undefined>(undefined);
@@ -334,6 +340,14 @@ export function useDerivApiV2State() {
         }
     });
   }, []); 
+
+  const getContractsFor = useCallback(async (symbol: string) => {
+    return makeRequest({ contracts_for: symbol });
+  }, [makeRequest]);
+
+  const getProposal = useCallback(async (params: any) => {
+    return makeRequest({ proposal: 1, ...params });
+  }, [makeRequest]);
 
     const getHistoricalData = useCallback(async (symbol: string, style: 'ticks' | 'candles', count: number, period?: TimePeriod, endEpoch?: number): Promise<ApiHistoricalData[]> => {
         const ws = wsRef.current;
@@ -961,8 +975,6 @@ export function useDerivApiV2State() {
               
               const authRes: any = await makeRequest({ "authorize": activeToken });
               if (authRes.error) {
-                // If it fails with "no recognized method", it means the Options OTP endpoint 
-                // gave us a pre-authenticated connection where 'authorize' isn't supported.
                 if (authRes.error.message.includes('no recognized method')) {
                     addEvent('Conexão estabelecida e autenticada via OTP v3.', 'success');
                 } else {
@@ -1073,8 +1085,9 @@ export function useDerivApiV2State() {
     timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, 
     clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,
     connectionEvents, rawErrorCode, tokenSource, maskedToken, appId: DERIV_APP_ID, hookVersion: 'v2.5.0-otp',
-    watchedSymbols, setWatchedSymbols, multiAssetCandles
-  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, setAndPersistOperationsLog, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, watchedSymbols, multiAssetCandles]);
+    watchedSymbols, setWatchedSymbols, multiAssetCandles,
+    makeRequest, getContractsFor, getProposal
+  }), [isConnected, isConnecting, connectionError, demoToken, realToken, activeToken, accountType, accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, timePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, setAndPersistOperationsLog, tradeAnnotations, durationLimits, connectionEvents, rawErrorCode, tokenSource, maskedToken, watchedSymbols, multiAssetCandles, makeRequest, getContractsFor, getProposal]);
 
   return contextValue;
 }

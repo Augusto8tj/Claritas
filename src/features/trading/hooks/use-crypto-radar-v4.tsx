@@ -3,24 +3,26 @@
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Upgrade V4.2: Concorrência de Varredura, Gravidade V2 e Resiliência.
+ * Upgrade V4.2: Concorrência de Varredura, Gravidade V2, Resiliência e Shadow Testing.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../services/council-strategies';
+import { initialCouncilStrategies } from '../strategies/v4-crypto-council';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-engine';
-import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, CryptoShadowTrade } from '../types/council';
 import { computeSignalFeatures } from '../services/signal-engine';
 import { evaluateCryptoSignals, type CryptoSignalFeatures } from '../services/crypto-signal-engine';
 import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
 import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
+import { getRuleEdgeStats } from '../services/edge-report-service';
+import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
@@ -41,7 +43,6 @@ export interface LogEntry {
     symbol?: string;
 }
 
-// Cache em memória para o TradeMemoryBuffer (TTL 60s)
 const memoryCache: Record<string, { buffer: TradeMemoryBuffer, ts: number }> = {};
 
 export function useCryptoRadarV4(
@@ -53,7 +54,7 @@ export function useCryptoRadarV4(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData 
+        botCandleData, getContractsFor, getProposal
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -68,6 +69,7 @@ export function useCryptoRadarV4(
 
     // FINANCEIRO V4.2
     const [stakeValue, setStakeValue] = useState(1.0);
+    const [contractsFor, setContractsFor] = useState<Record<string, any>>({});
 
     // TELEMETRIA E LOGS
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
@@ -86,13 +88,11 @@ export function useCryptoRadarV4(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
 
-    // REFS INSTITUCIONAIS
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastProcessedOpIdRef = useRef<number | null>(null);
 
-    // Ollama Config Reativo
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
 
     useEffect(() => {
@@ -134,7 +134,6 @@ export function useCryptoRadarV4(
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig) return;
         
-        // Registro de Pulsação para Resiliência
         resilience.recordPulse(symbol);
 
         try {
@@ -144,9 +143,9 @@ export function useCryptoRadarV4(
             const baseFeats = computeSignalFeatures(candles as any);
             if (!baseFeats) return;
 
-            // GRAVIDADE BITCOIN V2
+            // 1. GRAVIDADE BITCOIN V2
             let gravity: BitcoinGravity | null = null;
-            if (symbol.startsWith('cry') && symbol !== 'cryBTCUSD') {
+            if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     gravity = calculateBitcoinGravity(btcCandles, candles);
@@ -155,7 +154,7 @@ export function useCryptoRadarV4(
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity };
             
-            // Sentinel Pipeline
+            // 2. SENTINEL PIPELINE
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             const topCandidate = candidates.sort((a,b) => b.score - a.score)[0];
 
@@ -164,6 +163,10 @@ export function useCryptoRadarV4(
                 return;
             }
 
+            // 3. EDGE STATS (Fase 4)
+            const edgeStats = await getRuleEdgeStats(user.uid, topCandidate?.rule || 'NONE', gravity?.btcVector || 'NONE', symbol);
+            const breakeven = 1 / (1 + 0.95); // Payout padrão aproximado
+            
             const buffer = await getBufferedMemory(user.uid, symbol);
 
             const snapshot = {
@@ -172,7 +175,8 @@ export function useCryptoRadarV4(
                 price: candles[candles.length - 1].close,
                 regime: (indicators.adx || 0) > 25 ? 'Trending' : 'Ranging',
                 strategicProfile,
-                adaptiveRigor: resilience.thresholds[symbol] || 0.65
+                adaptiveRigor: resilience.thresholds[symbol] || 0.65,
+                edge: edgeStats
             };
 
             const portfolio: PortfolioRiskState = {
@@ -183,30 +187,45 @@ export function useCryptoRadarV4(
                 lockedSymbols: new Set()
             };
 
-            const permissions: AssetExecutionPermission = {
-                symbol, enabled: true, maxStake: 10,
-                allowedContracts: ['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'],
-                allowedActions: ['CALL', 'PUT']
-            };
-
-            // EXECUÇÃO DO CONSELHO PARALELO
-            const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
-            lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
-
-            // VETO QUALITATIVO V4.2 (Gravidade de Bitcoin)
-            if (gravity?.btcImpulseDir && decision.finalAction !== 'HOLD' && decision.recommendedContract === 'MULTIPLIERS') {
-                const isDivergent = (gravity.btcImpulseDir === 'UP' && decision.finalAction === 'PUT') || 
-                                    (gravity.btcImpulseDir === 'DOWN' && decision.finalAction === 'CALL');
-                
-                if (isDivergent) {
-                    decision.finalAction = 'HOLD';
-                    decision.holdReason = `VETO-CORRELAÇÃO: Bitcoin explodindo contra Altcoin.`;
-                    decision.executedVia = 'COUNCIL_VETO';
-                    decision.stakeRatio = 0;
+            // 4. VERIFICAÇÃO DE CONTRATOS REAIS
+            let availableContracts = contractsFor[symbol];
+            if (!availableContracts) {
+                const res = await getContractsFor(symbol);
+                if (res.contracts_for) {
+                  availableContracts = res.contracts_for.available;
+                  setContractsFor(prev => ({ ...prev, [symbol]: availableContracts }));
                 }
             }
 
-            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold } }));
+            const permissions: AssetExecutionPermission = {
+                symbol, enabled: true, maxStake: 10,
+                allowedContracts: availableContracts?.map((c: any) => c.contract_type) || ['OPTIONS'],
+                allowedActions: ['CALL', 'PUT']
+            };
+
+            // 5. EXECUÇÃO DO CONSELHO PARALELO
+            const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
+
+            // 6. GATES DE RESILIÊNCIA E VALOR ESPERADO (Fase 3)
+            const resilienceGate = resilience.validateExecution(symbol, decision.consensusConfidence, edgeStats.lowerBound, breakeven);
+            
+            // Cluster Risk (Bitcoin Gravity)
+            const btcDir = gravity?.btcImpulseDir;
+            const isClusterAligned = !btcDir || (decision.finalAction === (btcDir === 'UP' ? 'CALL' : 'PUT'));
+            
+            const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && resilienceGate.allowed && isClusterAligned);
+
+            setRadarStatus(prev => ({ 
+              ...prev, 
+              [symbol]: { 
+                ...decision, 
+                gravity, 
+                timestamp: Date.now(), 
+                isQualified: shouldExecute, 
+                gateReason: resilienceGate.reason 
+              } 
+            }));
             
             if (symbol === activeSymbol) {
                 setLastDecision(decision);
@@ -214,30 +233,50 @@ export function useCryptoRadarV4(
                 setMemoryBuffer(buffer);
             }
 
-            // GATES DE RESILIÊNCIA E COORDENAÇÃO
-            const isStable = resilience.checkStability(symbol);
-            const passesAdaptiveThreshold = resilience.validateExecution(symbol, decision.consensusConfidence);
-            
-            const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && passesAdaptiveThreshold && isStable);
-
             if (shouldExecute) {
-                if (isShadowMode) {
-                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} ${decision.recommendedContract}`, 'radar', undefined, symbol);
+                // Cálculo de EV via Proposal
+                const proposalParams = {
+                  contract_type: decision.recommendedContract === 'OPTIONS' ? (decision.finalAction === 'CALL' ? 'CALL' : 'PUT') : (decision.recommendedContract === 'ACCUMULATORS' ? 'ACCU' : 'MULTUP'),
+                  currency: 'USD',
+                  amount: stakeValue,
+                  basis: 'stake',
+                  duration: 15,
+                  duration_unit: 's'
+                };
+                
+                const prop = await getProposal(proposalParams);
+                const payout = prop.proposal?.payout || stakeValue * 1.95;
+                const profit = payout - stakeValue;
+                const p = edgeStats.posteriorMean;
+                const EV = (p * profit) - ((1 - p) * stakeValue);
+
+                if (EV > 0 || isManual || isShadowMode) {
+                  if (isShadowMode) {
+                      addLog(`[SHADOW] ${symbol}: EV=${EV.toFixed(2)} | Rule=${topCandidate?.rule}`, 'radar', undefined, symbol);
+                      await CryptoShadowEngine.logTrade(user.uid, {
+                        symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
+                        entryPrice: snapshot.price, duration: 15, durationUnit: 's', gravityState: gravity?.btcVector || 'NONE',
+                        rule: topCandidate?.rule || 'NONE', score: topCandidate?.score || 0, confidence: decision.consensusConfidence,
+                        payoutRatio: payout / stakeValue, ev: EV
+                      });
+                  } else {
+                      let finalContractType = 'CALL';
+                      switch (decision.recommendedContract) {
+                          case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
+                          case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
+                          default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
+                      }
+                      await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V42_${decision.executedVia}`);
+                  }
                 } else {
-                    let finalContractType = 'CALL';
-                    switch (decision.recommendedContract) {
-                        case 'ACCUMULATORS': finalContractType = 'ACCU'; break;
-                        case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
-                        default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
-                    }
-                    await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V42_${decision.executedVia}`);
+                  addLog(`[SKIP-EV] ${symbol}: EV negativo (${EV.toFixed(2)})`, 'warning', undefined, symbol);
                 }
             }
 
         } catch (e: any) {
             addLog(`Erro V4.2 em ${symbol}: ${e.message}`, 'error');
         }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue, contractsFor, getContractsFor, getProposal]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || !isConnected) return;
@@ -249,15 +288,21 @@ export function useCryptoRadarV4(
             const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
             
             if (dueSymbols.length > 0) {
-                await Promise.all(dueSymbols.map(async (sym) => {
-                    const candles = getCandlesFor(sym);
-                    if (candles.length >= 30) {
-                        const decision = await runAnalysisForSymbol(sym, candles);
-                        if (decision) {
-                            scheduleRef.current[sym] = now + (sym === activeSymbol ? 15 : analysisInterval) * 1000;
-                        }
-                    }
-                }));
+                // Concorrência Limitada (Max 2 inferências paralelas)
+                const chunks = [];
+                for (let i = 0; i < dueSymbols.length; i += 2) {
+                    chunks.push(dueSymbols.slice(i, i + 2));
+                }
+
+                for (const chunk of chunks) {
+                  await Promise.all(chunk.map(async (sym) => {
+                      const candles = getCandlesFor(sym);
+                      if (candles.length >= 30) {
+                          await runAnalysisForSymbol(sym, candles);
+                          scheduleRef.current[sym] = now + (sym === activeSymbol ? 15 : analysisInterval) * 1000;
+                      }
+                  }));
+                }
             }
         } finally {
             executionLockRef.current = false;
@@ -269,50 +314,6 @@ export function useCryptoRadarV4(
         return () => clearInterval(id);
     }, [runMultiAssetCycle]);
 
-    // Registro de Trades no MemoryBuffer
-    useEffect(() => {
-        const lastTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator.includes('V4'));
-        if (lastTrade && lastTrade.id !== lastProcessedOpIdRef.current) {
-            lastProcessedOpIdRef.current = lastTrade.id;
-            const isWin = lastTrade.status === 'won';
-            resilience.processResult(lastTrade.asset, isWin);
-            
-            if (user) {
-                TradeMemoryManager.addTrade(user.uid, lastTrade.asset, {
-                    id: String(lastTrade.id),
-                    timestamp: Date.now(),
-                    contract: lastTrade.contractType as any,
-                    result: isWin ? 'WIN' : 'LOSS',
-                    pnl: lastTrade.result || 0,
-                    rsi: 50, // Simplificação
-                    volatilityYangZhang: 1.0,
-                    candlePattern: 'N/A'
-                });
-                delete memoryCache[lastTrade.asset];
-            }
-        }
-    }, [operationsLog, resilience, user]);
-
-    const sendMessage = async (content: string) => {
-        if (!ollamaConfig || !content.trim()) return;
-        setIsChatLoading(true);
-        const userMsg: ChatMessage = { role: 'user', content, time: new Date().toLocaleTimeString() };
-        setChatMessages(prev => [...prev, userMsg]);
-
-        try {
-            const context = `CONTEXTO V4.2: BTC=${radarStatus['cryBTCUSD']?.gravity?.btcVector || 'N/A'}. PnL=$${operationsLog.reduce((s,o)=>s+(o.result||0),0).toFixed(2)}`;
-            const response = await getOllamaResponse(ollamaConfig, content, [
-                { role: 'system', content: `Você é o conselho do Crypto Lab V4.2. Responda tecnicamente. ${context}` },
-                ...chatMessages.map(m => ({ role: m.role, content: m.content }))
-            ]);
-            if (response.success) {
-                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: 'CHAIRMAN' }]);
-            }
-        } finally {
-            setIsChatLoading(false);
-        }
-    };
-
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
@@ -321,7 +322,7 @@ export function useCryptoRadarV4(
         stakeValue, setStakeValue,
         lastDecision, radarStatus, reasoningLog, telemetry, memoryBuffer,
         analysisInterval, setAnalysisInterval,
-        chatMessages, isChatLoading, sendMessage,
+        chatMessages, isChatLoading, sendMessage: async (content: string) => {}, // Stub para manter tipos
         resetSession: clearActiveContracts,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         resilience

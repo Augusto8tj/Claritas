@@ -4,13 +4,13 @@
 import { useState, useCallback, useRef } from 'react';
 
 /**
- * useAdaptiveResilience - Motor de Governança V4.0
- * Gerencia o rigor da IA e o estresse de liquidez de forma isolada.
+ * useAdaptiveResilience - Motor de Governança V4.2
+ * Gerencia o rigor da IA, o estresse de liquidez e o gate de WinRate-to-Breakeven.
  */
 
 const MIN_RIGOR = 0.65;
 const MAX_RIGOR = 0.85;
-const LIQUIDITY_GAP_THRESHOLD_MS = 2500; // Limite de latência para considerar mercado instável
+const LIQUIDITY_GAP_THRESHOLD_MS = 2500; 
 
 export function useAdaptiveResilience() {
   const [thresholds, setThresholds] = useState<Record<string, number>>({});
@@ -47,13 +47,30 @@ export function useAdaptiveResilience() {
     });
   }, []);
 
-  // Validação soberana de execução
-  const validateExecution = useCallback((symbol: string, confidence: number): boolean => {
+  /**
+   * Validação soberana de execução V4.2
+   * @param confidence Confiança atual do sinal (0-100)
+   * @param pHatLower Limite inferior do Win Rate (Wilson Interval)
+   * @param breakeven Ponto de equilíbrio calculado (1 / (1 + payout))
+   */
+  const validateExecution = useCallback((
+    symbol: string, 
+    confidence: number, 
+    pHatLower?: number, 
+    breakeven?: number
+  ): { allowed: boolean; reason?: string } => {
     const currentRigor = thresholds[symbol] || MIN_RIGOR;
     const isStable = checkStability(symbol);
     
-    // Bloqueia se confiança for menor que rigor adaptativo ou se houver gap de liquidez
-    return isStable && confidence >= (currentRigor * 100);
+    if (!isStable) return { allowed: false, reason: "INSTABILIDADE: Gap de liquidez detectado." };
+    if (confidence < (currentRigor * 100)) return { allowed: false, reason: `RIGOR: Confiança ${confidence.toFixed(0)}% abaixo do exigido (${(currentRigor * 100).toFixed(0)}%).` };
+
+    // Phase 3.7: Desativação automática se win rate < breakeven
+    if (pHatLower !== undefined && breakeven !== undefined && pHatLower < breakeven) {
+      return { allowed: false, reason: `EDGE: Win Rate (${(pHatLower * 100).toFixed(1)}%) abaixo do breakeven (${(breakeven * 100).toFixed(1)}%).` };
+    }
+
+    return { allowed: true };
   }, [thresholds, checkStability]);
 
   return {
