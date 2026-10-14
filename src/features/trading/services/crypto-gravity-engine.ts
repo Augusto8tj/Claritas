@@ -1,139 +1,156 @@
-
 // /src/features/trading/services/crypto-gravity-engine.ts
+
 /**
- * @fileOverview Crypto Gravity Engine V2
- * Motor matemático para detecção de lead-lag entre BTC e Altcoins.
+ * @fileOverview CRYPTO GRAVITY ENGINE V4.2
+ * Motor matemático isolado para detecção de correlação líder (BTC) e 
+ * governança de execução para ativos cryBTCUSD e cryETHUSD na Deriv.
  */
 
-export interface BitcoinGravity {
-  btcVector: 'BULL_DRAG' | 'BEAR_DRAG' | 'COMPRESSION' | 'DIVERGENT' | 'IMPULSE_UP' | 'IMPULSE_DOWN' | 'ALT_LAGGING_UP' | 'ALT_LAGGING_DOWN' | 'ALT_ALIGNED' | 'ALT_DIVERGENT' | 'INSUFFICIENT_DATA';
-  betaReal: number;
-  corrReturns: number;
-  zImpulse: number;
+// ============================================================================
+// 1. TYPES AND INTERFACES
+// ============================================================================
+
+export interface CryptoAssetFeatures {
+  symbol: string;
+  currentPrice: number;
+  rsi: number;
+  atrNow: number;
+  volatilityRatio: number; // Mediana da volatilidade histórica
+  momentum15m: number;     // Retorno normalizado em ATRs
+}
+
+export interface BitcoinGravityResult {
+  btcVector: 'BULL_DRAG' | 'BEAR_DRAG' | 'COMPRESSION' | 'DIVERGENT';
   isBtcExploding: boolean;
-  btcImpulseDir: 'UP' | 'DOWN' | null;
-  expectedCatchUp: number;
-  leadLagSeconds: number;
-  leaderConfidence: number;
+  gravityScore: number; // 0 a 100
 }
+
+export interface CryptoV4Decision {
+  finalAction: 'MULTUP' | 'MULTDOWN' | 'HOLD';
+  recommendedContract: 'MULTIPLIERS';
+  confidence: number;
+  adjustedStake: number;
+  reason: string;
+}
+
+// ============================================================================
+// 2. CORE FUNCTIONS
+// ============================================================================
 
 /**
- * Reamostra séries temporais para uma grade comum de 1 segundo.
+ * Calcula a "gravidade" do Bitcoin sobre um ativo alvo (Altcoin).
+ * @param btc Features atuais do Bitcoin (cryBTCUSD)
+ * @param target Features atuais do ativo alvo (ex: cryETHUSD)
  */
-function resampleTo1sGrid(data: any[], windowSeconds: number): number[] {
-  if (data.length < 2) return [];
-  const now = Math.floor(Date.now() / 1000);
-  const start = now - windowSeconds;
-  const grid = new Array(windowSeconds).fill(null);
+export function calculateBitcoinGravity(
+  btc: CryptoAssetFeatures,
+  target: CryptoAssetFeatures
+): BitcoinGravityResult {
+  let btcVector: BitcoinGravityResult['btcVector'] = 'DIVERGENT';
+  let isBtcExploding = false;
+  let gravityScore = 50;
+
+  // A. LÓGICA DE EXPLOSÃO (Volume/Volatilidade)
+  // Se o ATR atual for 50% superior à média, temos um estouro de volatilidade
+  const volatilitySpike = btc.atrNow > (btc.volatilityRatio * 1.5);
   
-  // Mapeia dados existentes para a grade
-  data.forEach(c => {
-    const idx = Math.floor(c.epoch - start);
-    if (idx >= 0 && idx < windowSeconds) {
-      grid[idx] = Number(c.close);
-    }
-  });
+  if (volatilitySpike) {
+    isBtcExploding = true;
+    gravityScore = 85;
+    // Define o vetor baseado na direção do momentum
+    btcVector = btc.momentum15m > 0 ? 'BULL_DRAG' : 'BEAR_DRAG';
+  } 
 
-  // Forward-fill de lacunas
-  let lastVal = grid.find(v => v !== null) || data[0].close;
-  for (let i = 0; i < windowSeconds; i++) {
-    if (grid[i] === null) grid[i] = lastVal;
-    else lastVal = grid[i];
+  // B. FILTRO DE SOBREVIVÊNCIA (Queda Livre)
+  // Se o momentum for fortemente negativo, forçamos o vetor de arraste ursino
+  if (btc.momentum15m < -2.5) {
+    btcVector = 'BEAR_DRAG';
+    gravityScore = 95;
+  } 
+  // Se for fortemente positivo
+  else if (btc.momentum15m > 2.5) {
+    btcVector = 'BULL_DRAG';
+    gravityScore = 95;
   }
 
-  // Converte para retornos logarítmicos
-  const returns: number[] = [];
-  for (let i = 1; i < windowSeconds; i++) {
-    returns.push(Math.log(grid[i] / grid[i - 1]));
-  }
-  return returns;
-}
-
-function calculatePearson(x: number[], y: number[]): number {
-  const n = x.length;
-  if (n === 0) return 0;
-  const sumX = x.reduce((a, b) => a + b, 0);
-  const sumY = y.reduce((a, b) => a + b, 0);
-  const sumXY = x.reduce((prev, curr, i) => prev + curr * y[i], 0);
-  const sumX2 = x.reduce((a, b) => a + b * b, 0);
-  const sumY2 = y.reduce((a, b) => a + b * b, 0);
-
-  const num = n * sumXY - sumX * sumY;
-  const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
-  return den === 0 ? 0 : num / den;
-}
-
-export function calculateBitcoinGravity(btcCandles: any[], targetCandles: any[]): BitcoinGravity {
-  const WINDOW = 60; // 60 segundos de análise
-  if (btcCandles.length < 30 || targetCandles.length < 30) {
-    return { btcVector: 'INSUFFICIENT_DATA', betaReal: 1, corrReturns: 0, zImpulse: 0, isBtcExploding: false, btcImpulseDir: null, expectedCatchUp: 0, leadLagSeconds: 0, leaderConfidence: 0 };
-  }
-
-  const btcRet = resampleTo1sGrid(btcCandles, WINDOW);
-  const altRet = resampleTo1sGrid(targetCandles, WINDOW);
-
-  if (btcRet.length < 10 || altRet.length < 10) {
-    return { btcVector: 'INSUFFICIENT_DATA', betaReal: 1, corrReturns: 0, zImpulse: 0, isBtcExploding: false, btcImpulseDir: null, expectedCatchUp: 0, leadLagSeconds: 0, leaderConfidence: 0 };
-  }
-
-  // 1. Z-Score do Impulso do BTC (últimos 15s)
-  const recentBtc = btcRet.slice(-15);
-  const btcMean = btcRet.reduce((a,b) => a+b, 0) / btcRet.length;
-  const btcStd = Math.sqrt(btcRet.reduce((s,v) => s + (v-btcMean)**2, 0) / btcRet.length) || 0.0001;
-  const currentBtcRet = recentBtc.reduce((a,b) => a+b, 0);
-  const zImpulse = currentBtcRet / (btcStd * Math.sqrt(15));
-
-  // 2. Detecção de Explosão
-  const isBtcExploding = Math.abs(zImpulse) > 2.0;
-  const btcImpulseDir = zImpulse > 2.0 ? 'UP' : (zImpulse < -2.0 ? 'DOWN' : null);
-
-  // 3. Beta Real e Correlação
-  const corrReturns = calculatePearson(btcRet, altRet);
-  const btcVar = btcRet.reduce((s,v) => s + (v-btcMean)**2, 0) / btcRet.length || 0.0001;
-  const altMean = altRet.reduce((a,b) => a+b, 0) / altRet.length;
-  const covariance = btcRet.reduce((s,v,i) => s + (v-btcMean)*(altRet[i]-altMean), 0) / btcRet.length;
-  const betaReal = covariance / btcVar;
-
-  // 4. Cross-Correlation para Lead-Lag
-  let maxCorr = -1;
-  let leadLagSeconds = 0;
-  for (let lag = -5; lag <= 5; lag++) {
-    const bSlice = lag < 0 ? btcRet.slice(0, lag) : btcRet.slice(lag);
-    const aSlice = lag < 0 ? altRet.slice(-lag) : altRet.slice(0, btcRet.length - lag);
-    const c = calculatePearson(bSlice, aSlice);
-    if (c > maxCorr) {
-      maxCorr = c;
-      leadLagSeconds = lag;
-    }
-  }
-
-  // 5. Retorno de Catch-up esperado
-  const currentAltRet = altRet.slice(-15).reduce((a,b) => a+b, 0);
-  const expectedCatchUp = (betaReal * currentBtcRet) - currentAltRet;
-
-  // 6. Máquina de Estados
-  let btcVector: BitcoinGravity['btcVector'] = 'INSUFFICIENT_DATA';
-  if (Math.abs(zImpulse) > 2.5) {
-    btcVector = zImpulse > 0 ? 'IMPULSE_UP' : 'IMPULSE_DOWN';
-  } else if (Math.abs(expectedCatchUp) > btcStd * 2 && Math.sign(expectedCatchUp) === Math.sign(zImpulse)) {
-    btcVector = expectedCatchUp > 0 ? 'ALT_LAGGING_UP' : 'ALT_LAGGING_DOWN';
-  } else if (corrReturns > 0.7) {
-    btcVector = 'ALT_ALIGNED';
-  } else if (corrReturns < 0.2) {
+  // C. LÓGICA DE COMPRESSÃO (Lateralidade)
+  // Bitcoin calmo (ATR baixo) e sem tendência clara (Momentum perto de 0)
+  if (!isBtcExploding && Math.abs(btc.momentum15m) < 0.5 && btc.atrNow <= btc.volatilityRatio) {
     btcVector = 'COMPRESSION';
-  } else {
-    btcVector = 'ALT_DIVERGENT';
+    gravityScore = 40;
   }
 
   return {
     btcVector,
-    betaReal,
-    corrReturns,
-    zImpulse,
     isBtcExploding,
-    btcImpulseDir,
-    expectedCatchUp,
-    leadLagSeconds,
-    leaderConfidence: maxCorr
+    gravityScore
+  };
+}
+
+/**
+ * Avalia se a operação em uma Altcoin é permitida pelo Gate de Segurança V4.2.
+ * @param target Features do ativo alvo
+ * @param gravity Resultado do motor de gravidade do Bitcoin
+ * @param intendedAction Ação proposta pelo sinal ('RISE' | 'FALL' | 'HOLD')
+ * @param baseStake Valor base da aposta
+ * @param currentOpenPositions Número de trades ativos no cluster
+ * @param maxConcurrent Limite de concorrência do portfólio
+ */
+export function evaluateCryptoV4Gate(
+  target: CryptoAssetFeatures,
+  gravity: BitcoinGravityResult,
+  intendedAction: 'RISE' | 'FALL' | 'HOLD',
+  baseStake: number,
+  currentOpenPositions: number,
+  maxConcurrent: number
+): CryptoV4Decision {
+  
+  // 1. RESTRIÇÃO DE CONTRATO NATIVA
+  // Deriv cripto cry* = MULTIPLIERS. Acumuladores proibidos.
+  const recommendedContract: 'MULTIPLIERS' = 'MULTIPLIERS';
+
+  // 2. TRAVA DE STAKE (Piso institucional de $1.00 USD)
+  const adjustedStake = Math.max(baseStake, 1.0);
+
+  // 3. LIMITE DE PORTFÓLIO
+  if (currentOpenPositions >= maxConcurrent) {
+    return {
+      finalAction: 'HOLD',
+      recommendedContract,
+      confidence: 0,
+      adjustedStake,
+      reason: `Limite de portfólio atingido (${currentOpenPositions}/${maxConcurrent}).`
+    };
+  }
+
+  // 4. VETO AUTOMÁTICO (RISK CRITIC)
+  // Divergência Gravitacional: Não operar contra um Bitcoin explodindo
+  if (gravity.isBtcExploding) {
+    const isContradictory = 
+      (gravity.btcVector === 'BULL_DRAG' && intendedAction === 'FALL') ||
+      (gravity.btcVector === 'BEAR_DRAG' && intendedAction === 'RISE');
+
+    if (isContradictory) {
+      return {
+        finalAction: 'HOLD',
+        recommendedContract,
+        confidence: 0,
+        adjustedStake,
+        reason: `Divergência Gravitacional: Bitcoin em modo ${gravity.btcVector}. Não pegue a faca caindo em ${target.symbol}.`
+      };
+    }
+  }
+
+  // 5. DECISÃO FINAL
+  const finalAction: CryptoV4Decision['finalAction'] = 
+    intendedAction === 'RISE' ? 'MULTUP' : 
+    intendedAction === 'FALL' ? 'MULTDOWN' : 'HOLD';
+
+  return {
+    finalAction,
+    recommendedContract,
+    confidence: gravity.gravityScore,
+    adjustedStake,
+    reason: `Sinal validado pelo Crypto V4 Gate. Vetor BTC: ${gravity.btcVector}.`
   };
 }
