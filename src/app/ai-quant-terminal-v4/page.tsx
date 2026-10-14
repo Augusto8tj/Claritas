@@ -1,12 +1,13 @@
+
 // /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Restauração da Caixa de Chat e Seletor de Modelos.
+ * Migração de UI profissional: Backtest, Telemetria Avançada e Chat Tático.
  */
 
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +61,7 @@ function CryptoLabContent() {
         isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
-        resilience, stakeValue, setStakeValue, kellyFraction, setKellyFraction,
+        resilience, stakeValue, setStakeValue,
         dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
@@ -125,7 +126,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    Definir Padrão Cripto <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    os valores default crypto <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -227,7 +228,7 @@ function CryptoLabContent() {
                         <Zap className="h-8 w-8 text-orange-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V5.1</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V4.2</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -309,6 +310,29 @@ function CryptoLabContent() {
                                 </div>
                             </div>
 
+                            <div className="space-y-3 p-3 rounded-lg border border-orange-200 bg-card/50">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                    <Layers className="h-3 w-3" /> Categorias (cry*)
+                                </Label>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {Object.keys(allowedContracts).map((contract) => (
+                                        <div key={contract} className="flex items-center space-x-2">
+                                            <Checkbox 
+                                                id={`contract-${contract}`} 
+                                                checked={allowedContracts[contract as keyof AllowedContractsV3]}
+                                                onCheckedChange={(checked) => {
+                                                    setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
+                                                }}
+                                                disabled={isAutoMode || contract === 'ACCUMULATORS'}
+                                            />
+                                            <Label htmlFor={`contract-${contract}`} className={cn("text-[10px] font-medium leading-none cursor-pointer", contract === 'ACCUMULATORS' && "opacity-40")}>
+                                                {contract} {contract === 'ACCUMULATORS' ? '(Indisponível)' : ''}
+                                            </Label>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
                             <Button onClick={toggleAutoMode} className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}>
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
                                 {isAutoMode ? 'Parar Automação' : 'Ativar Piloto V5'}
@@ -359,7 +383,7 @@ function CryptoLabContent() {
                              <div className="space-y-2">
                                 <div className="flex justify-between">
                                     <span className="opacity-60 uppercase">TPS Intensity:</span>
-                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-amber-500")}>
+                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-orange-500")}>
                                         {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
                                     </span>
                                 </div>
@@ -384,35 +408,47 @@ function CryptoLabContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Governança de Risco
+                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Parâmetros de Contrato (cry*)
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stake (USD)</Label>
-                                    <Input type="number" min="1" step="0.5" value={stakeValue} onChange={(e) => setStakeValue(parseFloat(e.target.value) || 1)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Max Ordens</Label>
-                                    <Input type="number" min="1" max="10" value={maxConcurrentTrades} onChange={(e) => setMaxConcurrentTrades(parseInt(e.target.value) || 1)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
-                                </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Stop Diário</Label>
-                                    <Input type="number" value={dailyBalance} onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 100)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Alvo Lucro</Label>
-                                    <Input type="number" value={dailyTarget} onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 50)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
-                                </div>
+                            <div className="space-y-1.5">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                                    <Wallet className="h-3 w-3" /> Stake Base (USD)
+                                </Label>
+                                <Input 
+                                    type="number" 
+                                    min="1" 
+                                    step="0.5"
+                                    value={stakeValue} 
+                                    onChange={(e) => setStakeValue(parseFloat(e.target.value) || 1)} 
+                                    className="h-8 font-mono text-xs" 
+                                    disabled={isAutoMode} 
+                                />
+                                <p className="text-[9px] text-muted-foreground italic">Piso Deriv cry*: $1.00 USD</p>
                             </div>
                             <Separator />
                             <div className="space-y-4">
                                 <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs"><Label className="uppercase font-bold opacity-70">Multiplicador</Label><span className="font-mono font-bold text-orange-600">x{multiplier}</span></div>
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Multiplicador</Label>
+                                        <span className="font-mono font-bold text-orange-600">x{multiplier}</span>
+                                    </div>
                                     <Slider value={[multiplier]} min={100} max={500} step={100} onValueChange={(v) => setMultiplier(v[0])} disabled={isAutoMode} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Take Profit</Label>
+                                        <span className="font-mono font-bold text-green-600">{takeProfitPct}%</span>
+                                    </div>
+                                    <Slider value={[takeProfitPct]} min={5} max={100} step={5} onValueChange={(v) => setTakeProfitPct(v[0])} disabled={isAutoMode} />
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <Label className="uppercase font-bold opacity-70">Stop Loss</Label>
+                                        <span className="font-mono font-bold text-red-600">{stopLossPct}%</span>
+                                    </div>
+                                    <Slider value={[stopLossPct]} min={10} max={90} step={5} onValueChange={(v) => setStopLossPct(v[0])} disabled={isAutoMode} />
                                 </div>
                             </div>
                         </CardContent>
@@ -545,6 +581,42 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
+                    <Card className="border-orange-200 bg-orange-50/5 shadow-sm">
+                        <CardHeader className="py-3 border-b flex flex-row items-center justify-between space-y-0">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-orange-600 flex items-center gap-2">
+                                <TestTube className="h-4 w-4" /> Backtest das regras (1m)
+                            </CardTitle>
+                            {Object.keys(backtest.merged).length > 0 && (
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
+                                    <Copy className="h-3.5 w-3.5" />
+                                </Button>
+                            )}
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold">Payout (%)</Label>
+                                    <Input type="number" value={payoutInput} onChange={(e) => setPayoutInput(Number(e.target.value))} className="h-8 text-xs font-mono" />
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-[10px] uppercase font-bold">Candles por ativo</Label>
+                                    <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
+                                        <SelectTrigger className="h-8 text-xs font-mono"><SelectValue /></SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="20000">20k</SelectItem>
+                                            <SelectItem value="40000">40k</SelectItem>
+                                            <SelectItem value="50000">50k</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            </div>
+                            <Button onClick={handleRunBacktest} disabled={backtest.running} size="sm" className="w-full h-8 bg-orange-600 text-white font-bold">
+                                {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
+                            </Button>
+                            {backtest.progress && <p className="text-[9px] text-center text-orange-600 animate-pulse font-bold">{backtest.progress}</p>}
+                        </CardContent>
+                    </Card>
+
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200 h-[500px] flex flex-col">
                         <CardHeader className="py-2 px-4 border-b bg-card/50">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
@@ -578,7 +650,8 @@ function CryptoLabContent() {
                                             <span className={cn(
                                                 "font-medium break-words",
                                                 log.type === 'decision' ? "text-orange-600 font-bold" : 
-                                                log.type === 'execution' ? "text-green-600 font-bold" : "text-muted-foreground"
+                                                log.type === 'execution' ? "text-green-600 font-bold" : 
+                                                log.type === 'warning' ? "text-amber-600" : "text-muted-foreground"
                                             )}>{log.message}</span>
                                         </div>
                                         {expandedLogTs === log.ts && log.details && (

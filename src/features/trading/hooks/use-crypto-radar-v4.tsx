@@ -1,9 +1,10 @@
+
 // /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Restauração completa do Chat Tático e Seletor de Modelos.
+ * Migração de recursos V3: Backtest, Telemetria, Priority Queue e Stale Data.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -82,8 +83,9 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. ESTADOS DE LOG E TELEMETRIA ---
+    // --- 1. ESTADOS DE LOG E TELEMETRIA (TOP) ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
+    const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
         avgTokensPerSec: 0, 
         totalTokens: 0, 
@@ -92,13 +94,20 @@ export function useCryptoRadarV4(
         inferenceHealth: 100 
     });
 
+    const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
+        setReasoningLog(prev => [{
+            ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
+            time: new Date().toLocaleTimeString(),
+            message, type, details, symbol
+        }, ...prev].slice(0, 300));
+    }, []);
+
     // --- 2. ESTADOS DE CONTROLE V4.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
-    const [kellyFraction, setKellyFraction] = useState(0.25);
 
     // PARAMETROS DE CONTRATO
     const [stakeValue, setStakeValue] = useState(1.0);
@@ -113,7 +122,7 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'MULTIPLIERS': true, 'ACCUMULATORS': false });
     
-    const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+    // BACKTEST RUNNER
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
 
     // RADAR E MEMÓRIA
@@ -132,16 +141,7 @@ export function useCryptoRadarV4(
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
     const initializedRef = useRef(false);
     const chatBusyRef = useRef(false);
-
-    // --- 3. CALLBACKS DE UTILIDADE ---
-
-    const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
-        setReasoningLog(prev => [{
-            ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
-            time: new Date().toLocaleTimeString(),
-            message, type, details, symbol
-        }, ...prev].slice(0, 300));
-    }, []);
+    const lastSkipLogRef = useRef<Record<string, number>>({});
 
     const getCandlesFor = useCallback((symbol: string): CandleData[] => {
         const multi = multiAssetCandles[symbol];
@@ -189,22 +189,9 @@ export function useCryptoRadarV4(
         const userMsg: ChatMessage = { role: 'user', content, time };
         setChatMessages(prev => [...prev, userMsg]);
 
-        const WHY = /(por\s?que|porque|motivo|explique|explica|como est[aá])/i;
         const REPORT = /(situa[cç][aã]o|status|auditoria|listagem|relat[oó]rio|resumo|quais ativos|que ativos|monitorando|oportunidades?|chances?|vantaj\w*|melhor(es)?|promissor\w*)/i;
-
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
 
-        // Relatório de Ativo Específico
-        const hasSym = symbols.find(s => s && content.toUpperCase().includes(s.toUpperCase()));
-        if (hasSym && content.match(WHY)) {
-            setChatMessages(prev => [...prev, { 
-                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildAssetReport({ sym: hasSym, hist: lastDecisionBySymbolRef.current[hasSym], lastCandleClose: getCandlesFor(hasSym).slice(-1)[0]?.close, staleMin: staleMinutes(hasSym) })
-            }]);
-            return;
-        }
-
-        // Relatório Global
         if (content.match(REPORT)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
@@ -219,7 +206,7 @@ export function useCryptoRadarV4(
         }
 
         if (!ollamaConfig) {
-          setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: "Ollama não configurado para processamento qualitativo." }]);
+          setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: "Ollama não configurado." }]);
           return;
         }
 
@@ -228,7 +215,7 @@ export function useCryptoRadarV4(
         try {
             const context = buildShortContext({ sentinel: {}, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona} no Crypto Lab V4.2. Responda em português do Brasil.\n\n${context}\n\nREGRAS: use os dados acima; seja breve. Máximo 120 palavras.`;
+            const systemPrompt = `Você é ${persona} no Crypto Lab V4.2. Responda em português.\n\n${context}\n\nREGRAS: use os dados; seja breve.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -248,33 +235,17 @@ export function useCryptoRadarV4(
 
     // --- 6. MOTOR DE ANÁLISE E CICLOS ---
 
-    useEffect(() => {
-        if (!initializedRef.current && isConnected) {
-            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
-            setWatchedSymbols(cryptoDefaults);
-            initializedRef.current = true;
-        }
-    }, [isConnected, setWatchedSymbols]);
-
-    useEffect(() => {
-        const loadConfig = () => {
-            const saved = localStorage.getItem('ollamaConfig');
-            if (saved) setOllamaConfig(JSON.parse(saved));
-        };
-        loadConfig();
-        window.addEventListener('storage', loadConfig);
-        return () => window.removeEventListener('storage', loadConfig);
-    }, []);
-
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl) fetchAvailableModels();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
-
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         
         const min = staleMinutes(symbol);
-        if (min !== null && min > 2.5) return;
+        if (min !== null && min > 2.5) {
+            if (Date.now() - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
+                addLog(`[MERCADO-FECHADO] ${symbol}: defasado há ${Math.round(min)} min.`, 'warning', undefined, symbol);
+                lastMarketClosedLogRef.current[symbol] = Date.now();
+            }
+            return;
+        }
 
         resilience.recordPulse(symbol);
 
@@ -385,10 +356,14 @@ export function useCryptoRadarV4(
         if (executionLockRef.current || !isConnected) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
+        
+        // Fila de Prioridade
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
+            // Prioriza o ativo em foco
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
+            
             for (const sym of dueSymbols) {
                 const candles = getCandlesFor(sym);
                 if (candles.length >= 30) {
@@ -398,6 +373,24 @@ export function useCryptoRadarV4(
             }
         }
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
+
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
+            setWatchedSymbols(cryptoDefaults);
+            initializedRef.current = true;
+        }
+    }, [isConnected, setWatchedSymbols]);
+
+    useEffect(() => {
+        const loadConfig = () => {
+            const saved = localStorage.getItem('ollamaConfig');
+            if (saved) setOllamaConfig(JSON.parse(saved));
+        };
+        loadConfig();
+        window.addEventListener('storage', loadConfig);
+        return () => window.removeEventListener('storage', loadConfig);
+    }, []);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
@@ -413,7 +406,6 @@ export function useCryptoRadarV4(
         multiplier, setMultiplier,
         takeProfitPct, setTakeProfitPct,
         stopLossPct, setStopLossPct,
-        kellyFraction, setKellyFraction,
         dailyBalance, setDailyBalance,
         dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
