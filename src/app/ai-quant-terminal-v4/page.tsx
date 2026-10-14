@@ -1,10 +1,9 @@
-
 // /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Migração de UI profissional: Backtest, Telemetria Avançada e Chat Tático.
+ * Dashboard institucional com paridade de recursos V3 e foco em Criptoativos.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -24,8 +23,7 @@ import {
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
     MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
-    TestTube,
-    HardDrive
+    TestTube, HardDrive
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -111,6 +109,12 @@ function CryptoLabContent() {
 
     const handleRunBacktest = () => {
         runBacktest(payoutInput, targetCount, extraBacktestSymbols);
+    };
+
+    const copyLogs = () => {
+        const text = filteredLogs.map(l => `[${l.time}] ${l.message}`).join('\n');
+        navigator.clipboard.writeText(text);
+        toast({ title: "Logs copiados!" });
     };
 
     return (
@@ -310,29 +314,6 @@ function CryptoLabContent() {
                                 </div>
                             </div>
 
-                            <div className="space-y-3 p-3 rounded-lg border border-orange-200 bg-card/50">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                    <Layers className="h-3 w-3" /> Categorias (cry*)
-                                </Label>
-                                <div className="grid grid-cols-1 gap-2">
-                                    {Object.keys(allowedContracts).map((contract) => (
-                                        <div key={contract} className="flex items-center space-x-2">
-                                            <Checkbox 
-                                                id={`contract-${contract}`} 
-                                                checked={allowedContracts[contract as keyof typeof allowedContracts]}
-                                                onCheckedChange={(checked) => {
-                                                    setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
-                                                }}
-                                                disabled={isAutoMode || contract === 'ACCUMULATORS'}
-                                            />
-                                            <Label htmlFor={`contract-${contract}`} className={cn("text-[10px] font-medium leading-none cursor-pointer", contract === 'ACCUMULATORS' && "opacity-40")}>
-                                                {contract} {contract === 'ACCUMULATORS' ? '(Indisponível)' : ''}
-                                            </Label>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
                             <Button onClick={toggleAutoMode} className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}>
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
                                 {isAutoMode ? 'Parar Automação' : 'Ativar Piloto V5'}
@@ -363,7 +344,7 @@ function CryptoLabContent() {
                                                     </SelectItem>
                                                 ))
                                             ) : (
-                                                <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
+                                                <SelectItem value="none" disabled>Nenhum modelo</SelectItem>
                                             )}
                                         </SelectContent>
                                     </Select>
@@ -622,6 +603,9 @@ function CryptoLabContent() {
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
+                                <Copy className="h-3.5 w-3.5" />
+                            </Button>
                         </CardHeader>
                         <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
                              <div className="flex flex-wrap gap-2 text-[9px] font-mono text-muted-foreground leading-tight">

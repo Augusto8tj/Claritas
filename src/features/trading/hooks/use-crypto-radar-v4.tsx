@@ -1,10 +1,9 @@
-
 // /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Migração de recursos V3: Backtest, Telemetria, Priority Queue e Stale Data.
+ * Orquestrador central de estado, execução e comunicação com o conselho tático.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -61,13 +60,6 @@ const AGENT_PERSONAS = {
   ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
 };
 
-const isOrphanOp = (op: Operation) => {
-    const ageMs = Date.now() - new Date(op.timestamp).getTime();
-    const isExpired = op.expirationTime && Date.now() > op.expirationTime + 60000;
-    const isVeryOld = ageMs > 24 * 3600 * 1000;
-    return isExpired || isVeryOld;
-};
-
 export function useCryptoRadarV4(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -83,7 +75,7 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. ESTADOS DE LOG E TELEMETRIA (TOP) ---
+    // --- 1. LOGS E TELEMETRIA (TOP) ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
@@ -134,14 +126,13 @@ export function useCryptoRadarV4(
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
-    // REFS PARA ESTABILIDADE
+    // REFS
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
     const initializedRef = useRef(false);
     const chatBusyRef = useRef(false);
-    const lastSkipLogRef = useRef<Record<string, number>>({});
 
     const getCandlesFor = useCallback((symbol: string): CandleData[] => {
         const multi = multiAssetCandles[symbol];
