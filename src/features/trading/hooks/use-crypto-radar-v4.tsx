@@ -1,4 +1,3 @@
-
 // /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
@@ -67,6 +66,9 @@ export function useCryptoRadarV4(
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
 
+    // FINANCEIRO V4.2
+    const [stakeValue, setStakeValue] = useState(1.0);
+
     // TELEMETRIA E LOGS
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -88,6 +90,7 @@ export function useCryptoRadarV4(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
+    const lastProcessedOpIdRef = useRef<number | null>(null);
 
     // Ollama Config Reativo
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
@@ -315,6 +318,7 @@ export function useCryptoRadarV4(
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
+        stakeValue, setStakeValue,
         lastDecision, radarStatus, reasoningLog, telemetry, memoryBuffer,
         analysisInterval, setAnalysisInterval,
         chatMessages, isChatLoading, sendMessage,
