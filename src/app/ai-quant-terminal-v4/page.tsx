@@ -319,7 +319,7 @@ function CryptoLabContent() {
                                         <div key={contract} className="flex items-center space-x-2">
                                             <Checkbox 
                                                 id={`contract-${contract}`} 
-                                                checked={allowedContracts[contract as keyof AllowedContractsV3]}
+                                                checked={allowedContracts[contract as keyof typeof allowedContracts]}
                                                 onCheckedChange={(checked) => {
                                                     setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
                                                 }}
