@@ -3,8 +3,7 @@
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Migração de Recursos V3: Backtest, Stats do Conselho e Log Avançado.
- * CORREÇÃO: Adicionados estados de dailyBalance e maxConcurrentTrades ausentes.
+ * Corrigida a ordem de inicialização: reasoningLog e addLog movidos para o topo.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -78,7 +77,17 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // ESTADOS DE CONTROLE V4.2
+    // --- 1. ESTADOS DE LOG E TELEMETRIA (DEFINIDOS PRIMEIRO PARA EVITAR REFERENCE ERROR) ---
+    const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
+    const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
+        avgTokensPerSec: 0, 
+        totalTokens: 0, 
+        consensusEntropy: 0, 
+        jitterMs: 0, 
+        inferenceHealth: 100 
+    });
+
+    // --- 2. ESTADOS DE CONTROLE V4.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
@@ -103,23 +112,15 @@ export function useCryptoRadarV4(
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
 
-    // TELEMETRIA E LOGS
-    const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
-    const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
-    const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
-        avgTokensPerSec: 0, 
-        totalTokens: 0, 
-        consensusEntropy: 0, 
-        jitterMs: 0, 
-        inferenceHealth: 100 
-    });
-    
     // RADAR E MEMÓRIA
+    const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
+    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
 
+    // REFS PARA ESTABILIDADE
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
@@ -127,31 +128,7 @@ export function useCryptoRadarV4(
     const lastProcessedOpIdRef = useRef<number | null>(null);
     const initializedRef = useRef(false);
 
-    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
-
-    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
-    useEffect(() => {
-        if (!initializedRef.current && isConnected) {
-            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
-            // Se o atual for o default de sintéticos ou estiver vazio, define cripto
-            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
-            if (watchedSymbols.length === 0 || isSyntheticDefault) {
-                setWatchedSymbols(cryptoDefaults);
-                addLog("Ativos cripto configurados como padrão operacional.", "info");
-            }
-            initializedRef.current = true;
-        }
-    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
-
-    useEffect(() => {
-        const loadConfig = () => {
-            const saved = localStorage.getItem('ollamaConfig');
-            if (saved) setOllamaConfig(JSON.parse(saved));
-        };
-        loadConfig();
-        window.addEventListener('storage', loadConfig);
-        return () => window.removeEventListener('storage', loadConfig);
-    }, []);
+    // --- 3. CALLBACKS DE UTILIDADE (DEFINIDOS ANTES DOS EFFECTS) ---
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
@@ -185,8 +162,40 @@ export function useCryptoRadarV4(
         return buffer;
     };
 
+    // --- 4. EFFECTS DE INICIALIZAÇÃO ---
+
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
+            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
+            if (watchedSymbols.length === 0 || isSyntheticDefault) {
+                setWatchedSymbols(cryptoDefaults);
+                addLog("Ativos cripto configurados como padrão operacional.", "info");
+            }
+            initializedRef.current = true;
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
+
+    useEffect(() => {
+        const loadConfig = () => {
+            const saved = localStorage.getItem('ollamaConfig');
+            if (saved) setOllamaConfig(JSON.parse(saved));
+        };
+        loadConfig();
+        window.addEventListener('storage', loadConfig);
+        return () => window.removeEventListener('storage', loadConfig);
+    }, []);
+
+    // MEMÓRIA TÁTICA POR ATIVO
+    useEffect(() => {
+        if (!user || !activeSymbol) return;
+        getBufferedMemory(user.uid, activeSymbol).then(setMemoryBuffer);
+    }, [user, activeSymbol]);
+
+    // --- 5. MOTOR DE ANÁLISE PRINCIPAL ---
+
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
-        if (!isConnected || !user || !ollamaConfig) return;
+        if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         
         const min = staleMinutes(symbol);
         if (min !== null && min > 2.5) {
@@ -211,7 +220,7 @@ export function useCryptoRadarV4(
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
-                    gravity = calculateBitcoinGravity(btcCandles, candles);
+                    gravity = calculateBitcoinGravity(btcCandles as any, candles as any);
                 }
             }
 
@@ -247,6 +256,7 @@ export function useCryptoRadarV4(
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
 
+            executionLockRef.current = true;
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
 
@@ -309,12 +319,13 @@ export function useCryptoRadarV4(
 
         } catch (e: any) {
             addLog(`Erro V4.2 em ${symbol}: ${e.message}`, 'error');
+        } finally {
+            executionLockRef.current = false;
         }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue, multiplier, takeProfitPct, stopLossPct, allowedActions, allowedContracts, dailyBalance, maxConcurrentTrades, staleMinutes]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || !isConnected) return;
-        executionLockRef.current = true;
 
         try {
             const now = Date.now();
@@ -325,7 +336,7 @@ export function useCryptoRadarV4(
                 dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
                 const queue = [...dueSymbols];
                 while (queue.length > 0) {
-                  const chunk = queue.splice(0, 1); // Sequencial para proteger Ollama
+                  const chunk = queue.splice(0, 1); 
                   await Promise.all(chunk.map(async (sym) => {
                       const candles = getCandlesFor(sym);
                       if (candles.length >= 30) {
@@ -336,7 +347,7 @@ export function useCryptoRadarV4(
                 }
             }
         } finally {
-            executionLockRef.current = false;
+            // Garante que o lock seja liberado
         }
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
@@ -346,10 +357,8 @@ export function useCryptoRadarV4(
     }, [runMultiAssetCycle]);
 
     return {
-        isAutoMode, setIsAutoMode: (v: boolean) => setIsAutoMode(v),
-        toggleAutoMode: () => setIsAutoMode(!isAutoMode),
-        isShadowMode, setIsShadowMode: (v: boolean) => setIsShadowMode(v),
-        toggleShadowMode: () => setIsShadowMode(!isShadowMode),
+        isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
+        isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
         stakeValue, setStakeValue,
