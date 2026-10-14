@@ -1,9 +1,10 @@
+
 // /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * UI consolidada com recursos dos laboratórios V2 e V3.
+ * UI consolidada com recursos de resiliência e gravidade de Bitcoin.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -21,7 +22,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User
+    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -35,6 +36,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { RadarResilienceBadges } from '@/components/RadarResilienceBadges';
 
 function CryptoLabContent() {
     const { 
@@ -49,7 +51,7 @@ function CryptoLabContent() {
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
         isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
-        confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval
+        confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, resilience
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -140,6 +142,9 @@ function CryptoLabContent() {
                         {watchedSymbols.map((symbol) => {
                             const status = radarStatus[symbol];
                             const gravity = status?.gravity;
+                            const isStable = resilience.checkStability(symbol);
+                            const rigor = resilience.thresholds[symbol] || 0.65;
+
                             return (
                                 <div 
                                     key={symbol} 
@@ -160,18 +165,21 @@ function CryptoLabContent() {
                                          <Minus className="h-4 w-4 text-muted-foreground" />}
                                         <span className="text-sm font-black">{status?.finalAction || 'SCAN'}</span>
                                     </div>
+                                    
+                                    <RadarResilienceBadges rigor={rigor} isStable={isStable} />
+
                                     {gravity && (
                                         <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
                                             <div className="flex justify-between text-[8px] uppercase font-black">
                                                 <span className="opacity-70">BTC Vector:</span>
                                                 <span className={cn(
-                                                    gravity.btcVector === 'BULL_DRAG' ? "text-green-500" :
-                                                    gravity.btcVector === 'BEAR_DRAG' ? "text-red-500" : "text-muted-foreground"
+                                                    gravity.btcVector.includes('UP') ? "text-green-500" :
+                                                    gravity.btcVector.includes('DOWN') ? "text-red-500" : "text-muted-foreground"
                                                 )}>{gravity.btcVector}</span>
                                             </div>
                                             <div className="flex justify-between text-[8px] uppercase font-black">
-                                                <span className="opacity-70">Beta Score:</span>
-                                                <span className="font-mono">{gravity.betaScore.toFixed(2)}</span>
+                                                <span className="opacity-70">Beta/Lag:</span>
+                                                <span className="font-mono">{gravity.betaReal.toFixed(2)} | {gravity.leadLagSeconds}s</span>
                                             </div>
                                         </div>
                                     )}
@@ -234,7 +242,7 @@ function CryptoLabContent() {
                             <div className="flex items-center justify-between p-3 rounded-lg bg-card border shadow-sm">
                                 <Label htmlFor="shadow-mode" className="flex flex-col gap-0.5">
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
-                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas V4</span>
+                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas V4.2</span>
                                 </Label>
                                 <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={toggleShadowMode} />
                             </div>
@@ -256,13 +264,13 @@ function CryptoLabContent() {
 
                             <div className="space-y-3 p-3 rounded-lg border border-orange-200 bg-card/50">
                                 <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Inferência</span>
-                                    <span className="font-mono text-orange-700 font-bold">{analysisInterval}s</span>
+                                    <span className="text-muted-foreground flex items-center gap-1.5"><BrainCircuit className="h-3.5 w-3.5"/> Confiança Mínima</span>
+                                    <span className="font-mono text-orange-700 font-bold">{confidenceThreshold}%</span>
                                 </div>
                                 <Slider 
-                                    value={[analysisInterval]} 
-                                    min={30} max={600} step={30} 
-                                    onValueChange={(v) => setAnalysisInterval(v[0])}
+                                    value={[confidenceThreshold]} 
+                                    min={40} max={95} step={5} 
+                                    onValueChange={(v) => setConfidenceThreshold(v[0])}
                                     disabled={isAutoMode}
                                 />
                             </div>
@@ -272,7 +280,7 @@ function CryptoLabContent() {
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {isAutoMode ? 'Parar Automação' : 'Ativar Radar V4'}
+                                {isAutoMode ? 'Parar Automação' : 'Ativar Radar V4.2'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -296,26 +304,6 @@ function CryptoLabContent() {
                                 <span className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
                                     {telemetry.consensusEntropy.toFixed(3)}
                                 </span>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="shadow-sm border-orange-100">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <Database className="h-4 w-4" /> Lab Memory Buffer
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="p-3 rounded-lg bg-green-50/50 border border-green-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-green-600 block mb-1">Wins</span>
-                                    <p className="text-lg font-black text-green-700">{memoryBuffer.wins.length}/20</p>
-                                </div>
-                                <div className="p-3 rounded-lg bg-red-50/50 border border-red-100 text-center">
-                                    <span className="text-[10px] uppercase font-bold text-red-600 block mb-1">Losses</span>
-                                    <p className="text-lg font-black text-red-700">{memoryBuffer.losses.length}/20</p>
-                                </div>
                             </div>
                         </CardContent>
                     </Card>
@@ -357,21 +345,13 @@ function CryptoLabContent() {
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-6 py-4">
-                                    {chatMessages.length === 0 && (
-                                        <div className="text-center space-y-4 pt-12">
-                                            <div className="bg-orange-500/5 h-20 w-20 rounded-full flex items-center justify-center mx-auto border border-orange-500/10">
-                                                <Brain className="h-10 w-10 text-orange-500/30" />
-                                            </div>
-                                            <p className="text-sm text-muted-foreground px-8">O conselho está pronto para analisar tendências e correlações com o Bitcoin.</p>
-                                        </div>
-                                    )}
                                     {chatMessages.map((m, i) => (
                                         <div key={i} className={cn(
-                                            "flex flex-col max-w-[85%] rounded-2xl p-4 text-xs leading-relaxed shadow-sm border",
+                                            "flex flex-col max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed shadow-sm border",
                                             m.role === 'user' ? "bg-orange-600 text-white ml-auto rounded-tr-none" : "bg-card mr-auto rounded-tl-none border-border"
                                         )}>
                                             <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] font-bold uppercase">
-                                                {m.role === 'user' ? <User className="h-3 w-3"/> : <BotIcon className="h-3 w-3"/>}
+                                                {m.role === 'user' ? <User className="h-3 w-3"/> : <Brain className="h-3 w-3"/>}
                                                 {m.role === 'user' ? 'Comando' : (m.agentName || 'Conselho')} • {m.time}
                                             </div>
                                             <p className="font-mono whitespace-pre-wrap">{m.content}</p>
@@ -409,7 +389,7 @@ function CryptoLabContent() {
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-yellow-500" />
                         <CardHeader className="bg-orange-600/5 border-b py-3">
                             <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
-                                <ShieldCheck className="h-4 w-4" /> Chairman Veredict V4.2
+                                <ShieldCheck className="h-4 w-4 text-orange-600" /> Chairman Veredict V4.2
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="pt-6 space-y-4">
@@ -422,18 +402,19 @@ function CryptoLabContent() {
                                     )}>
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
                                         <p className="text-3xl font-black">{lastDecision.finalAction}</p>
-                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.consensusConfidence}%</p>
+                                        <p className="text-xs mt-2 font-mono font-bold">Certainty: {lastDecision.consensusConfidence}%</p>
                                     </div>
+                                    
+                                    <Button 
+                                        onClick={v4.executeManualDecision} 
+                                        className="w-full bg-orange-600 text-white hover:bg-orange-700 font-bold"
+                                        disabled={!lastDecision || lastDecision.finalAction === 'HOLD'}
+                                    >
+                                        Executar Sinal Manual
+                                    </Button>
+
                                     <div className="bg-orange-50/50 p-3 rounded-lg border border-orange-100 text-[11px] text-orange-800 italic text-center">
                                         "{lastDecision.zenThought || 'A fluidez do mercado cripto exige vigilância.'}"
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <Badge variant="outline" className="justify-center py-1 text-[10px] uppercase font-bold border-orange-200">
-                                            {lastDecision.recommendedContract}
-                                        </Badge>
-                                        <Badge variant="outline" className="justify-center py-1 text-[10px] uppercase font-bold border-orange-200">
-                                            {strategicProfile}
-                                        </Badge>
                                     </div>
                                 </>
                             ) : (
@@ -453,21 +434,17 @@ function CryptoLabContent() {
                         </CardHeader>
                         <CardContent className="p-0">
                             <ScrollArea className="h-64 p-4 text-[10px]">
-                                {reasoningLog.length === 0 ? (
-                                    <p className="animate-pulse text-muted-foreground italic">Sincronizando nó de inferência paralela...</p>
-                                ) : (
-                                    reasoningLog.map((log, i) => (
-                                        <div key={log.ts} className="mb-1 border-l-2 border-orange-500/30 pl-2">
-                                            <span className="opacity-40">[{log.time}]</span>{' '}
-                                            {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-orange-200 text-orange-600">{log.symbol}</Badge>}
-                                            <span className={cn(
-                                                "font-medium",
-                                                log.type === 'decision' ? "text-orange-600 font-bold" : 
-                                                log.type === 'execution' ? "text-green-600 font-bold" : "text-muted-foreground"
-                                            )}>{log.message}</span>
-                                        </div>
-                                    ))
-                                )}
+                                {reasoningLog.map((log, i) => (
+                                    <div key={log.ts} className="mb-1 border-l-2 border-orange-500/30 pl-2">
+                                        <span className="opacity-40">[{log.time}]</span>{' '}
+                                        {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-orange-200 text-orange-600">{log.symbol}</Badge>}
+                                        <span className={cn(
+                                            "font-medium",
+                                            log.type === 'decision' ? "text-orange-600 font-bold" : 
+                                            log.type === 'execution' ? "text-green-600 font-bold" : "text-muted-foreground"
+                                        )}>{log.message}</span>
+                                    </div>
+                                ))}
                             </ScrollArea>
                         </CardContent>
                     </Card>
@@ -475,12 +452,6 @@ function CryptoLabContent() {
             </div>
         </div>
     );
-}
-
-function BotIcon(props: any) {
-  return (
-    <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
-  );
 }
 
 export default function CryptoLabV4Page() {

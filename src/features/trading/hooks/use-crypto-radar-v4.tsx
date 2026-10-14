@@ -1,14 +1,10 @@
+
 // /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * 
- * INCREMENTOS CONSOLIDADOS:
- * 1. Do V3.9.6: Conselho de 3 Agentes (Momentum, Risk, Archivist) + Memória Tática.
- * 2. Do V2.6: Execução Polimórfica (Seleciona entre ACCU, MULT e OPT).
- * 3. Do Neuro-Adaptativo: Perfis de Risco (Conservative/Aggressive).
- * 4. V4.2 Core: Concorrência de Varredura e Gravidade de Bitcoin.
+ * Upgrade V4.2: Concorrência de Varredura, Gravidade V2 e Resiliência.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -24,6 +20,8 @@ import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPer
 import { computeSignalFeatures } from '../services/signal-engine';
 import { evaluateCryptoSignals, type CryptoSignalFeatures } from '../services/crypto-signal-engine';
 import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
+import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
+import { getOllamaResponse } from '@/app/actions';
 
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
@@ -44,6 +42,9 @@ export interface LogEntry {
     symbol?: string;
 }
 
+// Cache em memória para o TradeMemoryBuffer (TTL 60s)
+const memoryCache: Record<string, { buffer: TradeMemoryBuffer, ts: number }> = {};
+
 export function useCryptoRadarV4(
     activeSymbol: string | null,
     priceTicks: TickData[],
@@ -57,6 +58,7 @@ export function useCryptoRadarV4(
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
+    const resilience = useAdaptiveResilience();
 
     // ESTADOS DE CONTROLE V4.2
     const [isAutoMode, setIsAutoMode] = useState(false);
@@ -87,10 +89,17 @@ export function useCryptoRadarV4(
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
 
-    const ollamaConfig = useMemo(() => {
-        if (typeof window === 'undefined') return null;
-        const saved = localStorage.getItem('ollamaConfig');
-        return saved ? JSON.parse(saved) : null;
+    // Ollama Config Reativo
+    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    useEffect(() => {
+        const loadConfig = () => {
+            const saved = localStorage.getItem('ollamaConfig');
+            if (saved) setOllamaConfig(JSON.parse(saved));
+        };
+        loadConfig();
+        window.addEventListener('storage', loadConfig);
+        return () => window.removeEventListener('storage', loadConfig);
     }, []);
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
@@ -108,9 +117,22 @@ export function useCryptoRadarV4(
         return (multi ?? []) as CandleData[];
     }, [multiAssetCandles, activeSymbol, botCandleData]);
 
+    const getBufferedMemory = async (uid: string, symbol: string): Promise<TradeMemoryBuffer> => {
+        const now = Date.now();
+        const cached = memoryCache[symbol];
+        if (cached && now - cached.ts < 60000) return cached.buffer;
+
+        const buffer = await TradeMemoryManager.getBuffer(uid, symbol);
+        memoryCache[symbol] = { buffer, ts: now };
+        return buffer;
+    };
+
     // --- CICLO DE ANÁLISE CONCORRENTE V4.2 ---
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig) return;
+        
+        // Registro de Pulsação para Resiliência
+        resilience.recordPulse(symbol);
 
         try {
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
@@ -119,9 +141,9 @@ export function useCryptoRadarV4(
             const baseFeats = computeSignalFeatures(candles as any);
             if (!baseFeats) return;
 
-            // GRAVIDADE BITCOIN (CORREÇÃO LÍDER)
+            // GRAVIDADE BITCOIN V2
             let gravity: BitcoinGravity | null = null;
-            if (symbol.startsWith('cry')) {
+            if (symbol.startsWith('cry') && symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     gravity = calculateBitcoinGravity(btcCandles, candles);
@@ -129,15 +151,25 @@ export function useCryptoRadarV4(
             }
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity };
-            const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
+            
+            // Sentinel Pipeline
+            const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
+            const topCandidate = candidates.sort((a,b) => b.score - a.score)[0];
 
-            // Payload estendido para o Conselho (Simulando V3 + V2.5)
+            // Só consulta o Conselho se houver candidato viável ou gatilho manual
+            if (!isManual && (!topCandidate || topCandidate.score < 40)) {
+                return;
+            }
+
+            const buffer = await getBufferedMemory(user.uid, symbol);
+
             const snapshot = {
                 ...cryptoFeats,
                 symbol,
                 price: candles[candles.length - 1].close,
                 regime: (indicators.adx || 0) > 25 ? 'Trending' : 'Ranging',
-                strategicProfile
+                strategicProfile,
+                adaptiveRigor: resilience.thresholds[symbol] || 0.65
             };
 
             const portfolio: PortfolioRiskState = {
@@ -158,19 +190,20 @@ export function useCryptoRadarV4(
             const decision = await runQuantCouncil(snapshot, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
 
-            // VETO QUALITATIVO V4.2 (Baseado no Bitcoin)
-            if (gravity?.isBtcExploding && decision.finalAction !== 'HOLD') {
-                const isDivergent = (gravity.btcVector === 'BULL_DRAG' && decision.finalAction === 'PUT') || 
-                                    (gravity.btcVector === 'BEAR_DRAG' && decision.finalAction === 'CALL');
+            // VETO QUALITATIVO V4.2 (Gravidade de Bitcoin)
+            if (gravity?.btcImpulseDir && decision.finalAction !== 'HOLD' && decision.recommendedContract === 'MULTIPLIERS') {
+                const isDivergent = (gravity.btcImpulseDir === 'UP' && decision.finalAction === 'PUT') || 
+                                    (gravity.btcImpulseDir === 'DOWN' && decision.finalAction === 'CALL');
                 
                 if (isDivergent) {
                     decision.finalAction = 'HOLD';
-                    decision.holdReason = `VETO-CORRELAÇÃO: Bitcoin explodindo em direção oposta.`;
+                    decision.holdReason = `VETO-CORRELAÇÃO: Bitcoin explodindo contra Altcoin.`;
                     decision.executedVia = 'COUNCIL_VETO';
+                    decision.stakeRatio = 0;
                 }
             }
 
-            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now() } }));
+            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold } }));
             
             if (symbol === activeSymbol) {
                 setLastDecision(decision);
@@ -178,13 +211,15 @@ export function useCryptoRadarV4(
                 setMemoryBuffer(buffer);
             }
 
-            addLog(`[V4.2] ${symbol}: ${decision.finalAction} ${decision.consensusConfidence}% | ${decision.recommendedContract}`, 'decision', undefined, symbol);
+            // GATES DE RESILIÊNCIA E COORDENAÇÃO
+            const isStable = resilience.checkStability(symbol);
+            const passesAdaptiveThreshold = resilience.validateExecution(symbol, decision.consensusConfidence);
+            
+            const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && passesAdaptiveThreshold && isStable);
 
-            // LOGICA DE EXECUÇÃO REAL/SOMBRA
-            const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold);
             if (shouldExecute) {
                 if (isShadowMode) {
-                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar', undefined, symbol);
+                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} ${decision.recommendedContract}`, 'radar', undefined, symbol);
                 } else {
                     let finalContractType = 'CALL';
                     switch (decision.recommendedContract) {
@@ -192,41 +227,68 @@ export function useCryptoRadarV4(
                         case 'MULTIPLIERS': finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; break;
                         default: finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     }
-                    await executeTrade(finalContractType, 1.0, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V42_${decision.executedVia}`);
+                    await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V42_${decision.executedVia}`);
                 }
             }
 
         } catch (e: any) {
             addLog(`Erro V4.2 em ${symbol}: ${e.message}`, 'error');
         }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (executionLockRef.current || !isConnected) return;
         executionLockRef.current = true;
 
-        const now = Date.now();
-        const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
-        const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
-        
-        if (dueSymbols.length > 0) {
-            // Processamento concorrente para eliminar latência de hardware
-            await Promise.all(dueSymbols.map(async (sym) => {
-                const candles = getCandlesFor(sym);
-                if (candles.length >= 30) {
-                    scheduleRef.current[sym] = now + (sym === activeSymbol ? 15 : analysisInterval) * 1000;
-                    return runAnalysisForSymbol(sym, candles);
-                }
-            }));
+        try {
+            const now = Date.now();
+            const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
+            const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+            
+            if (dueSymbols.length > 0) {
+                await Promise.all(dueSymbols.map(async (sym) => {
+                    const candles = getCandlesFor(sym);
+                    if (candles.length >= 30) {
+                        const decision = await runAnalysisForSymbol(sym, candles);
+                        if (decision) {
+                            scheduleRef.current[sym] = now + (sym === activeSymbol ? 15 : analysisInterval) * 1000;
+                        }
+                    }
+                }));
+            }
+        } finally {
+            executionLockRef.current = false;
         }
-
-        executionLockRef.current = false;
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(id);
     }, [runMultiAssetCycle]);
+
+    // Registro de Trades no MemoryBuffer
+    useEffect(() => {
+        const lastTrade = operationsLog.find(op => op.status !== 'pending' && op.initiator.includes('V4'));
+        if (lastTrade && lastTrade.id !== lastProcessedOpIdRef.current) {
+            lastProcessedOpIdRef.current = lastTrade.id;
+            const isWin = lastTrade.status === 'won';
+            resilience.processResult(lastTrade.asset, isWin);
+            
+            if (user) {
+                TradeMemoryManager.addTrade(user.uid, lastTrade.asset, {
+                    id: String(lastTrade.id),
+                    timestamp: Date.now(),
+                    contract: lastTrade.contractType as any,
+                    result: isWin ? 'WIN' : 'LOSS',
+                    pnl: lastTrade.result || 0,
+                    rsi: 50, // Simplificação
+                    volatilityYangZhang: 1.0,
+                    candlePattern: 'N/A'
+                });
+                delete memoryCache[lastTrade.asset];
+            }
+        }
+    }, [operationsLog, resilience, user]);
 
     const sendMessage = async (content: string) => {
         if (!ollamaConfig || !content.trim()) return;
@@ -257,6 +319,7 @@ export function useCryptoRadarV4(
         analysisInterval, setAnalysisInterval,
         chatMessages, isChatLoading, sendMessage,
         resetSession: clearActiveContracts,
-        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
+        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
+        resilience
     };
 }

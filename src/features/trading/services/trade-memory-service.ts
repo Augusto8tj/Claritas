@@ -1,9 +1,11 @@
+
+// /src/features/trading/services/trade-memory-service.ts
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { TradeMemoryBuffer, TradePostMortem } from '../types/council';
 
 /**
- * Gerencia a memória tática do laboratório V3, segmentada por ativo.
+ * Gerencia a memória tática do laboratório V3 e V4, segmentada por ativo.
  */
 export class TradeMemoryManager {
   private static MAX_BUFFER_SIZE = 20;
@@ -17,13 +19,6 @@ export class TradeMemoryManager {
     
     if (snap.exists()) {
       return snap.data() as TradeMemoryBuffer;
-    }
-
-    // Compatibilidade Retroativa: Tenta migrar do buffer global se for o símbolo padrão
-    if (symbol === 'default') {
-      const globalRef = doc(db, 'users', userId, 'quant_memory_v3', 'buffer');
-      const globalSnap = await getDoc(globalRef);
-      if (globalSnap.exists()) return globalSnap.data() as TradeMemoryBuffer;
     }
 
     return { wins: [], losses: [] };

@@ -1,58 +1,57 @@
+
 // /src/features/trading/services/crypto-gravity-engine.ts
 /**
- * @fileOverview Crypto Gravity Engine
- * Calcula a influência do Bitcoin (Líder) sobre as Altcoins (Betas).
+ * @fileOverview Crypto Gravity Engine V2
+ * Motor matemático para detecção de lead-lag entre BTC e Altcoins.
  */
 
 export interface BitcoinGravity {
-  btcVector: 'BULL_DRAG' | 'BEAR_DRAG' | 'COMPRESSION' | 'DIVERGENT';
-  betaScore: number;
+  btcVector: 'BULL_DRAG' | 'BEAR_DRAG' | 'COMPRESSION' | 'DIVERGENT' | 'IMPULSE_UP' | 'IMPULSE_DOWN' | 'ALT_LAGGING_UP' | 'ALT_LAGGING_DOWN' | 'ALT_ALIGNED' | 'ALT_DIVERGENT' | 'INSUFFICIENT_DATA';
+  betaReal: number;
+  corrReturns: number;
+  zImpulse: number;
   isBtcExploding: boolean;
-  momentum: {
-    m1: number;
-    m5: number;
-    m15: number;
-  };
+  btcImpulseDir: 'UP' | 'DOWN' | null;
+  expectedCatchUp: number;
+  leadLagSeconds: number;
+  leaderConfidence: number;
 }
 
-export function calculateBitcoinGravity(btcCandles: any[], targetCandles: any[]): BitcoinGravity {
-  if (btcCandles.length < 30 || targetCandles.length < 30) {
-    return { btcVector: 'COMPRESSION', betaScore: 1, isBtcExploding: false, momentum: { m1: 0, m5: 0, m15: 0 } };
+/**
+ * Reamostra séries temporais para uma grade comum de 1 segundo.
+ */
+function resampleTo1sGrid(data: any[], windowSeconds: number): number[] {
+  if (data.length < 2) return [];
+  const now = Math.floor(Date.now() / 1000);
+  const start = now - windowSeconds;
+  const grid = new Array(windowSeconds).fill(null);
+  
+  // Mapeia dados existentes para a grade
+  data.forEach(c => {
+    const idx = Math.floor(c.epoch - start);
+    if (idx >= 0 && idx < windowSeconds) {
+      grid[idx] = Number(c.close);
+    }
+  });
+
+  // Forward-fill de lacunas
+  let lastVal = grid.find(v => v !== null) || data[0].close;
+  for (let i = 0; i < windowSeconds; i++) {
+    if (grid[i] === null) grid[i] = lastVal;
+    else lastVal = grid[i];
   }
 
-  const btcCloses = btcCandles.map(c => Number(c.close));
-  const targetCloses = targetCandles.map(c => Number(c.close));
-  const lastBtc = btcCloses[btcCloses.length - 1];
-
-  // 1. Cálculo de Momentum Multi-Janela (BTC)
-  const calcMom = (p: number) => (lastBtc - btcCloses[btcCloses.length - 1 - p]) / btcCloses[btcCloses.length - 1 - p];
-  const m1 = calcMom(1);
-  const m5 = calcMom(5);
-  const m15 = calcMom(15);
-
-  // 2. Detecção de Explosão (ATR-based simplification)
-  const btcRanges = btcCandles.slice(-10).map(c => Number(c.high) - Number(c.low));
-  const avgRange = btcRanges.reduce((a, b) => a + b, 0) / btcRanges.length;
-  const last3Range = btcCandles.slice(-3).reduce((sum, c) => sum + (Number(c.high) - Number(c.low)), 0) / 3;
-  const isBtcExploding = last3Range > avgRange * 1.5;
-
-  // 3. Cálculo de Beta (Correlação de Pearson Simplificada)
-  const betaScore = calculatePearson(btcCloses.slice(-30), targetCloses.slice(-30));
-
-  // 4. Determinação do Vetor Gravitacional
-  let btcVector: BitcoinGravity['btcVector'] = 'COMPRESSION';
-  const targetMom = (targetCloses[targetCloses.length - 1] - targetCloses[targetCloses.length - 6]) / targetCloses[targetCloses.length - 6];
-
-  if (m5 > 0.005 && targetMom < m5 * 0.5) btcVector = 'BULL_DRAG';
-  else if (m5 < -0.005 && targetMom > m5 * 0.5) btcVector = 'BEAR_DRAG';
-  else if (Math.abs(m5) < 0.001) btcVector = 'COMPRESSION';
-  else if (Math.sign(m5) !== Math.sign(targetMom)) btcVector = 'DIVERGENT';
-
-  return { btcVector, betaScore, isBtcExploding, momentum: { m1, m5, m15 } };
+  // Converte para retornos logarítmicos
+  const returns: number[] = [];
+  for (let i = 1; i < windowSeconds; i++) {
+    returns.push(Math.log(grid[i] / grid[i - 1]));
+  }
+  return returns;
 }
 
 function calculatePearson(x: number[], y: number[]): number {
   const n = x.length;
+  if (n === 0) return 0;
   const sumX = x.reduce((a, b) => a + b, 0);
   const sumY = y.reduce((a, b) => a + b, 0);
   const sumXY = x.reduce((prev, curr, i) => prev + curr * y[i], 0);
@@ -62,4 +61,79 @@ function calculatePearson(x: number[], y: number[]): number {
   const num = n * sumXY - sumX * sumY;
   const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
   return den === 0 ? 0 : num / den;
+}
+
+export function calculateBitcoinGravity(btcCandles: any[], targetCandles: any[]): BitcoinGravity {
+  const WINDOW = 60; // 60 segundos de análise
+  if (btcCandles.length < 30 || targetCandles.length < 30) {
+    return { btcVector: 'INSUFFICIENT_DATA', betaReal: 1, corrReturns: 0, zImpulse: 0, isBtcExploding: false, btcImpulseDir: null, expectedCatchUp: 0, leadLagSeconds: 0, leaderConfidence: 0 };
+  }
+
+  const btcRet = resampleTo1sGrid(btcCandles, WINDOW);
+  const altRet = resampleTo1sGrid(targetCandles, WINDOW);
+
+  if (btcRet.length < 10 || altRet.length < 10) {
+    return { btcVector: 'INSUFFICIENT_DATA', betaReal: 1, corrReturns: 0, zImpulse: 0, isBtcExploding: false, btcImpulseDir: null, expectedCatchUp: 0, leadLagSeconds: 0, leaderConfidence: 0 };
+  }
+
+  // 1. Z-Score do Impulso do BTC (últimos 15s)
+  const recentBtc = btcRet.slice(-15);
+  const btcMean = btcRet.reduce((a,b) => a+b, 0) / btcRet.length;
+  const btcStd = Math.sqrt(btcRet.reduce((s,v) => s + (v-btcMean)**2, 0) / btcRet.length) || 0.0001;
+  const currentBtcRet = recentBtc.reduce((a,b) => a+b, 0);
+  const zImpulse = currentBtcRet / (btcStd * Math.sqrt(15));
+
+  // 2. Detecção de Explosão
+  const isBtcExploding = Math.abs(zImpulse) > 2.0;
+  const btcImpulseDir = zImpulse > 2.0 ? 'UP' : (zImpulse < -2.0 ? 'DOWN' : null);
+
+  // 3. Beta Real e Correlação
+  const corrReturns = calculatePearson(btcRet, altRet);
+  const btcVar = btcRet.reduce((s,v) => s + (v-btcMean)**2, 0) / btcRet.length || 0.0001;
+  const altMean = altRet.reduce((a,b) => a+b, 0) / altRet.length;
+  const covariance = btcRet.reduce((s,v,i) => s + (v-btcMean)*(altRet[i]-altMean), 0) / btcRet.length;
+  const betaReal = covariance / btcVar;
+
+  // 4. Cross-Correlation para Lead-Lag
+  let maxCorr = -1;
+  let leadLagSeconds = 0;
+  for (let lag = -5; lag <= 5; lag++) {
+    const bSlice = lag < 0 ? btcRet.slice(0, lag) : btcRet.slice(lag);
+    const aSlice = lag < 0 ? altRet.slice(-lag) : altRet.slice(0, btcRet.length - lag);
+    const c = calculatePearson(bSlice, aSlice);
+    if (c > maxCorr) {
+      maxCorr = c;
+      leadLagSeconds = lag;
+    }
+  }
+
+  // 5. Retorno de Catch-up esperado
+  const currentAltRet = altRet.slice(-15).reduce((a,b) => a+b, 0);
+  const expectedCatchUp = (betaReal * currentBtcRet) - currentAltRet;
+
+  // 6. Máquina de Estados
+  let btcVector: BitcoinGravity['btcVector'] = 'INSUFFICIENT_DATA';
+  if (Math.abs(zImpulse) > 2.5) {
+    btcVector = zImpulse > 0 ? 'IMPULSE_UP' : 'IMPULSE_DOWN';
+  } else if (Math.abs(expectedCatchUp) > btcStd * 2 && Math.sign(expectedCatchUp) === Math.sign(zImpulse)) {
+    btcVector = expectedCatchUp > 0 ? 'ALT_LAGGING_UP' : 'ALT_LAGGING_DOWN';
+  } else if (corrReturns > 0.7) {
+    btcVector = 'ALT_ALIGNED';
+  } else if (corrReturns < 0.2) {
+    btcVector = 'COMPRESSION';
+  } else {
+    btcVector = 'ALT_DIVERGENT';
+  }
+
+  return {
+    btcVector,
+    betaReal,
+    corrReturns,
+    zImpulse,
+    isBtcExploding,
+    btcImpulseDir,
+    expectedCatchUp,
+    leadLagSeconds,
+    leaderConfidence: maxCorr
+  };
 }
