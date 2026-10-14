@@ -1,10 +1,9 @@
-
 // /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * UI consolidada com recursos de resiliência e gravidade de Bitcoin.
+ * UI consolidada com recursos de resiliência, gravidade de Bitcoin e Go-Live Gate.
  */
 
 import React, { useState, useRef, useEffect } from 'react';
@@ -22,7 +21,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert
+    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -37,6 +36,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { RadarResilienceBadges } from '@/components/RadarResilienceBadges';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 function CryptoLabContent() {
     const { 
@@ -51,7 +51,8 @@ function CryptoLabContent() {
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
         isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
-        confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, resilience
+        confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
+        resilience, stakeValue, setStakeValue, kellyFraction, setKellyFraction, goLiveGates
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -96,7 +97,7 @@ function CryptoLabContent() {
             <Card className="bg-orange-500/5 border-orange-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-orange-500/10 border-b border-orange-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
-                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V4.2
+                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V5
                     </CardTitle>
                     <div className="flex items-center gap-4">
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
@@ -133,7 +134,7 @@ function CryptoLabContent() {
                             </PopoverContent>
                         </Popover>
                         <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-700 uppercase">
-                            Concorrência Ativa
+                            Concorrência Prioritária
                         </Badge>
                     </div>
                 </CardHeader>
@@ -197,13 +198,13 @@ function CryptoLabContent() {
                         <Zap className="h-8 w-8 text-orange-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V4.2</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V5.0</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
                              </Badge>
-                             <Badge className={cn("text-[10px] font-bold", isAutoMode ? "bg-green-600" : "bg-blue-600")}>
-                                {isAutoMode ? 'AUTOPILOT ON' : 'MONITOR MODE'}
+                             <Badge className={cn("text-[10px] font-bold shadow-sm border", isShadowMode ? "bg-purple-600 text-white" : "bg-red-600 text-white")}>
+                                {isShadowMode ? 'SHADOW TESTING' : 'LIVE PROTOCOL'}
                              </Badge>
                         </div>
                     </div>
@@ -241,8 +242,8 @@ function CryptoLabContent() {
                         <CardContent className="space-y-6">
                             <div className="flex items-center justify-between p-3 rounded-lg bg-card border shadow-sm">
                                 <Label htmlFor="shadow-mode" className="flex flex-col gap-0.5">
-                                    <span className="text-xs font-bold uppercase">Shadow Trading</span>
-                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas V4.2</span>
+                                    <span className="text-xs font-bold uppercase">Shadow Mode</span>
+                                    <span className="text-[10px] text-muted-foreground">Execuções teóricas para acúmulo estatístico</span>
                                 </Label>
                                 <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={toggleShadowMode} />
                             </div>
@@ -262,17 +263,31 @@ function CryptoLabContent() {
                                 </ToggleGroup>
                             </div>
 
-                            <div className="space-y-3 p-3 rounded-lg border border-orange-200 bg-card/50">
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-muted-foreground flex items-center gap-1.5"><BrainCircuit className="h-3.5 w-3.5"/> Confiança Mínima</span>
-                                    <span className="font-mono text-orange-700 font-bold">{confidenceThreshold}%</span>
+                            <div className="space-y-4 p-3 rounded-lg border border-orange-200 bg-card/50">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground flex items-center gap-1.5"><BrainCircuit className="h-3.5 w-3.5"/> Confiança Mínima</span>
+                                        <span className="font-mono text-orange-700 font-bold">{confidenceThreshold}%</span>
+                                    </div>
+                                    <Slider 
+                                        value={[confidenceThreshold]} 
+                                        min={40} max={95} step={5} 
+                                        onValueChange={(v) => setConfidenceThreshold(v[0])}
+                                        disabled={isAutoMode}
+                                    />
                                 </div>
-                                <Slider 
-                                    value={[confidenceThreshold]} 
-                                    min={40} max={95} step={5} 
-                                    onValueChange={(v) => setConfidenceThreshold(v[0])}
-                                    disabled={isAutoMode}
-                                />
+                                <div className="space-y-2">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <span className="text-muted-foreground flex items-center gap-1.5"><Target className="h-3.5 w-3.5"/> Fração de Kelly</span>
+                                        <span className="font-mono text-orange-700 font-bold">{(kellyFraction * 100).toFixed(0)}%</span>
+                                    </div>
+                                    <Slider 
+                                        value={[kellyFraction * 100]} 
+                                        min={5} max={100} step={5} 
+                                        onValueChange={(v) => setKellyFraction(v[0] / 100)}
+                                        disabled={isAutoMode}
+                                    />
+                                </div>
                             </div>
 
                             <Button 
@@ -280,7 +295,7 @@ function CryptoLabContent() {
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {isAutoMode ? 'Parar Automação' : 'Ativar Radar V4.2'}
+                                {isAutoMode ? 'Parar Automação' : 'Ativar Piloto V5'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -288,7 +303,7 @@ function CryptoLabContent() {
                     <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl font-mono">
                         <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
                              <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500">
-                                <Gauge className="h-3.5 w-3.5" /> Telemetria Concorrente
+                                <Gauge className="h-3.5 w-3.5" /> Hardware Telemetry
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 space-y-4 text-[11px]">
@@ -335,14 +350,14 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
+                    <Card className="bg-card border-border flex flex-col shadow-sm">
                         <CardHeader className="py-3 border-b border-border bg-orange-50/10">
                             <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
                                 <MessageSquare className="h-4 w-4" />
-                                Diálogo Tático com o Conselho (V4.2)
+                                Diálogo Tático com o Conselho (V5)
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
+                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5 min-h-[300px]">
                             <ScrollArea className="h-full p-4">
                                 <div className="space-y-6 py-4">
                                     {chatMessages.map((m, i) => (
@@ -383,13 +398,13 @@ function CryptoLabContent() {
                     </Card>
                 </div>
 
-                {/* COLUNA DIREITA: VEREDITO E RACIOCÍNIO */}
+                {/* COLUNA DIREITA: VEREDITO E GO-LIVE GATE */}
                 <div className="lg:col-span-3 space-y-6">
                     <Card className="border-orange-600/30 shadow-md overflow-hidden">
                         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-yellow-500" />
                         <CardHeader className="bg-orange-600/5 border-b py-3">
                             <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
-                                <ShieldCheck className="h-4 w-4 text-orange-600" /> Chairman Veredict V4.2
+                                <ShieldCheck className="h-4 w-4 text-orange-600" /> Veredito Chairman
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="pt-6 space-y-4">
@@ -426,14 +441,44 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
+                    {/* GO-LIVE GATE MONITOR */}
+                    <Card className="border-cyan-500/30 bg-cyan-500/5 shadow-sm">
+                        <CardHeader className="py-3 border-b border-cyan-500/20">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-700">
+                                <Lock className="h-4 w-4" /> Go-Live Gate V5
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4">
+                            {Object.entries(goLiveGates).slice(0, 3).map(([key, gate]) => (
+                                <div key={key} className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[9px] font-bold font-mono opacity-60 truncate max-w-[140px]">{key}</span>
+                                        {gate.allowed ? <Unlock className="h-3 w-3 text-green-500" /> : <Lock className="h-3 w-3 text-red-500" />}
+                                    </div>
+                                    <div className="flex items-center justify-between text-[10px]">
+                                        <span className={cn("font-black", gate.allowed ? "text-green-600" : "text-red-600")}>
+                                            {gate.allowed ? "PRONTO" : "BLOQUEADO"}
+                                        </span>
+                                        <span className="font-mono">N={gate.metrics.n}</span>
+                                    </div>
+                                    {!gate.allowed && <p className="text-[9px] text-muted-foreground italic leading-tight">{gate.reason}</p>}
+                                    <Separator className="opacity-20" />
+                                </div>
+                            ))}
+                            {Object.keys(goLiveGates).length === 0 && (
+                                <p className="text-[10px] text-center text-muted-foreground italic py-4">Aguardando amostragem sombra...</p>
+                            )}
+                        </CardContent>
+                    </Card>
+
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200">
                         <CardHeader className="py-2 px-4 border-b bg-card/50">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
-                                <TerminalIcon className="h-3 w-3" /> Reasoning Engine Log (V4.2)
+                                <TerminalIcon className="h-3 w-3" /> Reasoning Engine Log
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-0">
-                            <ScrollArea className="h-64 p-4 text-[10px]">
+                            <ScrollArea className="h-48 p-4 text-[10px]">
                                 {reasoningLog.map((log, i) => (
                                     <div key={log.ts} className="mb-1 border-l-2 border-orange-500/30 pl-2">
                                         <span className="opacity-40">[{log.time}]</span>{' '}
