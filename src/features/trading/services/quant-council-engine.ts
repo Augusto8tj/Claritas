@@ -21,7 +21,7 @@ function validateExecutionGate(
   portfolio: PortfolioRiskState,
   isFocused: boolean
 ): { allowed: boolean; reason?: string } {
-  // 1. Bloqueio de Ciclo (Evitar duplicatas no mesmo tick)
+  // 1. Bloqueio de Ciclo
   if (portfolio.lockedSymbols.has(symbol)) {
     return { allowed: false, reason: "Bloqueado: Ativo já processado neste ciclo." };
   }
@@ -34,11 +34,6 @@ function validateExecutionGate(
   // 3. Categoria de Contrato Permitida
   if (!permissions.allowedContracts.includes(decision.recommendedContract)) {
     return { allowed: false, reason: `Bloqueado: Categoria ${decision.recommendedContract} não permitida para ${symbol}.` };
-  }
-
-  // 3.1 Ação Direcional Permitida
-  if (!permissions.allowedActions.includes(decision.finalAction as any)) {
-    return { allowed: false, reason: `Bloqueado: Ação ${decision.finalAction} não permitida para ${symbol}.` };
   }
 
   // 4. Limites de Portfólio
@@ -100,18 +95,17 @@ export async function runQuantCouncil(
   try {
     const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
     
-    // Injeção de contexto de Backtest para os agentes
     let backtestContext = "";
     if (backtestReports && backtestReports.length > 0) {
         backtestContext = "\n### VALIDAÇÃO ESTATÍSTICA (BACKTEST RECENTE):\n";
         backtestReports.forEach(r => {
             backtestContext += `- Regra ${r.rule}: acerto ${ (r.stat.rate * 100).toFixed(1) }% (n=${r.stat.n}) → ${r.verdict.toUpperCase()}\n`;
         });
-        backtestContext += "INSTRUÇÃO: Dê preferência a ações baseadas em regras com veredito 'ACIMA DO PONTO DE EQUILIBRIO' ou 'ACIMA DO ACASO'. Seja cauteloso com 'PERDA ESPERADA'.\n";
+        backtestContext += "INSTRUÇÃO: Dê preferência a ações baseadas em regras com veredito 'ACIMA DO PONTO DE EQUILIBRIO'.\n";
     }
 
     const gravityContext = marketSnapshot.gravity ? 
-      `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zImpulse=${marketSnapshot.gravity.zImpulse?.toFixed(2)} | expectedCatchUp=${marketSnapshot.gravity.expectedCatchUp?.toFixed(4)} | lag=${marketSnapshot.gravity.leadLagSeconds}s` : 
+      `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zImpulse=${marketSnapshot.gravity.zImpulse?.toFixed(2)} | expectedCatchUp=${marketSnapshot.gravity.expectedCatchUp?.toFixed(4)}` : 
       "\nBITCOIN GRAVITY: N/A";
 
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
@@ -124,10 +118,8 @@ export async function runQuantCouncil(
         const agentName = agents[i];
         if (res.status === 'fulfilled' && res.value) {
             const op = res.value;
-            trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'} ${op.latencyMs}ms | "${op.reasoning.slice(0, 160)}"`);
+            trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'}`);
             opinions.push(op);
-        } else {
-            trace.push(`${agentName}: SEM RESPOSTA (timeout/erro/parse)`);
         }
     });
 
@@ -136,8 +128,6 @@ export async function runQuantCouncil(
     const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
     if (critic?.vetoTriggered && critic.confidence > 70) {
       const endTime = performance.now();
-      const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
-      trace.push(`VETO: ${critic.reasoning}`);
       return {
         finalAction: 'HOLD',
         recommendedContract: 'OPTIONS',
@@ -150,7 +140,7 @@ export async function runQuantCouncil(
         telemetry: generateTelemetry(opinions, startTime, endTime),
         zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
         holdReason: `VETO_RISK: ${critic.reasoning}`,
-        debugVotes,
+        debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
         trace
       };
     }
@@ -159,7 +149,6 @@ export async function runQuantCouncil(
 
     if (decision.finalAction !== 'HOLD' && portfolio && permissions) {
       const gate = validateExecutionGate(symbol, decision, permissions, portfolio, isFocused);
-      trace.push(`GATE: ${gate.allowed ? 'ok' : gate.reason}`);
       if (!gate.allowed) {
         return {
           ...decision,
@@ -173,7 +162,6 @@ export async function runQuantCouncil(
 
   } catch (error: any) {
     const endTime = performance.now();
-    trace.push(`FALLBACK: ${error.message}`);
     if (isFocused) {
       const fallback = executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
       return { ...fallback, trace };
@@ -188,7 +176,7 @@ export async function runQuantCouncil(
       executionMode: 'SHADOW',
       t2tLatencyMs: Math.round(endTime - startTime),
       telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-      holdReason: "Failover bloqueado para background asset.",
+      holdReason: "Failover bloqueado.",
       debugVotes: "FAIL",
       trace
     };
@@ -222,12 +210,12 @@ async function fetchAgentAnalysis(
 ): Promise<AgentOpinion> {
   const start = performance.now();
   
-  const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. 35-65=HOLD (ZONA NEUTRA). Use Bitcoin Gravity para capturar lead-lag em Altcoins.`;
+  const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. Use Bitcoin Gravity para capturar lead-lag.`;
 
   const systemPrompts = {
     MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão nos extremos e arraste do BTC. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. Vete sinais se o BTC estiver explodindo em direção oposta à Altcoin. confidence = força do seu ceticismo. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare o cenário e a gravidade do BTC com trades passados e dados de BACKTEST. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
+    RISK_CRITIC: `Você é o analista 'Risk Critic'. Vete se o BTC estiver explodindo em direção oposta. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare o cenário com trades passados e BACKTEST. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -294,15 +282,10 @@ function synthesizeChairmanDecision(
   let totalWeights = 0;
 
   opinions.forEach(op => {
-    let weight = 1.0;
-    if (op.agentName === 'ARCHIVIST') weight = 1.2;
-
-    if (weight > 0) {
-      trace.push(`VOTANTE: ${op.agentName} peso=${weight} voto=${op.action} conf=${op.confidence}%`);
-      totalWeights += weight;
-      if (op.action === 'CALL') callScore += op.confidence * weight;
-      if (op.action === 'PUT') putScore += op.confidence * weight;
-    }
+    let weight = op.agentName === 'ARCHIVIST' ? 1.2 : 1.0;
+    totalWeights += weight;
+    if (op.action === 'CALL') callScore += op.confidence * weight;
+    if (op.action === 'PUT') putScore += op.confidence * weight;
   });
 
   if (totalWeights === 0) {
@@ -317,7 +300,7 @@ function synthesizeChairmanDecision(
       t2tLatencyMs: Math.round(endTime - startTime),
       telemetry,
       holdReason: 'Votantes insuficientes.',
-      debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+      debugVotes: "FAIL",
       trace
     };
   }
@@ -326,41 +309,27 @@ function synthesizeChairmanDecision(
   const avgConf = side === 'HOLD' ? 0 : (side === 'CALL' ? callScore : putScore) / totalWeights;
 
   const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
-  let riskFactor = 1.0;
-  if (critic && side !== 'HOLD' && critic.action !== side) {
-    riskFactor = 1 - Math.min(critic.confidence, 100) / RISK_DAMPING;
-  }
+  let riskFactor = (critic && side !== 'HOLD' && critic.action !== side) ? (1 - Math.min(critic.confidence, 100) / RISK_DAMPING) : 1.0;
 
-  // Ajuste de confiança baseado no Backtest
   let backtestEdge: CouncilDecision['backtestEdge'] = 'neutral';
   if (backtestReports && backtestReports.length > 0 && side !== 'HOLD') {
       const bestContract = selectBestContract(opinions, side);
-      let ruleKey = "";
-      if (bestContract === 'ACCUMULATORS') ruleKey = 'ACCU_CALM';
-      else if (bestContract === 'MULTIPLIERS') ruleKey = 'MULT_TREND';
-      else ruleKey = 'OPT_REV'; 
-
+      let ruleKey = bestContract === 'ACCUMULATORS' ? 'ACCU_CALM' : (bestContract === 'MULTIPLIERS' ? 'MULT_TREND' : 'OPT_REV'); 
       const report = backtestReports.find(r => r.rule === ruleKey);
       if (report) {
           if (report.verdict.includes('ACIMA')) {
               backtestEdge = 'positive';
               riskFactor *= 1.1; 
-              trace.push(`BACKTEST_BOOST: Regra ${ruleKey} validada (${ (report.stat.rate * 100).toFixed(1) }%)`);
-          } else if (report.verdict.includes('ABAIXO') || report.verdict.includes('insuficiente')) {
+          } else if (report.verdict.includes('ABAIXO')) {
               backtestEdge = 'negative';
               riskFactor *= 0.5; 
-              trace.push(`BACKTEST_PENALTY: Regra ${ruleKey} reprovada (${ (report.stat.rate * 100).toFixed(1) }%)`);
           }
       }
   }
 
   const entropyPenalty = telemetry.consensusEntropy > 0.6 ? 0.6 : 1.0;
   const adjusted = avgConf * entropyPenalty * riskFactor;
-  
-  trace.push(`SÍNTESE: call=${callScore.toFixed(1)} put=${putScore.toFixed(1)} side=${side} riskFactor=${riskFactor.toFixed(2)} edge=${backtestEdge}`);
-
   const finalAction = (side !== 'HOLD' && adjusted >= MIN_EXEC_CONFIDENCE) ? side : 'HOLD';
-  const debugVotes = opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' ');
 
   return {
     finalAction,
@@ -372,8 +341,8 @@ function synthesizeChairmanDecision(
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: Math.round(endTime - startTime),
     telemetry,
-    zenThought: finalAction === 'HOLD' ? "Aguardando convergência gravitacional do Bitcoin." : "Veredito sincronizado com o fluxo líder do mercado.",
-    debugVotes,
+    zenThought: finalAction === 'HOLD' ? "Aguardando convergência gravitacional." : "Veredito sincronizado com o fluxo líder.",
+    debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
     trace,
     backtestEdge
   };
@@ -382,7 +351,6 @@ function synthesizeChairmanDecision(
 function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
   const rsi = snapshot.rsi || 50;
   const action = rsi > 75 ? 'PUT' : rsi < 25 ? 'CALL' : 'HOLD';
-  const debugVotes = `MATH:RSI=${Math.round(rsi)}`;
 
   return {
     finalAction: action,
@@ -395,6 +363,6 @@ function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: numb
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
     zenThought: "IA Instável. Operando por motor estocástico de emergência.",
-    debugVotes
+    debugVotes: "MATH"
   };
 }

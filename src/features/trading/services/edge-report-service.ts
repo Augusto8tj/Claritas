@@ -9,13 +9,7 @@ import { RuleEdgeStats } from '../types/council';
  * Serviço Edge Report V4.2
  * Recupera e processa as métricas de vantagem estatística acumuladas por Shadow Trades.
  */
-export const EdgeReportService = {
-  
-  /**
-   * Obtém as métricas agregadas para um cenário específico.
-   * Chave composta: `${rule}_${gravityState}_${symbol}`
-   */
-  getStats: async (userId: string, rule: string, gravity: string, symbol: string): Promise<RuleEdgeStats> => {
+export const getRuleEdgeStats = async (userId: string, rule: string, gravity: string, symbol: string): Promise<RuleEdgeStats> => {
     const key = `${rule}_${gravity}_${symbol}`.replace(/\//g, '_');
     const docRef = doc(db, 'users', userId, 'crypto_edge_stats', key);
     
@@ -43,5 +37,4 @@ export const EdgeReportService = {
       profitFactor: 0,
       maxDrawdown: 0
     };
-  }
 };

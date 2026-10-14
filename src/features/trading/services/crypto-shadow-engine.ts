@@ -3,7 +3,7 @@
 
 import { db } from '@/lib/firebase';
 import { collection, addDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
-import { sanitizeForFirestore } from './utils/sanitize-for-firestore';
+import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
 import { CryptoShadowTrade } from '../types/council';
 
 /**
@@ -32,7 +32,6 @@ export const CryptoShadowEngine = {
 
   /**
    * Liquidar trade no vencimento.
-   * Nota: Em produção, isso seria disparado por um Cloud Function ou worker.
    */
   liquidate: async (userId: string, tradeId: string, exitPrice: number, win: boolean, pnl: number) => {
     const docRef = doc(db, 'users', userId, 'crypto_shadow_trades', tradeId);
