@@ -105,7 +105,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    Monitorar Criptos <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    Definir Padrão Cripto <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">

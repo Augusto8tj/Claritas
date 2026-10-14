@@ -125,8 +125,23 @@ export function useCryptoRadarV4(
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
     const lastProcessedOpIdRef = useRef<number | null>(null);
+    const initializedRef = useRef(false);
 
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+
+    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
+            // Se o atual for o default de sintéticos ou estiver vazio, define cripto
+            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
+            if (watchedSymbols.length === 0 || isSyntheticDefault) {
+                setWatchedSymbols(cryptoDefaults);
+                addLog("Ativos cripto configurados como padrão operacional.", "info");
+            }
+            initializedRef.current = true;
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
 
     useEffect(() => {
         const loadConfig = () => {
