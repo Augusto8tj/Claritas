@@ -3,9 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * UI migrada: Backtest e Log de Auditoria Avançado.
- * CORREÇÃO: Adicionados controles para dailyBalance e maxConcurrentTrades.
- * FIX: Adicionado ícone TestTube ausente nas importações.
+ * Restauração da Caixa de Chat e Seletor de Modelos.
  */
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -25,7 +23,8 @@ import {
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
     MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
-    TestTube
+    TestTube,
+    HardDrive
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -66,18 +65,31 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes
+        councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
+        ollamaConfig, availableModels, updateOllamaConfig, fetchOllamaModels
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [isBacktestSelectorOpen, setIsBacktestSelectorOpen] = useState(false);
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
+    const [chatInput, setChatInput] = useState('');
+    const [chatTarget, setChatTarget] = useState('CHAIRMAN');
 
     // Backtest Config
     const [payoutInput, setPayoutInput] = useState(85);
     const [targetCount, setTargetCount] = useState(40000);
     const [extraBacktestSymbols, setExtraBacktestSymbols] = useState<string[]>([]);
+
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+
+    const scrollToBottom = useCallback(() => {
+        if (messagesEndRef.current) {
+            messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+    }, []);
+
+    useEffect(() => { scrollToBottom(); }, [chatMessages, isChatLoading, scrollToBottom]);
 
     const formatCurrency = (val: number) => 
         new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
@@ -87,6 +99,14 @@ function CryptoLabContent() {
         if (logFilter === 'error') return reasoningLog.filter(l => l.type === 'error' || l.type === 'warning');
         return reasoningLog.filter(l => l.type === logFilter);
     }, [reasoningLog, logFilter]);
+
+    const handleChatSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (chatInput.trim()) {
+            sendMessage(chatInput, chatTarget);
+            setChatInput('');
+        }
+    };
 
     const handleRunBacktest = () => {
         runBacktest(payoutInput, targetCount, extraBacktestSymbols);
@@ -207,7 +227,7 @@ function CryptoLabContent() {
                         <Zap className="h-8 w-8 text-orange-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V5.0</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V5.1</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
@@ -296,10 +316,75 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
+                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
+                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
+                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500 w-full">
+                                <Gauge className="h-3.5 w-3.5" />
+                                <span className="shrink-0">Hardware Node:</span>
+                                <div className="flex-1 flex items-center gap-2">
+                                    <Select 
+                                        value={ollamaConfig?.model || ""} 
+                                        onValueChange={(val) => {
+                                            if (val !== "none") updateOllamaConfig({ model: val });
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-6 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
+                                            <SelectValue placeholder="Model..." />
+                                        </SelectTrigger>
+                                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
+                                            {availableModels && availableModels.length > 0 ? (
+                                                availableModels.map((m: any) => (
+                                                    <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
+                                                        {m.name}
+                                                    </SelectItem>
+                                                ))
+                                            ) : (
+                                                <SelectItem value="none" disabled>Nenhum modelo (Clique em 🔄)</SelectItem>
+                                            )}
+                                        </SelectContent>
+                                    </Select>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="icon" 
+                                        className="h-6 w-6 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
+                                        onClick={fetchOllamaModels}
+                                        title="Sincronizar"
+                                    >
+                                        <RefreshCw className="h-3 w-3" />
+                                    </Button>
+                                </div>
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-4 space-y-4 text-[11px]">
+                             <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <span className="opacity-60 uppercase">TPS Intensity:</span>
+                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-amber-500")}>
+                                        {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
+                                    </span>
+                                </div>
+                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+                                <div className="space-y-1">
+                                    <p className="opacity-50 uppercase text-[9px]">Consensus Entropy:</p>
+                                    <p className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
+                                        {telemetry.consensusEntropy.toFixed(3)}
+                                    </p>
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="opacity-50 uppercase text-[9px]">Cycle Jitter:</p>
+                                    <p className="text-xs font-bold text-slate-100">{telemetry.jitterMs}ms</p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Governança de Risco (cry*)
+                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Governança de Risco
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
@@ -323,29 +408,11 @@ function CryptoLabContent() {
                                     <Input type="number" value={dailyTarget} onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 50)} className="h-8 font-mono text-xs" disabled={isAutoMode} />
                                 </div>
                             </div>
-
                             <Separator />
-
                             <div className="space-y-4">
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-center text-xs"><Label className="uppercase font-bold opacity-70">Multiplicador</Label><span className="font-mono font-bold text-orange-600">x{multiplier}</span></div>
                                     <Slider value={[multiplier]} min={100} max={500} step={100} onValueChange={(v) => setMultiplier(v[0])} disabled={isAutoMode} />
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs"><Label className="uppercase font-bold opacity-70">Alvo Lucro (TP)</Label><span className="font-mono font-bold text-green-600">{takeProfitPct}%</span></div>
-                                    <Slider value={[takeProfitPct]} min={5} max={100} step={5} onValueChange={(v) => setTakeProfitPct(v[0])} disabled={isAutoMode} />
-                                </div>
-                            </div>
-                            <Separator />
-                            <div className="space-y-3">
-                                <Label className="text-[10px] uppercase font-bold opacity-70">Categorias Permitidas</Label>
-                                <div className="space-y-2">
-                                    {Object.entries(allowedContracts).map(([key, val]) => (
-                                        <div key={key} className="flex items-center space-x-2">
-                                            <Checkbox id={`check-${key}`} checked={val} onCheckedChange={(checked) => setAllowedContracts(prev => ({ ...prev, [key]: !!checked }))} disabled={isAutoMode || key === 'ACCUMULATORS'} />
-                                            <Label htmlFor={`check-${key}`} className="text-xs font-medium cursor-pointer">{key}</Label>
-                                        </div>
-                                    ))}
                                 </div>
                             </div>
                         </CardContent>
@@ -378,39 +445,70 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    {/* MIGRADO: BACKTEST CARD */}
-                    <Card className="border-orange-200 bg-orange-50/5 shadow-sm">
-                        <CardHeader className="py-3 border-b flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-orange-600 flex items-center gap-2">
-                                <TestTube className="h-4 w-4" /> Backtest das regras (1m)
-                            </CardTitle>
-                            {Object.keys(backtest.merged).length > 0 && (
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
-                                    <Copy className="h-3.5 w-3.5" />
-                                </Button>
-                            )}
-                        </CardHeader>
-                        <CardContent className="p-4 space-y-4">
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout (%)</Label>
-                                    <Input type="number" value={payoutInput} onChange={(e) => setPayoutInput(Number(e.target.value))} className="h-8 text-xs font-mono" />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Candles</Label>
-                                    <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
-                                        <SelectTrigger className="h-8 text-xs font-mono"><SelectValue /></SelectTrigger>
-                                        <SelectContent><SelectItem value="20000">20k</SelectItem><SelectItem value="40000">40k</SelectItem><SelectItem value="50000">50k</SelectItem></SelectContent>
-                                    </Select>
-                                </div>
-                                <div className="col-span-2 flex items-end">
-                                    <Button onClick={handleRunBacktest} disabled={backtest.running} size="sm" className="w-full h-8 bg-orange-600 text-white font-bold">
-                                        {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
-                                    </Button>
-                                </div>
+                    {/* DIÁLOGO TÁTICO COM O CONSELHO */}
+                    <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
+                        <CardHeader className="py-3 border-b border-border bg-orange-50/10">
+                            <div className="flex items-center justify-between">
+                                <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
+                                    <MessageSquare className="h-4 w-4 text-orange-600" />
+                                    Diálogo Tático com o Conselho
+                                </CardTitle>
+                                <Select value={chatTarget} onValueChange={setChatTarget}>
+                                    <SelectTrigger className="h-7 w-[160px] text-[10px] font-bold uppercase border-orange-200">
+                                        <SelectValue placeholder="Personagem" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="CHAIRMAN">Chairman (Síntese)</SelectItem>
+                                        <SelectItem value="MOMENTUM">Quant Momentum</SelectItem>
+                                        <SelectItem value="RISK_CRITIC">Risk Critic</SelectItem>
+                                        <SelectItem value="ARCHIVIST">Pattern Archivist</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
-                            {backtest.progress && <p className="text-[10px] text-center text-orange-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
+                        </CardHeader>
+                        <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
+                            <ScrollArea className="h-full p-4">
+                                <div className="space-y-4">
+                                    {chatMessages.length === 0 && (
+                                        <div className="text-center py-10 opacity-30">
+                                            <Brain className="h-10 w-10 mx-auto mb-2 text-orange-600"/>
+                                            <p className="text-xs font-mono">Conselho em prontidão operacional.</p>
+                                        </div>
+                                    )}
+                                    {chatMessages.map((msg, i) => (
+                                        <div key={i} className={cn(
+                                            "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
+                                            msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
+                                        )}>
+                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
+                                                {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
+                                            </span>
+                                            <p className="font-mono text-foreground">{msg.content}</p>
+                                        </div>
+                                    ))}
+                                    {isChatLoading && (
+                                        <div className="flex items-center gap-2 text-xs text-orange-600 animate-pulse font-mono p-3">
+                                            <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
+                                        </div>
+                                    )}
+                                    <div ref={messagesEndRef} />
+                                </div>
+                            </ScrollArea>
                         </CardContent>
+                        <CardFooter className="p-3 border-t border-border">
+                            <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
+                                <Input 
+                                    value={chatInput}
+                                    onChange={(e) => setChatInput(e.target.value)}
+                                    placeholder={`Falar com ${chatTarget.toLowerCase()}...`}
+                                    className="bg-background border-border h-9 text-xs"
+                                    disabled={isChatLoading}
+                                />
+                                <Button type="submit" size="icon" className="h-9 w-9 bg-orange-600 hover:bg-orange-700" disabled={isChatLoading || !chatInput.trim()}>
+                                    <Send className="h-4 w-4 text-white" />
+                                </Button>
+                            </form>
+                        </CardFooter>
                     </Card>
                 </div>
 
@@ -447,7 +545,6 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    {/* MIGRADO: REASONING ENGINE LOG COM STATS */}
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200 h-[500px] flex flex-col">
                         <CardHeader className="py-2 px-4 border-b bg-card/50">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
