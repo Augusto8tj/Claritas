@@ -14,7 +14,7 @@ interface StatusReportParams {
     stats: CouncilStats;
     openPositions: Operation[];
     maxConcurrentTrades: number;
-    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number }>;
+    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number, gravity?: any }>;
     sentinelCounts: Record<string, number>;
     lastDecisions: Record<string, { ts: number, decision: CouncilDecision }>;
     staleMinutes: (sym: string) => number | null;
@@ -27,21 +27,9 @@ export function buildStatusReport(params: StatusReportParams): string {
     const pilot = isAutoMode ? 'ON' : 'OFF';
     const symbols = Object.keys(sentinel);
     
-    let report = `RELATÓRIO ${nowStr} | ${mode} | piloto ${pilot} | conta ${accountType} | saldo $${balance}\n`;
-    report += `Conselho: ${stats.total} avaliações | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | vetos ${stats.vetoes} | fallbacks ${stats.fallbacks} | ${(stats.avgLatencyMs/1000).toFixed(1)}s/ativo\n`;
-    report += `Posições abertas: ${openPositions.length}/${maxConcurrentTrades}\n`;
-    report += `Episódios do Sentinela: O ${sentinelCounts.OPTIONS} | M ${sentinelCounts.MULTIPLIERS} | A ${sentinelCounts.ACCUMULATORS}\n\n`;
-
-    if (openPositions.length > 0) {
-        report += `POSIÇÕES ABERTAS (${openPositions.length}):\n`;
-        openPositions.forEach(op => {
-            const ageMs = Date.now() - new Date(op.timestamp).getTime();
-            const min = Math.floor(ageMs / 60000);
-            const ageStr = min > 1440 ? `${(min/1440).toFixed(1)}d` : `${min}min`;
-            report += `- #${op.id} ${op.asset} ${op.contractType || 'OPTIONS'} $${op.stake} há ${ageStr} por ${op.initiator}\n`;
-        });
-        report += "\n";
-    }
+    let report = `RELATÓRIO TÁTICO SUPREME ${nowStr} | ${mode} | piloto ${pilot} | conta ${accountType} | saldo $${balance.toFixed(2)}\n`;
+    report += `Performance: ${stats.total} evals | HOLD ${stats.total > 0 ? Math.round(stats.hold/stats.total*100) : 0}% | CALL ${stats.call} | PUT ${stats.put} | Latência Médio: ${(stats.avgLatencyMs/1000).toFixed(1)}s\n`;
+    report += `Posições abertas: ${openPositions.length}/${maxConcurrentTrades}\n\n`;
 
     symbols.forEach(sym => {
         const sentData = sentinel[sym];
@@ -49,7 +37,7 @@ export function buildStatusReport(params: StatusReportParams): string {
         const isStale = min !== null && min > 2.5;
 
         if (isStale) {
-            report += `${sym} [MERCADO FECHADO (último candle há ${Math.round(min)} min)]\n\n`;
+            report += `${sym} [OFFLINE - ${Math.round(min)} min atrás]\n\n`;
             return;
         }
 
@@ -57,66 +45,62 @@ export function buildStatusReport(params: StatusReportParams): string {
         report += `${sym} $${price.toFixed(4)}\n`;
         if (sentData?.features) {
             const f = sentData.features;
-            report += `  Metrics: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} ATR | seq ${f.streak}\n`;
+            report += `  Métricas: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)}\n`;
+            
+            // Injeção de Gravidade (Específico V4.2)
+            if (sentData.gravity) {
+                const g = sentData.gravity;
+                report += `  Gravidade BTC: Correlação ${g.correlation.toFixed(2)} | Beta ${g.beta.toFixed(2)} | Vector: ${g.btcVector}\n`;
+                if (g.slingshotDetected) report += `  ALERTA: SlingShot (Lag de Propagação) Detectado!\n`;
+            }
+
             const getScore = (cat: string) => {
                 const c = sentData.candidates.find(x => x.contract === cat);
-                return c ? `${c.score}${c.direction === 'CALL' ? '↑CALL' : c.direction === 'PUT' ? '↓PUT' : ''}` : "--";
+                return c ? `${c.score}${c.direction === 'CALL' ? '↑' : c.direction === 'PUT' ? '↓' : ''}` : "--";
             };
-            report += `  Sentinela: Opções ${getScore('OPTIONS')} | Multiplicadores ${getScore('MULTIPLIERS')} | Acumuladores ${getScore('ACCUMULATORS')}\n`;
+            report += `  Sentinela: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
         }
         
         const hist = lastDecisions[sym];
         if (hist) {
             const age = Math.round((Date.now() - hist.ts) / 1000);
             const d = hist.decision;
-            const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-            report += `  Conselho: há ${age}s ${d.finalAction} ${d.consensusConfidence}% ${contractDisplay} votos[${d.debugVotes}] ${d.holdReason ? d.holdReason.slice(0, 100) : ''}\n`;
+            report += `  Última Decisão (${age}s atrás): ${d.finalAction} ${d.consensusConfidence}% via ${d.executedVia}\n`;
         }
         report += "\n";
     });
 
-    const candidates = Object.values(sentinel)
-        .flatMap(s => s.candidates)
-        .filter(c => c.score >= 55)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3);
-
-    report += `MELHORES CANDIDATOS (score >= 55):\n`;
-    if (candidates.length > 0) {
-        candidates.forEach(c => {
-            const hist = lastDecisions[c.symbol];
-            const lastAct = hist?.decision.finalAction || 'ainda não avaliou';
-            report += `  ${c.symbol} ${c.contract} ${c.direction !== 'NONE' ? c.direction : 'sem direção'} score ${c.score} regra ${c.rule} (${c.reasons.join(', ')}) | Conselho: ${lastAct}\n`;
-        });
-    } else {
-        report += `  nenhum candidato acima do gatilho\n`;
-    }
-
-    report += `\nSinais são hipóteses sobre índices sintéticos aleatórios; validar no Shadow.`;
     return report;
 }
 
 export function buildAssetReport(params: {
     sym: string;
-    sentData?: { features: SignalFeatures | null, candidates: SignalCandidate[] };
+    sentData?: { features: SignalFeatures | null, candidates: SignalCandidate[], gravity?: any };
     hist?: { ts: number, decision: CouncilDecision };
     lastCandleClose?: number;
     staleMin: number | null;
 }): string {
     const { sym, sentData, hist, lastCandleClose, staleMin } = params;
-    let report = `ANÁLISE DETALHADA: ${sym}\n`;
+    let report = `ANÁLISE DE ATIVO (SUPREME): ${sym}\n`;
     if (staleMin !== null && staleMin > 2.5) {
-        report += `STATUS: MERCADO FECHADO (último candle há ${Math.round(staleMin)} min)\n\n`;
+        report += `STATUS: MERCADO FECHADO (${Math.round(staleMin)} min atrás)\n\n`;
     } else {
-        report += `Preço: $${(lastCandleClose || 0).toFixed(4)}\n\n`;
+        report += `Preço Spot: $${(lastCandleClose || 0).toFixed(4)}\n\n`;
     }
 
     if (sentData?.features && (staleMin === null || staleMin <= 2.5)) {
         const f = sentData.features;
-        report += `MÉTRICAS AO VIVO:\n`;
-        report += `- RSI: ${f.rsi}\n- %B (Posição Bandas): ${f.bbPos.toFixed(3)}\n- ER (Eficiência): ${f.er.toFixed(2)}\n- Volatilidade: x${f.atrRatio.toFixed(2)}\n- Momentum 15: ${f.mom15.toFixed(1)} ATR\n- Streak: ${f.streak}\n\n`;
+        report += `MÉTRICAS QUANTITATIVAS:\n`;
+        report += `- RSI: ${f.rsi}\n- ER (Trend Efficiency): ${f.er.toFixed(2)}\n- Volatilidade: x${f.atrRatio.toFixed(2)}\n`;
         
-        report += `SENTINELA (CANDIDATOS):\n`;
+        if (sentData.gravity) {
+            const g = sentData.gravity;
+            report += `- Correlação BTC (Pearson): ${g.correlation.toFixed(2)}\n`;
+            report += `- Elasticidade (Beta): ${g.beta.toFixed(2)}\n`;
+            report += `- Vetor Gravitacional: ${g.btcVector}\n`;
+        }
+        
+        report += `\nCANDIDATOS SENTINELA:\n`;
         sentData.candidates.forEach(c => {
             report += `- ${c.contract}: score ${c.score} [${c.rule}] -> ${c.reasons.join(', ')}\n`;
         });
@@ -126,22 +110,14 @@ export function buildAssetReport(params: {
     if (hist) {
         const d = hist.decision;
         const age = Math.round((Date.now() - hist.ts) / 1000);
-        const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-        report += `ÚLTIMA DELIBERAÇÃO (há ${age}s):\n`;
-        report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${contractDisplay})\n`;
-        if (d.holdReason) report += `Hold Reason: ${d.holdReason}\n`;
+        report += `DECISÃO DO CONSELHO (há ${age}s):\n`;
+        report += `Veredito: ${d.finalAction} ${d.consensusConfidence}% (${d.recommendedContract})\n`;
+        if (d.holdReason) report += `Justificativa Hold: ${d.holdReason}\n`;
         
-        report += `\nOPINIÕES DOS AGENTES:\n`;
+        report += `\nOPINIÕES ESPECÍFICAS:\n`;
         d.opinions.forEach(o => {
-            report += `- ${o.agentName}: ${o.action} ${o.confidence}% ${o.action === 'HOLD' ? '—' : o.recommendedContract} — ${o.reasoning.slice(0, 160)}\n`;
+            report += `- ${o.agentName}: ${o.action} ${o.confidence}% | ${o.reasoning.slice(0, 100)}...\n`;
         });
-
-        if (d.trace && d.trace.length > 0) {
-            report += `\nTRACE DO CHAIRMAN:\n`;
-            d.trace.forEach(t => report += `  > ${t}\n`);
-        }
-    } else {
-        report += `Conselho ainda não realizou varredura para este ativo.`;
     }
 
     return report;
@@ -226,20 +202,20 @@ export function buildBacktestReport(params: {
 }
 
 export function buildShortContext(params: {
-    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[] }>;
+    sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], gravity?: any }>;
     lastDecisions: Record<string, { ts: number, decision: CouncilDecision }>;
     staleMinutes: (sym: string) => number | null;
 }): string {
     const { sentinel, lastDecisions, staleMinutes } = params;
     const symbols = Object.keys(sentinel);
-    let context = "LEGENDA: Sentinela = pontuação 0-100 por tipo de contrato (Opções, Multiplicadores, Acumuladores); >= 55 é gatilho; ↑ CALL, ↓ PUT; Acumuladores não têm direção. %B 0-1 (posição nas bandas); ER 0-1 (1 = tendência limpa); vol xN = volatilidade atual / mediana; mom15 em ATRs.\n\n";
+    let context = "DADOS OPERACIONAIS (CLUSTER CRIPTO V4.2 SUPREME):\n";
     
     symbols.forEach(sym => {
         const min = staleMinutes(sym);
         const isStale = min !== null && min > 2.5;
 
         if (isStale) {
-            context += `${sym}: MERCADO FECHADO (último candle há ${Math.round(min)} min)\n\n`;
+            context += `${sym}: OFFLINE (${Math.round(min)} min)\n`;
             return;
         }
 
@@ -250,21 +226,18 @@ export function buildShortContext(params: {
         context += `${sym}: $${price.toFixed(4)}\n`;
         if (sentData?.features) {
             const f = sentData.features;
-            context += `  Metrics: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)} | vol x${f.atrRatio.toFixed(2)} | mom15 ${f.mom15.toFixed(1)} | streak ${f.streak}\n`;
-            const getScore = (cat: string) => {
-                const c = sentData.candidates.find(x => x.contract === cat);
-                return c ? `${c.score}${c.direction === 'CALL' ? '↑C' : c.direction === 'PUT' ? '↓P' : ''}` : "--";
-            };
-            context += `  Sentinel: O:${getScore('OPTIONS')} M:${getScore('MULTIPLIERS')} A:${getScore('ACCUMULATORS')}\n`;
+            context += `  - RSI:${f.rsi} | %B:${f.bbPos.toFixed(2)} | Vol:x${f.atrRatio.toFixed(2)}`;
+            if (sentData.gravity) {
+                const g = sentData.gravity;
+                context += ` | Corr_BTC:${g.correlation.toFixed(2)} | Beta:${g.beta.toFixed(2)} | ${g.btcVector}`;
+            }
+            context += `\n`;
         }
         if (hist) {
-            const age = Math.round((Date.now() - hist.ts) / 1000);
             const d = hist.decision;
-            const contractDisplay = d.finalAction === 'HOLD' ? '—' : d.recommendedContract;
-            context += `  Council (${age}s ago): ${d.finalAction} ${d.consensusConfidence}% [${d.debugVotes}] ${d.holdReason || ''} contract=${contractDisplay}\n`;
+            context += `  - ÚLTIMO CONSELHO: ${d.finalAction} ${d.consensusConfidence}% (${d.recommendedContract})\n`;
         }
-        context += "\n";
     });
     
-    return context.slice(0, 2200);
+    return context.slice(0, 2500);
 }

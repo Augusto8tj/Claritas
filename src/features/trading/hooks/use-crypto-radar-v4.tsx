@@ -1,11 +1,9 @@
-
 'use client';
 
 /**
- * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5: Implementa Ciclo de Vida de Execução, Post-Mortem, Circuit Breaker,
- * Trailing Profit Floor e Motor Polimórfico de Contratos.
- * cryBTCUSD é o líder de referência absoluto.
+ * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
+ * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
+ * cryBTCUSD é a âncora gravitacional absoluta.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -312,7 +310,7 @@ export function useCryptoRadarV4(
         try {
             const context = buildShortContext({ sentinel: radarStatus, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\nESTADO FINANCEIRO:\nSaldo: $${accountBalance.balance?.toFixed(2)} | P&L: $${sessionStats.pnl.toFixed(2)} | Lucro Travado: $${lockedProfitFloor.toFixed(2)}\n\n${context}`;
             const response = await getOllamaResponse(ollamaConfig, content, [{ role: 'system', content: systemPrompt }, ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))]);
             if (response.success) setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
         } catch (error: any) {
@@ -363,7 +361,7 @@ export function useCryptoRadarV4(
 
             const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold);
 
-            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: shouldExecute } }));
+            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: shouldExecute, indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } } }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 const finalStake = stakeValue;
