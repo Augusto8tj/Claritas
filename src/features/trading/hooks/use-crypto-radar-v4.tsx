@@ -75,7 +75,7 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. LOGS E TELEMETRIA (TOP) ---
+    // --- 1. LOGS E TELEMETRIA ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
@@ -326,6 +326,8 @@ export function useCryptoRadarV4(
                     }
 
                     const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                    
+                    // Fixed executeTrade call with proper arguments
                     const res = await executeTrade(
                         finalContractType, stakeValue, symbol, tradeDirection, 15, 's', 
                         'Conselho_V4', `V42_${decision.executedVia}`, extraProposalParams
@@ -367,7 +369,7 @@ export function useCryptoRadarV4(
 
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
-            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD', 'cryLTCUSD', 'cryXRPUSD', 'cryDOGEUSD'];
+            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD'];
             setWatchedSymbols(cryptoDefaults);
             initializedRef.current = true;
         }

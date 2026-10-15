@@ -1,4 +1,4 @@
-/src/docs/CRYPTO_LAB_V4_2_SPEC.txt
+// /src/docs/CRYPTO_LAB_V4_2_SPEC.txt
 ================================================================================
 CLARITAS COPILOT - ESPECIFICAÇÃO TÉCNICA: CRYPTO LAB V4.2 (SUPREME)
 ================================================================================
@@ -18,12 +18,12 @@ CLARITAS COPILOT - ESPECIFICAÇÃO TÉCNICA: CRYPTO LAB V4.2 (SUPREME)
 - CONSELHO TÁTICO MULTI-AGENTE:
   * Três agentes de IA (MOMENTUM, RISK_CRITIC, ARCHIVIST) avaliam o mercado em paralelo.
   * Estados: lastDecision (CouncilDecision), opinions (AgentOpinion[]).
-- BITCOIN GRAVITY RADAR:
-  * Monitora o BTC (Líder) para validar sinais em Altcoins (Betas).
+- BITCOIN GRAVITY RADAR (HIGH LIQUIDITY):
+  * Monitora o BTC (Líder) para validar sinais em cryETHUSD.
   * Estados: radarStatus (Record<string, BitcoinGravity>), isBtcExploding (boolean).
 - EXECUÇÃO POLIMÓRFICA CRYPTO:
-  * Seleciona dinamicamente entre OPTIONS, ACCUMULATORS ou MULTIPLIERS.
-  * Lógica: Compressão sistêmica (BTC) ativa Acumuladores; Explosão alinhada ativa Multiplicadores.
+  * Seleciona dinamicamente entre OPTIONS ou MULTIPLIERS.
+  * Lógica: Compressão sistêmica (BTC) ativa Acumuladores (bloqueado em cripto); Explosão alinhada ativa Multiplicadores.
 - VARREDURA CONCORRENTE (HFT READY):
   * Ciclo de scan utiliza Promise.all para eliminar latência sequencial de hardware (Ollama).
   * Estados: scheduleRef (Record<string, number>), executionLockRef (boolean).
@@ -58,10 +58,9 @@ export interface CouncilDecision {
 
 4. REGRAS DE NEGÓCIO ATUAIS (POLÍTICAS)
 --------------------------------------------------------------------------------
+- CLUSTER DE ATIVOS: cryBTCUSD, cryETHUSD (Ativos de alta liquidez).
 - VETO DE DIVERGÊNCIA GRAVITACIONAL:
   * Se isBtcExploding = true e direção da Altcoin != vetor do BTC, forçar HOLD.
-- BOOST ESTATÍSTICO (ACCU_CALM):
-  * Se btcVector === 'COMPRESSION', adicionar +15% ao score da regra Sentinel.
 - FILTRO MULTIPLIERS ALINHADO:
   * Regra MULT_TREND só é válida se a direção estiver idêntica ao momentum do BTC.
 - GOVERNANÇA DE RIGOR:

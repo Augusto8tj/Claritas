@@ -161,7 +161,7 @@ function CryptoLabContent() {
                             </PopoverContent>
                         </Popover>
                         <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-700 uppercase">
-                            Filtro de Correlação Ativo
+                            Alta Liquidez (BTC/ETH Only)
                         </Badge>
                     </div>
                 </CardHeader>
@@ -625,7 +625,7 @@ function CryptoLabContent() {
                              </div>
                         </div>
                         <CardContent className="p-0 flex-1 overflow-hidden relative">
-                            <ScrollArea className="h-full p-4 text-[10px]">
+                            <ScrollArea className="h-full p-4 text-xs font-mono">
                                 {filteredLogs.map((log, i) => (
                                     <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
                                         <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
