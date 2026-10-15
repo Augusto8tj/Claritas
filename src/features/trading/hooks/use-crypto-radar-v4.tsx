@@ -3,7 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5.2: Injeção de Telemetria Densa p/ IA Local (Ollama) e Governança V5.
+ * V5.3: Injeção de Telemetria Hiper-Densa e Governança V5.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -54,10 +54,10 @@ export interface CouncilStats {
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
 const AGENT_PERSONAS = {
-  CHAIRMAN: "o CHAIRMAN do conselho supremo: sua resposta deve ser executiva e baseada nos dados reais do dossier.",
-  MOMENTUM: "o analista QUANT MOMENTUM: foque em RSI, ER e Mom5 do dossier.",
-  RISK_CRITIC: "o RISK CRITIC: aponte perigos no Beta ou na Entropia do conselho.",
-  ARCHIVIST: "o PATTERN ARCHIVIST: compare os dados atuais com a memória de trades injetada."
+  CHAIRMAN: "o CHAIRMAN do conselho supremo: sua resposta deve ser executiva, fundamentada no DOSSIER DE TELEMETRIA fornecido. Você sintetiza a decisão final.",
+  MOMENTUM: "o analista QUANT MOMENTUM: sua função é calcular a força do preço usando RSI, ER e Mom5 do dossier. Ignore sentimentos, foque na velocidade.",
+  RISK_CRITIC: "o RISK CRITIC: você é cético. Use o Beta, a Correlação e o Piso Travado para alertar sobre perigos de divergência ou ganância.",
+  ARCHIVIST: "o PATTERN ARCHIVIST: você compara o snapshot atual com a MEMÓRIA DE APRENDIZADO injetada. Identifique se este setup já falhou antes."
 };
 
 const SETTINGS_KEY = 'cryptoLabV4Settings';
@@ -77,11 +77,9 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. CONFIGURAÇÃO DE CLUSTER PADRÃO BTC/ETH ---
     const DEFAULT_CLUSTER = ['cryBTCUSD', 'cryETHUSD'];
     const initializedRef = useRef(false);
 
-    // --- 2. LOGS E TELEMETRIA ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
@@ -100,7 +98,6 @@ export function useCryptoRadarV4(
         }, ...prev].slice(0, 300));
     }, []);
 
-    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
             const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
@@ -112,32 +109,26 @@ export function useCryptoRadarV4(
         }
     }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
 
-    // --- 3. ESTADOS DE CONTROLE V5.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
 
-    // GOVERNANÇA V5 (PISO DE LUCRO)
     const [lockedProfitFloor, setLockedProfitFloor] = useState(0);
     const dailyHighWaterMark = useRef(0);
 
-    // PARAMETROS DE CONTRATO
     const [stakeValue, setStakeValue] = useState(1.0);
     const [multiplier, setMultiplier] = useState(400);
 
-    // GOVERNANÇA E RISCO
     const [dailyBalance, setDailyBalance] = useState(100.0);
     const [dailyTarget, setDailyTarget] = useState(50.0);
     const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
 
-    // BACKTEST RUNNER
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
 
-    // RADAR E MEMÓRIA
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
@@ -154,16 +145,13 @@ export function useCryptoRadarV4(
     
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
-    // REFS PARA ESTABILIDADE
     const activeSymbolRef = useRef(activeSymbol);
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
-    const processedTradesRef = useRef<Set<number>>(new Set());
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // FINANCEIRO REAL-TIME
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
             op.status !== 'pending' && op.initiator.startsWith('Conselho')
@@ -175,7 +163,6 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
-    // --- 4. TRAILING PROFIT FLOOR & SMART STAKE ---
     useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) {
             dailyHighWaterMark.current = sessionStats.pnl;
@@ -240,10 +227,6 @@ export function useCryptoRadarV4(
         } catch (e) {}
     }, [ollamaConfig]);
 
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl) fetchAvailableModels();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
-
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
         const time = new Date().toLocaleTimeString();
@@ -265,12 +248,11 @@ export function useCryptoRadarV4(
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
             const systemPrompt = `Você é ${persona}. Responda em português do Brasil.
             
-DIRETRIZES RÍGIDAS DE DADOS:
-1. USE APENAS OS DADOS DO DOSSIER ABAIXO.
-2. NUNCA invente ativos (como 'Ativo A') ou preços (como '$100').
-3. Se o dossier mostrar cryBTCUSD e cryETHUSD, responda apenas sobre eles.
-4. Se o usuário perguntar algo que não está no dossier, diga "Dados Não Disponíveis".
-5. Considere o P&L de $${sessionStats.pnl.toFixed(2)} e o Piso de $${lockedProfitFloor.toFixed(2)} para suas sugestões de risco.
+DIRETRIZES RÍGIDAS DE DADOS (V5.3):
+1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
+2. PROIBIDO ALUCINAR: Nunca invente ativos (como 'Ativo A') ou preços (como '$100').
+3. Se um valor não estiver no dossier, diga "Dados Não Disponíveis no Snapshot".
+4. Baseie seu rigor de risco no P&L de $${sessionStats.pnl.toFixed(2)} e no Piso de $${lockedProfitFloor.toFixed(2)}.
 
 ${context}`;
 
@@ -314,10 +296,7 @@ ${context}`;
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
-            const topCandidate = candidates.sort((a,b) => b.score - a.score)[0];
-
-            if (!isManual && (!topCandidate || topCandidate.score < 40)) return;
-
+            
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
