@@ -5,7 +5,7 @@
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V5: Implementa Ciclo de Vida de Execução, Post-Mortem, Circuit Breaker,
  * Trailing Profit Floor e Motor Polimórfico de Contratos.
- * cryBTCUSD é o líder de referência.
+ * cryBTCUSD é o líder de referência absoluto.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -81,6 +81,7 @@ export function useCryptoRadarV4(
 
     // --- 1. CONFIGURAÇÃO DE CLUSTER PADRÃO BTC/ETH ---
     const DEFAULT_CLUSTER = ['cryBTCUSD', 'cryETHUSD'];
+    const initializedRef = useRef(false);
 
     // --- 2. LOGS E TELEMETRIA ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
@@ -100,6 +101,18 @@ export function useCryptoRadarV4(
             message, type, details, symbol
         }, ...prev].slice(0, 300));
     }, []);
+
+    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
+            if (watchedSymbols.length === 0 || isSyntheticDefault) {
+                setWatchedSymbols(DEFAULT_CLUSTER);
+                addLog("Cluster Institucional BTC/ETH configurado como padrão operacional.", "info");
+            }
+            initializedRef.current = true;
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
 
     // --- 3. ESTADOS DE CONTROLE V4.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
@@ -125,7 +138,6 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
     
-    // CACHE DE DISPONIBILIDADE DERIV
     const contractsCacheRef = useRef<Record<string, { ts: number, data: any }>>({});
 
     // BACKTEST RUNNER
@@ -181,7 +193,7 @@ export function useCryptoRadarV4(
             const floor = sessionStats.pnl * 0.5;
             if (floor > lockedProfitFloor) setLockedProfitFloor(floor);
         } else if (profitRatio >= 0.5) {
-            if (lockedProfitFloor < 0.01) setLockedProfitFloor(0.01); // Trava no breakeven
+            if (lockedProfitFloor < 0.01) setLockedProfitFloor(0.01);
         }
     }, [sessionStats.pnl, dailyTarget, lockedProfitFloor]);
 
@@ -223,11 +235,7 @@ export function useCryptoRadarV4(
     const validateContractAvailability = async (symbol: string, mode: string): Promise<boolean> => {
         const cached = contractsCacheRef.current[symbol];
         const now = Date.now();
-        
-        if (cached && now - cached.ts < 300000) { // 5 min cache
-            return true; // Simplificado para o protótipo
-        }
-        
+        if (cached && now - cached.ts < 300000) return true;
         contractsCacheRef.current[symbol] = { ts: now, data: true };
         return true;
     };
@@ -235,7 +243,6 @@ export function useCryptoRadarV4(
     // --- 7. CIRCUIT BREAKER V5 ---
     useEffect(() => {
         if (!isAutoMode) return;
-
         const hitStopLoss = sessionStats.pnl <= -dailyBalance;
         const hitTarget = sessionStats.pnl >= dailyTarget;
         const hitTrailingFloor = lockedProfitFloor > 0 && sessionStats.pnl < lockedProfitFloor;
@@ -244,11 +251,7 @@ export function useCryptoRadarV4(
             setIsAutoMode(false);
             const reason = hitStopLoss ? `STOP LOSS ($${dailyBalance})` : hitTarget ? `META ($${dailyTarget})` : `TRAILING FLOOR ($${lockedProfitFloor.toFixed(2)})`;
             addLog(`[CIRCUIT-BREAKER] Piloto desativado: ${reason}.`, 'error');
-            toast({
-                title: "⚠️ Circuit Breaker Ativado",
-                description: `Proteção financeira acionada: ${reason}`,
-                variant: hitStopLoss || hitTrailingFloor ? "destructive" : "default"
-            });
+            toast({ title: "⚠️ Circuit Breaker Ativado", description: `Proteção financeira acionada: ${reason}`, variant: hitStopLoss || hitTrailingFloor ? "destructive" : "default" });
         }
     }, [sessionStats.pnl, dailyBalance, dailyTarget, isAutoMode, addLog, toast, lockedProfitFloor]);
 
@@ -269,14 +272,10 @@ export function useCryptoRadarV4(
     const getSmartStake = (symbol: string): number => {
         let stake = stakeValue;
         const lastTrade = operationsLog.find(o => o.asset === symbol && o.initiator.startsWith('Conselho') && o.status !== 'pending');
-        
         if (lastTrade && lastTrade.status === 'lost') {
-            stake *= 0.5; // Redução de 50% após loss
+            stake *= 0.5;
             addLog(`[SMART-STAKE] Reduzindo risco em ${symbol} após perda recente: $${stake.toFixed(2)}`, 'info', undefined, symbol);
-        } else if (lastDecision?.telemetry.consensusEntropy === 0 && lastTrade?.status === 'won') {
-            stake *= 1.15; // Setup A+ boost
         }
-        
         return Math.max(0.35, Number(stake.toFixed(2)));
     };
 
@@ -304,7 +303,7 @@ export function useCryptoRadarV4(
         });
     }, []);
 
-    const fetchAvailableModelsLocal = useCallback(async () => {
+    const fetchAvailableModels = useCallback(async () => {
         if (!ollamaConfig?.baseUrl) return;
         try {
             const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
@@ -321,8 +320,8 @@ export function useCryptoRadarV4(
     }, [ollamaConfig]);
 
     useEffect(() => {
-        if (ollamaConfig?.baseUrl) fetchAvailableModelsLocal();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModelsLocal]);
+        if (ollamaConfig?.baseUrl) fetchAvailableModels();
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
@@ -401,17 +400,14 @@ export function useCryptoRadarV4(
 
                     let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     const params: Record<string, any> = {};
-
                     if (contractToUse === 'MULTIPLIERS') {
                         finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN';
                         params.multiplier = multiplier;
                     }
-
                     const res = await executeTrade(finalContractType, finalStake, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
                     if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado via ${contractToUse}.`, 'execution', undefined, symbol);
                 }
             }
-
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
     }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, lastDecision]);
 
@@ -433,23 +429,9 @@ export function useCryptoRadarV4(
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
     useEffect(() => {
-        if (isConnected && watchedSymbols.length === 0) setWatchedSymbols(DEFAULT_CLUSTER);
-    }, [isConnected, watchedSymbols, setWatchedSymbols, DEFAULT_CLUSTER]);
-
-    useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(id);
     }, [runMultiAssetCycle]);
-
-    const buildReport = useCallback(() => {
-        return buildBacktestReport({ 
-            ts: backtest.ts, 
-            payoutPct: backtest.payoutPct, 
-            assetMeta: backtest.assetMeta, 
-            merged: backtest.merged, 
-            perAsset: backtest.perAsset 
-        });
-    }, [backtest]);
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
@@ -466,7 +448,7 @@ export function useCryptoRadarV4(
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport: buildReport, staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: fetchAvailableModelsLocal
+        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels
     };
 }

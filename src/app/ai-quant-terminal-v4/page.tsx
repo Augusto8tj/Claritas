@@ -1,11 +1,10 @@
 
-// /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * Dashboard institucional com paridade de recursos V3 e foco em Criptoativos.
  * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
+ * Exibe métricas institucionais de gravidade, beta e correlação.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -161,7 +160,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    cluster institucional btc/eth <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    estabelecer o cluster institucional cryBTCUSD/cryETHUSD como padrão de abertura <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -271,7 +270,7 @@ function CryptoLabContent() {
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V4.2 (Supreme)</h1>
                         <div className="flex items-center gap-2">
-                             <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
+                             <Badge variant="outline" className="font-mono text-xs flex items-center gap-1.5">
                                 <Wallet className="h-3 w-3"/> P&L: {formatCurrency(sessionStats.pnl)}
                              </Badge>
                              {lockedProfitFloor > 0 && (
