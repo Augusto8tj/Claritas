@@ -3,8 +3,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
- * cryBTCUSD é a âncora gravitacional absoluta.
+ * V5.2: Injeção de Telemetria Densa p/ IA Local (Ollama) e Governança V5.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -55,10 +54,10 @@ export interface CouncilStats {
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
 const AGENT_PERSONAS = {
-  CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
-  MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
-  RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
-  ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
+  CHAIRMAN: "o CHAIRMAN do conselho supremo: sua resposta deve ser executiva e baseada nos dados reais do dossier.",
+  MOMENTUM: "o analista QUANT MOMENTUM: foque em RSI, ER e Mom5 do dossier.",
+  RISK_CRITIC: "o RISK CRITIC: aponte perigos no Beta ou na Entropia do conselho.",
+  ARCHIVIST: "o PATTERN ARCHIVIST: compare os dados atuais com a memória de trades injetada."
 };
 
 const SETTINGS_KEY = 'cryptoLabV4Settings';
@@ -101,19 +100,19 @@ export function useCryptoRadarV4(
         }, ...prev].slice(0, 300));
     }, []);
 
-    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO (Soberania cryBTCUSD/cryETHUSD)
+    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
             const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
             if (watchedSymbols.length === 0 || isSyntheticDefault) {
                 setWatchedSymbols(DEFAULT_CLUSTER);
-                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão operacional.", "info");
+                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão.", "info");
             }
             initializedRef.current = true;
         }
     }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
 
-    // --- 3. ESTADOS DE CONTROLE V4.2 ---
+    // --- 3. ESTADOS DE CONTROLE V5.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
@@ -127,8 +126,6 @@ export function useCryptoRadarV4(
     // PARAMETROS DE CONTRATO
     const [stakeValue, setStakeValue] = useState(1.0);
     const [multiplier, setMultiplier] = useState(400);
-    const [takeProfitPct, setTakeProfitPct] = useState(25);
-    const [stopLossPct, setStopLossPct] = useState(50);
 
     // GOVERNANÇA E RISCO
     const [dailyBalance, setDailyBalance] = useState(100.0);
@@ -136,8 +133,6 @@ export function useCryptoRadarV4(
     const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
-    
-    const contractsCacheRef = useRef<Record<string, { ts: number, data: any }>>({});
 
     // BACKTEST RUNNER
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
@@ -180,14 +175,13 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
-    // --- 4. TRAILING PROFIT FLOOR (GOVERNANÇA V5) ---
+    // --- 4. TRAILING PROFIT FLOOR & SMART STAKE ---
     useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) {
             dailyHighWaterMark.current = sessionStats.pnl;
         }
 
         const profitRatio = sessionStats.pnl / dailyTarget;
-        
         if (profitRatio >= 0.8) {
             const floor = sessionStats.pnl * 0.5;
             if (floor > lockedProfitFloor) setLockedProfitFloor(floor);
@@ -195,55 +189,6 @@ export function useCryptoRadarV4(
             if (lockedProfitFloor < 0.01) setLockedProfitFloor(0.01);
         }
     }, [sessionStats.pnl, dailyTarget, lockedProfitFloor]);
-
-    // --- 5. CICLO DE VIDA DE TRADE & POST-MORTEM ---
-    useEffect(() => {
-        if (!user) return;
-
-        const tradesToProcess = operationsLog.filter(op => 
-            op.status !== 'pending' && 
-            op.initiator.startsWith('Conselho') && 
-            !processedTradesRef.current.has(op.id)
-        );
-
-        if (tradesToProcess.length === 0) return;
-
-        tradesToProcess.forEach(async (op) => {
-            processedTradesRef.current.add(op.id);
-            addLog(`[POST-MORTEM] Trade #${op.id} encerrado: ${op.status.toUpperCase()}. P&L: ${op.result}`, 'info', undefined, op.asset);
-            resilience.processResult(op.asset, op.status === 'won');
-
-            try {
-                await TradeMemoryManager.addTrade(user.uid, op.asset, {
-                    id: String(op.id),
-                    timestamp: Date.now(),
-                    contract: op.contractType as any,
-                    result: op.status === 'won' ? 'WIN' : 'LOSS',
-                    pnl: Number(op.result) || 0,
-                    rsi: 50,
-                    volatilityYangZhang: 0,
-                    candlePattern: 'N/A'
-                });
-            } catch (e) {
-                console.warn("[Post-Mortem] Erro:", e);
-            }
-        });
-    }, [operationsLog, user, addLog, resilience]);
-
-    // --- 6. CIRCUIT BREAKER V5 ---
-    useEffect(() => {
-        if (!isAutoMode) return;
-        const hitStopLoss = sessionStats.pnl <= -dailyBalance;
-        const hitTarget = sessionStats.pnl >= dailyTarget;
-        const hitTrailingFloor = lockedProfitFloor > 0 && sessionStats.pnl < lockedProfitFloor;
-
-        if (hitStopLoss || hitTarget || hitTrailingFloor) {
-            setIsAutoMode(false);
-            const reason = hitStopLoss ? `STOP LOSS ($${dailyBalance})` : hitTarget ? `META ($${dailyTarget})` : `TRAILING FLOOR ($${lockedProfitFloor.toFixed(2)})`;
-            addLog(`[CIRCUIT-BREAKER] Piloto desativado: ${reason}.`, 'error');
-            toast({ title: "⚠️ Circuit Breaker Ativado", description: `Proteção financeira acionada: ${reason}`, variant: hitStopLoss || hitTrailingFloor ? "destructive" : "default" });
-        }
-    }, [sessionStats.pnl, dailyBalance, dailyTarget, isAutoMode, addLog, toast, lockedProfitFloor]);
 
     const getCandlesFor = useCallback((symbol: string): CandleData[] => {
         const multi = multiAssetCandles[symbol];
@@ -267,12 +212,10 @@ export function useCryptoRadarV4(
         setReasoningLog([]);
         setChatMessages([]);
         setLockedProfitFloor(0);
-        dailyHighWaterMark.current = 0;
         setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
         scheduleRef.current = {};
         setLastDecision(null);
-        processedTradesRef.current.clear();
-        toast({ title: "Sessão Reiniciada", description: "O cockpit e os limites de risco foram resetados." });
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados foram resetados." });
     }, [clearActiveContracts, toast]);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
@@ -294,9 +237,7 @@ export function useCryptoRadarV4(
                 const data = await res.json();
                 setAvailableModels(data.models || []);
             }
-        } catch (e) {
-            console.error("V4 Models Fetch Error:", e);
-        }
+        } catch (e) {}
     }, [ollamaConfig]);
 
     useEffect(() => {
@@ -308,6 +249,7 @@ export function useCryptoRadarV4(
         const time = new Date().toLocaleTimeString();
         setChatMessages(prev => [...prev, { role: 'user', content, time }]);
         setIsChatLoading(true);
+
         try {
             const context = buildShortContext({ 
                 sentinel: radarStatus, 
@@ -319,13 +261,32 @@ export function useCryptoRadarV4(
                     balance: accountBalance.balance || 0
                 }
             });
+
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\nESTADO FINANCEIRO:\nSaldo: $${accountBalance.balance?.toFixed(2)} | P&L: $${sessionStats.pnl.toFixed(2)} | Lucro Travado: $${lockedProfitFloor.toFixed(2)}\n\n${context}`;
-            const response = await getOllamaResponse(ollamaConfig, content, [{ role: 'system', content: systemPrompt }, ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))]);
-            if (response.success) setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.
+            
+DIRETRIZES RÍGIDAS DE DADOS:
+1. USE APENAS OS DADOS DO DOSSIER ABAIXO.
+2. NUNCA invente ativos (como 'Ativo A') ou preços (como '$100').
+3. Se o dossier mostrar cryBTCUSD e cryETHUSD, responda apenas sobre eles.
+4. Se o usuário perguntar algo que não está no dossier, diga "Dados Não Disponíveis".
+5. Considere o P&L de $${sessionStats.pnl.toFixed(2)} e o Piso de $${lockedProfitFloor.toFixed(2)} para suas sugestões de risco.
+
+${context}`;
+
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+            ]);
+
+            if (response.success) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+            }
         } catch (error: any) {
             setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
-        } finally { setIsChatLoading(false); }
+        } finally {
+            setIsChatLoading(false);
+        }
     };
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
@@ -375,6 +336,7 @@ export function useCryptoRadarV4(
                 ...prev, 
                 [symbol]: { 
                     ...decision, 
+                    features: cryptoFeats,
                     gravity, 
                     timestamp: Date.now(), 
                     isQualified: shouldExecute, 
@@ -383,7 +345,6 @@ export function useCryptoRadarV4(
             }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                const finalStake = stakeValue;
                 if (isShadowMode) {
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar', undefined, symbol);
                 } else {
@@ -391,14 +352,14 @@ export function useCryptoRadarV4(
                     const params: Record<string, any> = {};
                     if (decision.recommendedContract === 'MULTIPLIERS') {
                         finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN';
-                        params.multiplier = multiplier;
+                        params.multiplier = 400;
                     }
-                    const res = await executeTrade(finalContractType, finalStake, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
-                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado via ${decision.recommendedContract}.`, 'execution', undefined, symbol);
+                    const res = await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
+                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado.`, 'execution', undefined, symbol);
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -428,7 +389,6 @@ export function useCryptoRadarV4(
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
         stakeValue, setStakeValue, multiplier, setMultiplier,
-        takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
         dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
