@@ -4,7 +4,7 @@
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Orquestrador central de estado, execução e comunicação com o conselho tático.
- * V5: Implementa Ciclo de Vida de Execução, Post-Mortem e Circuit Breaker.
+ * V5: Implementa Ciclo de Vida de Execução, Post-Mortem, Circuit Breaker e Chat Tático.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -130,12 +130,15 @@ export function useCryptoRadarV4(
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
     // REFS PARA ESTABILIDADE
+    const activeSymbolRef = useRef(activeSymbol);
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
     const chatBusyRef = useRef(false);
     const processedTradesRef = useRef<Set<number>>(new Set());
+
+    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
     // FINANCEIRO REAL-TIME
     const sessionStats = useMemo(() => {
@@ -165,7 +168,6 @@ export function useCryptoRadarV4(
             processedTradesRef.current.add(op.id);
             addLog(`[POST-MORTEM] Trade #${op.id} em ${op.asset} encerrado: ${op.status.toUpperCase()}. P&L: ${op.result}`, 'info', undefined, op.asset);
 
-            // Registro na memória tática
             try {
                 await TradeMemoryManager.addTrade(user.uid, op.asset, {
                     id: String(op.id),
@@ -173,12 +175,11 @@ export function useCryptoRadarV4(
                     contract: op.contractType as any,
                     result: op.status === 'won' ? 'WIN' : 'LOSS',
                     pnl: Number(op.result) || 0,
-                    rsi: 50, // Idealmente extraído dos indicadores do momento da entrada
+                    rsi: 50,
                     volatilityYangZhang: 0,
                     candlePattern: 'N/A'
                 });
                 
-                // Recarrega o buffer local
                 const newBuffer = await TradeMemoryManager.getBuffer(user.uid, op.asset);
                 setMemoryBuffer(newBuffer);
             } catch (e) {
@@ -187,7 +188,7 @@ export function useCryptoRadarV4(
         });
     }, [operationsLog, user, addLog]);
 
-    // --- 4. GOVERNANÇA: CIRCUIT BREAKER V5 ---
+    // --- 4. CIRCUIT BREAKER V5 ---
     useEffect(() => {
         if (!isAutoMode) return;
 
@@ -235,7 +236,42 @@ export function useCryptoRadarV4(
         toast({ title: "Sessão Reiniciada", description: "O cockpit e os limites de risco foram resetados." });
     }, [clearActiveContracts, toast]);
 
-    // --- 6. MOTOR DE ANÁLISE ---
+    // --- 6. CHAT TÁTICO ---
+    const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
+        if (!content.trim() || !ollamaConfig) return;
+        
+        const time = new Date().toLocaleTimeString();
+        const userMsg: ChatMessage = { role: 'user', content, time };
+        setChatMessages(prev => [...prev, userMsg]);
+        setIsChatLoading(true);
+        chatBusyRef.current = true;
+
+        try {
+            const context = buildShortContext({ 
+                sentinel: radarStatus, 
+                lastDecisions: lastDecisionBySymbolRef.current, 
+                staleMinutes 
+            });
+            const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}\n\nREGRAS: use estes dados; cite números. Máximo 120 palavras.`;
+
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+            ]);
+            
+            if (response.success) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+            }
+        } catch (error: any) {
+            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
+        } finally {
+            chatBusyRef.current = false;
+            setIsChatLoading(false);
+        }
+    };
+
+    // --- 7. MOTOR DE ANÁLISE ---
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         
@@ -348,13 +384,10 @@ export function useCryptoRadarV4(
         if (executionLockRef.current || !isConnected) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
-        
-        // Fila de Prioridade: Ativo em foco tem precedência
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
-            
             for (const sym of dueSymbols) {
                 const candles = getCandlesFor(sym);
                 if (candles.length >= 30) {
@@ -365,7 +398,7 @@ export function useCryptoRadarV4(
         }
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
-    // --- EFFECT: PERSISTÊNCIA DE CONFIGURAÇÕES ---
+    // --- 8. PERSISTÊNCIA E INICIALIZAÇÃO ---
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) setOllamaConfig(JSON.parse(savedOllama));
@@ -381,6 +414,20 @@ export function useCryptoRadarV4(
             } catch (e) {}
         }
     }, []);
+
+    const fetchAvailableModelsLocal = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const data = await res.ok ? await res.json() : { models: [] };
+                setAvailableModels(data.models || []);
+            }
+        } catch (e) {}
+    }, [ollamaConfig]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
@@ -410,6 +457,6 @@ export function useCryptoRadarV4(
         runBacktest: (p: number, t: number, e: string[]) => runBacktest([...watchedSymbols, activeSymbol || ''].filter(Boolean).concat(e), p, t),
         backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }),
         staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: () => fetchAvailableModels()
+        ollamaConfig, availableModels, updateOllamaConfig: (upd: any) => setOllamaConfig(prev => prev ? { ...prev, ...upd } : null), fetchAvailableModels: fetchAvailableModelsLocal
     };
 }

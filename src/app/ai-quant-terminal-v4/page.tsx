@@ -50,7 +50,7 @@ function CryptoLabContent() {
         activeSymbol, setActiveSymbol, assetGroups, isAssetsLoading, 
         chartData, isConnected, operationsLog, tradeAnnotations, priceTicks,
         isChartLoading, chartError, chartType, setChartType, timePeriod, setTimePeriod,
-        accountType, accountBalance, setAccountType, setWatchedSymbols, watchedSymbols
+        accountType, accountBalance, setAccountType, watchedSymbols, setWatchedSymbols
     } = useDerivApi();
 
     const { toast } = useToast();
@@ -610,7 +610,7 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200 h-[500px] flex flex-col">
+                    <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200 h-96 flex flex-col">
                         <CardHeader className="py-2 px-4 border-b bg-card/50 flex flex-row items-center justify-between">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
