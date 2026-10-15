@@ -31,7 +31,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, t
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useCryptoRadarV4, type StrategicProfile } from "@/features/trading/hooks/use-crypto-radar-v4";
+import { useCryptoRadarV4 } from "@/features/trading/hooks/use-crypto-radar-v4";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -56,6 +56,7 @@ function CryptoLabContent() {
 
     const { toast } = useToast();
     const v4 = useCryptoRadarV4(activeSymbol, priceTicks, chartData as any);
+    
     const { 
         lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
         isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
@@ -194,7 +195,7 @@ function CryptoLabContent() {
                             </PopoverContent>
                         </Popover>
                         <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-700 uppercase">
-                            Alta Liquidez (BTC/ETH Only)
+                            Alta Liquidez (BTC Leader)
                         </Badge>
                     </div>
                 </CardHeader>

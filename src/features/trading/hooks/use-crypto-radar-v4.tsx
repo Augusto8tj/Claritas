@@ -5,6 +5,7 @@
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Orquestrador central de estado, execução e comunicação com o conselho tático.
  * V5: Implementa Ciclo de Vida de Execução, Post-Mortem, Circuit Breaker e Chat Tático.
+ * FOCO: cryBTCUSD (Referência) e cryETHUSD (Execução/Referência).
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -78,7 +79,10 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. LOGS E TELEMETRIA ---
+    // --- 1. CONFIGURAÇÃO DE CLUSTER PADRÃO ---
+    const DEFAULT_CLUSTER = ['cryBTCUSD', 'cryETHUSD'];
+
+    // --- 2. LOGS E TELEMETRIA ---
     const [reasoningLog, setReasoningLog] = useState<LogEntry[]>([]);
     const [councilStats, setCouncilStats] = useState<CouncilStats>({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
     const [telemetry, setTelemetry] = useState<CouncilTelemetry>({ 
@@ -97,7 +101,7 @@ export function useCryptoRadarV4(
         }, ...prev].slice(0, 300));
     }, []);
 
-    // --- 2. ESTADOS DE CONTROLE V4.2 ---
+    // --- 3. ESTADOS DE CONTROLE V4.2 ---
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
@@ -126,7 +130,15 @@ export function useCryptoRadarV4(
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
-    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
+    
+    const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>({
+        baseUrl: "https://boxlike-barrack-silencer.ngrok-free.dev",
+        apiKey: "augusto123",
+        model: "deepseek-r1:7b",
+        temperature: 0.1,
+        keepAlive: "5m"
+    });
+    
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
     // REFS PARA ESTABILIDADE
@@ -143,7 +155,7 @@ export function useCryptoRadarV4(
     // FINANCEIRO REAL-TIME
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && (op.initiator === 'Conselho_V4' || op.initiator === 'Conselho')
+            op.status !== 'pending' && op.initiator.startsWith('Conselho')
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
@@ -152,22 +164,7 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
-    // MEMÓRIA: Snapshot de Performance Recente para o CIO
-    const recentPerformanceSummary = useMemo(() => {
-        return operationsLog
-            .filter(op => op.initiator.startsWith('Conselho') && op.asset === activeSymbol && op.status !== 'pending')
-            .slice(0, 5)
-            .map(op => ({
-                dir: op.direction,
-                res: op.status,
-                pnl: (Number(op.result) || 0).toFixed(2),
-                entry: (Number(op.entryPrice) || 0).toFixed(4),
-                exit: (Number(op.exitPrice) || 0).toFixed(4),
-                reasoning: op.strategy 
-            }));
-    }, [operationsLog, activeSymbol]);
-
-    // --- 3. CICLO DE VIDA DE TRADE & POST-MORTEM ---
+    // --- 4. CICLO DE VIDA DE TRADE & POST-MORTEM ---
     useEffect(() => {
         if (!user) return;
 
@@ -203,7 +200,7 @@ export function useCryptoRadarV4(
         });
     }, [operationsLog, user, addLog]);
 
-    // --- 4. CIRCUIT BREAKER V5 ---
+    // --- 5. CIRCUIT BREAKER V5 ---
     useEffect(() => {
         if (!isAutoMode) return;
 
@@ -236,7 +233,7 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
-    // --- 5. RESET SESSION ---
+    // --- 6. RESET SESSION ---
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
         setIsShadowMode(true);
@@ -251,7 +248,7 @@ export function useCryptoRadarV4(
         toast({ title: "Sessão Reiniciada", description: "O cockpit e os limites de risco foram resetados." });
     }, [clearActiveContracts, toast]);
 
-    // --- 6. CHAT TÁTICO ---
+    // --- 7. CHAT TÁTICO ---
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
         
@@ -286,7 +283,7 @@ export function useCryptoRadarV4(
         }
     };
 
-    // --- 7. MOTOR DE ANÁLISE ---
+    // --- 8. MOTOR DE ANÁLISE ---
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         
@@ -300,11 +297,22 @@ export function useCryptoRadarV4(
             const baseFeats = computeSignalFeatures(candles as any);
             if (!baseFeats) return;
 
+            // Lógica de Gravidade Fixa: cryBTCUSD é o líder
             let gravity: BitcoinGravity | null = null;
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
-                    gravity = calculateBitcoinGravity(btcCandles as any, candles as any);
+                    gravity = calculateBitcoinGravity(
+                        { 
+                          symbol: 'cryBTCUSD', 
+                          currentPrice: btcCandles[btcCandles.length-1].close, 
+                          rsi: 50, // Simplificado
+                          atrNow: 0.001, // Simplificado
+                          volatilityRatio: 1, 
+                          momentum15m: 0 
+                        } as any, 
+                        { symbol, currentPrice: candles[candles.length-1].close, rsi: baseFeats.rsi, atrNow: 0.001, volatilityRatio: 1, momentum15m: 0 } as any
+                    );
                 }
             }
 
@@ -413,11 +421,8 @@ export function useCryptoRadarV4(
         }
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
-    // --- 8. PERSISTÊNCIA E INICIALIZAÇÃO ---
+    // --- 9. PERSISTÊNCIA E INICIALIZAÇÃO ---
     useEffect(() => {
-        const savedOllama = localStorage.getItem('ollamaConfig');
-        if (savedOllama) setOllamaConfig(JSON.parse(savedOllama));
-
         const savedSettings = localStorage.getItem(SETTINGS_KEY);
         if (savedSettings) {
             try {
@@ -428,7 +433,11 @@ export function useCryptoRadarV4(
                 if (s.dailyTarget) setDailyTarget(s.dailyTarget);
             } catch (e) {}
         }
-    }, []);
+        
+        if (isConnected && watchedSymbols.length === 0) {
+            setWatchedSymbols(DEFAULT_CLUSTER);
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, DEFAULT_CLUSTER]);
 
     const fetchAvailableModelsLocal = useCallback(async () => {
         if (!ollamaConfig?.baseUrl) return;
@@ -438,7 +447,7 @@ export function useCryptoRadarV4(
             if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
             const res = await fetch(url, { headers });
             if (res.ok) {
-                const data = await res.ok ? await res.json() : { models: [] };
+                const data = await res.json();
                 setAvailableModels(data.models || []);
             }
         } catch (e) {}
@@ -448,6 +457,14 @@ export function useCryptoRadarV4(
         const id = setInterval(runMultiAssetCycle, 5000);
         return () => clearInterval(id);
     }, [runMultiAssetCycle]);
+
+    const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
+        setOllamaConfig(prev => {
+            const next = prev ? { ...prev, ...updates } : { ...ollamaConfig, ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+    };
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
@@ -473,6 +490,6 @@ export function useCryptoRadarV4(
         runBacktest: (p: number, t: number, e: string[]) => runBacktest([...watchedSymbols, activeSymbol || ''].filter(Boolean).concat(e), p, t),
         backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }),
         staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig: (upd: any) => setOllamaConfig(prev => prev ? { ...prev, ...upd } : null), fetchAvailableModels: fetchAvailableModelsLocal
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: fetchAvailableModelsLocal
     };
 }
