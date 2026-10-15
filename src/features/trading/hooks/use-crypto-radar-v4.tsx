@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -308,7 +309,16 @@ export function useCryptoRadarV4(
         setChatMessages(prev => [...prev, { role: 'user', content, time }]);
         setIsChatLoading(true);
         try {
-            const context = buildShortContext({ sentinel: radarStatus, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
+            const context = buildShortContext({ 
+                sentinel: radarStatus, 
+                lastDecisions: lastDecisionBySymbolRef.current, 
+                staleMinutes,
+                financialState: {
+                    pnl: sessionStats.pnl,
+                    floor: lockedProfitFloor,
+                    balance: accountBalance.balance || 0
+                }
+            });
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
             const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\nESTADO FINANCEIRO:\nSaldo: $${accountBalance.balance?.toFixed(2)} | P&L: $${sessionStats.pnl.toFixed(2)} | Lucro Travado: $${lockedProfitFloor.toFixed(2)}\n\n${context}`;
             const response = await getOllamaResponse(ollamaConfig, content, [{ role: 'system', content: systemPrompt }, ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))]);
@@ -349,7 +359,7 @@ export function useCryptoRadarV4(
 
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
-            const permissions: AssetExecutionPermission = { symbol, enabled: true, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
+            const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
             const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile }, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
@@ -361,7 +371,16 @@ export function useCryptoRadarV4(
 
             const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold);
 
-            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: shouldExecute, indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } } }));
+            setRadarStatus(prev => ({ 
+                ...prev, 
+                [symbol]: { 
+                    ...decision, 
+                    gravity, 
+                    timestamp: Date.now(), 
+                    isQualified: shouldExecute, 
+                    indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } 
+                } 
+            }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 const finalStake = stakeValue;

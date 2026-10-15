@@ -20,7 +20,7 @@ interface StatusReportParams {
     stats: CouncilStats;
     openPositions: Operation[];
     maxConcurrentTrades: number;
-    lockedProfitFloor?: number; // V5 New
+    lockedProfitFloor?: number; 
     sentinel: Record<string, { features: SignalFeatures | null, candidates: SignalCandidate[], ts: number, gravity?: any }>;
     sentinelCounts?: Record<string, number>;
     lastDecisions: Record<string, { ts: number, decision: CouncilDecision }>;
@@ -68,7 +68,6 @@ export function buildStatusReport(params: StatusReportParams): string {
             const f = sentData.features;
             report += `  Técnico: RSI ${f.rsi} | %B ${f.bbPos.toFixed(2)} | ER ${f.er.toFixed(2)}\n`;
             
-            // Injeção de Gravidade BTC (V4.2 Supreme)
             if (sentData.gravity) {
                 const g = sentData.gravity;
                 report += `  Gravidade: Corr ${g.correlation.toFixed(2)} | Beta ${g.beta.toFixed(2)} | Vector: ${g.btcVector}\n`;
@@ -248,5 +247,5 @@ export function buildShortContext(params: {
         context += `\n`;
     });
     
-    return context.slice(0, 2500); // Segurança de contexto
+    return context.slice(0, 2500); 
 }
