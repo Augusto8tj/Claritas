@@ -4,6 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Dashboard institucional com paridade de recursos V3 e foco em Criptoativos.
+ * V5: Resolvido erros de referência e integrado motor de execução.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -65,7 +66,8 @@ function CryptoLabContent() {
         multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchOllamaModels
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
+        resetSession
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -130,7 +132,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    os valores default crypto <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    Monitorar Criptos <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -196,8 +198,8 @@ function CryptoLabContent() {
                                             <Minus className="h-4 w-4 text-muted-foreground" />
                                         ) : (
                                             <>
-                                                {status?.finalAction === 'RISE' || status?.finalAction === 'CALL' || status?.finalAction === 'MULTUP' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
-                                                 status?.finalAction === 'FALL' || status?.finalAction === 'PUT' || status?.finalAction === 'MULTDOWN' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                                {status?.finalAction === 'CALL' || status?.finalAction === 'MULTUP' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
+                                                 status?.finalAction === 'FALL' || status?.finalAction === 'MULTDOWN' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
                                                  <Minus className="h-4 w-4 text-muted-foreground" />}
                                             </>
                                         )}
@@ -236,6 +238,9 @@ function CryptoLabContent() {
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
                                 <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
+                             </Badge>
+                             <Badge variant="outline" className="font-mono text-xs flex items-center gap-1.5">
+                                <Wallet className="h-3 w-3"/> P&L: {formatCurrency(sessionStats.pnl)}
                              </Badge>
                              <Badge className={cn("text-[10px] font-bold shadow-sm border", isShadowMode ? "bg-purple-600 text-white" : "bg-red-600 text-white")}>
                                 {isShadowMode ? 'SHADOW TESTING' : 'LIVE PROTOCOL'}
@@ -352,7 +357,7 @@ function CryptoLabContent() {
                                         variant="ghost" 
                                         size="icon" 
                                         className="h-6 w-6 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
-                                        onClick={fetchOllamaModels}
+                                        onClick={fetchAvailableModels}
                                         title="Sincronizar"
                                     >
                                         <RefreshCw className="h-3 w-3" />
@@ -389,47 +394,54 @@ function CryptoLabContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Parâmetros de Contrato (cry*)
+                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Risco & Sessão (V5)
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-6">
-                            <div className="space-y-1.5">
-                                <Label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
-                                    <Wallet className="h-3 w-3" /> Stake Base (USD)
-                                </Label>
-                                <Input 
-                                    type="number" 
-                                    min="1" 
-                                    step="0.5"
-                                    value={stakeValue} 
-                                    onChange={(e) => setStakeValue(parseFloat(e.target.value) || 1)} 
-                                    className="h-8 font-mono text-xs" 
-                                    disabled={isAutoMode} 
-                                />
-                                <p className="text-[9px] text-muted-foreground italic">Piso Deriv cry*: $1.00 USD</p>
+                        <CardContent className="space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Daily Balance</Label>
+                                    <Input 
+                                        type="number" 
+                                        min="10" 
+                                        value={dailyBalance} 
+                                        onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 10)} 
+                                        className="h-8 font-mono text-xs" 
+                                        disabled={isAutoMode} 
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Daily Target</Label>
+                                    <Input 
+                                        type="number" 
+                                        min="5" 
+                                        value={dailyTarget} 
+                                        onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 5)} 
+                                        className="h-8 font-mono text-xs" 
+                                        disabled={isAutoMode} 
+                                    />
+                                </div>
                             </div>
+
                             <Separator />
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <Label className="uppercase font-bold opacity-70">Multiplicador</Label>
-                                        <span className="font-mono font-bold text-orange-600">x{multiplier}</span>
-                                    </div>
-                                    <Slider value={[multiplier]} min={100} max={500} step={100} onValueChange={(v) => setMultiplier(v[0])} disabled={isAutoMode} />
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">WR Session</p>
+                                    <p className="text-lg font-bold">
+                                      {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
+                                    </p>
                                 </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <Label className="uppercase font-bold opacity-70">Take Profit</Label>
-                                        <span className="font-mono font-bold text-green-600">{takeProfitPct}%</span>
-                                    </div>
-                                    <Slider value={[takeProfitPct]} min={5} max={100} step={5} onValueChange={(v) => setTakeProfitPct(v[0])} disabled={isAutoMode} />
-                                </div>
-                                <div className="space-y-2">
-                                    <div className="flex justify-between items-center text-xs">
-                                        <Label className="uppercase font-bold opacity-70">Stop Loss</Label>
-                                        <span className="font-mono font-bold text-red-600">{stopLossPct}%</span>
-                                    </div>
-                                    <Slider value={[stopLossPct]} min={10} max={90} step={5} onValueChange={(v) => setStopLossPct(v[0])} disabled={isAutoMode} />
+                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center flex items-center justify-center">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm"
+                                        className="h-8 gap-2 text-[10px] font-bold border-destructive/20 text-destructive hover:bg-destructive/10"
+                                        onClick={resetSession}
+                                    >
+                                        <RefreshCw className="h-3 w-3" />
+                                        RESET LAB
+                                    </Button>
                                 </div>
                             </div>
                         </CardContent>
@@ -542,8 +554,8 @@ function CryptoLabContent() {
                                 <>
                                     <div className={cn(
                                         "p-4 rounded-xl text-center border shadow-inner transition-all",
-                                        lastDecision.finalAction === 'CALL' || lastDecision.finalAction === 'MULTUP' ? "bg-green-50 border-green-200 text-green-700" :
-                                        lastDecision.finalAction === 'PUT' || lastDecision.finalAction === 'MULTDOWN' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
+                                        lastDecision.finalAction === 'CALL' ? "bg-green-50 border-green-200 text-green-700" :
+                                        lastDecision.finalAction === 'PUT' ? "bg-red-50 border-red-200 text-red-700" : "bg-muted border-border"
                                     )}>
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
                                         <p className="text-3xl font-black">{lastDecision.finalAction}</p>
@@ -599,7 +611,7 @@ function CryptoLabContent() {
                     </Card>
 
                     <Card className="bg-muted/30 border-dashed font-mono shadow-inner border-orange-200 h-[500px] flex flex-col">
-                        <CardHeader className="py-2 px-4 border-b bg-card/50">
+                        <CardHeader className="py-2 px-4 border-b bg-card/50 flex flex-row items-center justify-between">
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>

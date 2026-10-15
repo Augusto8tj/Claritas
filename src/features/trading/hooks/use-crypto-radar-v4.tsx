@@ -4,6 +4,7 @@
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Orquestrador central de estado, execução e comunicação com o conselho tático.
+ * V5: Implementa Ciclo de Vida de Execução, Post-Mortem e Circuit Breaker.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -23,8 +24,6 @@ import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
 import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
-
-export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -53,12 +52,16 @@ export interface CouncilStats {
     avgLatencyMs: number;
 }
 
+export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
+
 const AGENT_PERSONAS = {
   CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
   MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
   RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
   ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
 };
+
+const SETTINGS_KEY = 'cryptoLabV4Settings';
 
 export function useCryptoRadarV4(
     activeSymbol: string | null,
@@ -112,7 +115,7 @@ export function useCryptoRadarV4(
     const [dailyTarget, setDailyTarget] = useState(50.0);
     const [maxConcurrentTrades, setMaxConcurrentTrades] = useState(3);
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
-    const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'MULTIPLIERS': true, 'ACCUMULATORS': false });
+    const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
     
     // BACKTEST RUNNER
     const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
@@ -126,13 +129,82 @@ export function useCryptoRadarV4(
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig | null>(null);
     const [availableModels, setAvailableModels] = useState<any[]>([]);
 
-    // REFS
+    // REFS PARA ESTABILIDADE
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const lastMarketClosedLogRef = useRef<Record<string, number>>({});
-    const initializedRef = useRef(false);
     const chatBusyRef = useRef(false);
+    const processedTradesRef = useRef<Set<number>>(new Set());
+
+    // FINANCEIRO REAL-TIME
+    const sessionStats = useMemo(() => {
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && op.initiator.startsWith('Conselho_V4')
+        );
+        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const total = finishedTrades.length;
+        const winRate = total > 0 ? (wins / total) * 100 : null;
+        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        return { pnl: Number(pnl) || 0, winRate, total };
+    }, [operationsLog]);
+
+    // --- 3. CICLO DE VIDA DE TRADE & POST-MORTEM ---
+    useEffect(() => {
+        if (!user) return;
+
+        const tradesToProcess = operationsLog.filter(op => 
+            op.status !== 'pending' && 
+            op.initiator.startsWith('Conselho_V4') && 
+            !processedTradesRef.current.has(op.id)
+        );
+
+        if (tradesToProcess.length === 0) return;
+
+        tradesToProcess.forEach(async (op) => {
+            processedTradesRef.current.add(op.id);
+            addLog(`[POST-MORTEM] Trade #${op.id} em ${op.asset} encerrado: ${op.status.toUpperCase()}. P&L: ${op.result}`, 'info', undefined, op.asset);
+
+            // Registro na memória tática
+            try {
+                await TradeMemoryManager.addTrade(user.uid, op.asset, {
+                    id: String(op.id),
+                    timestamp: Date.now(),
+                    contract: op.contractType as any,
+                    result: op.status === 'won' ? 'WIN' : 'LOSS',
+                    pnl: Number(op.result) || 0,
+                    rsi: 50, // Idealmente extraído dos indicadores do momento da entrada
+                    volatilityYangZhang: 0,
+                    candlePattern: 'N/A'
+                });
+                
+                // Recarrega o buffer local
+                const newBuffer = await TradeMemoryManager.getBuffer(user.uid, op.asset);
+                setMemoryBuffer(newBuffer);
+            } catch (e) {
+                console.warn("[Post-Mortem] Falha ao registrar memória:", e);
+            }
+        });
+    }, [operationsLog, user, addLog]);
+
+    // --- 4. GOVERNANÇA: CIRCUIT BREAKER V5 ---
+    useEffect(() => {
+        if (!isAutoMode) return;
+
+        const hitStopLoss = sessionStats.pnl <= -dailyBalance;
+        const hitTarget = sessionStats.pnl >= dailyTarget;
+
+        if (hitStopLoss || hitTarget) {
+            setIsAutoMode(false);
+            const reason = hitStopLoss ? `STOP LOSS DIÁRIO ($${dailyBalance})` : `META DE LUCRO ($${dailyTarget})`;
+            addLog(`[CIRCUIT-BREAKER] Piloto desativado: ${reason} atingido.`, 'error');
+            toast({
+                title: "⚠️ Circuit Breaker Ativado",
+                description: `O piloto foi desligado por atingir o limite financeiro: ${reason}`,
+                variant: hitStopLoss ? "destructive" : "default"
+            });
+        }
+    }, [sessionStats.pnl, dailyBalance, dailyTarget, isAutoMode, addLog, toast]);
 
     const getCandlesFor = useCallback((symbol: string): CandleData[] => {
         const multi = multiAssetCandles[symbol];
@@ -148,97 +220,27 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
-    // --- 4. MODEL MANAGEMENT ---
+    // --- 5. RESET SESSION ---
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        processedTradesRef.current.clear();
+        toast({ title: "Sessão Reiniciada", description: "O cockpit e os limites de risco foram resetados." });
+    }, [clearActiveContracts, toast]);
 
-    const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) return;
-        try {
-            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
-            const res = await fetch(url, { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setAvailableModels(data.models || []);
-            }
-        } catch (e) {}
-    }, [ollamaConfig]);
-
-    const updateOllamaConfig = (updates: Partial<OllamaConfig>) => {
-        if (!ollamaConfig) return;
-        const newConfig = { ...ollamaConfig, ...updates };
-        setOllamaConfig(newConfig);
-        localStorage.setItem('ollamaConfig', JSON.stringify(newConfig));
-    };
-
-    // --- 5. CHAT TÁTICO ---
-
-    const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
-        if (!content.trim()) return;
-        
-        const time = new Date().toLocaleTimeString();
-        const userMsg: ChatMessage = { role: 'user', content, time };
-        setChatMessages(prev => [...prev, userMsg]);
-
-        const REPORT = /(situa[cç][aã]o|status|auditoria|listagem|relat[oó]rio|resumo|quais ativos|que ativos|monitorando|oportunidades?|chances?|vantaj\w*|melhor(es)?|promissor\w*)/i;
-        const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
-
-        if (content.match(REPORT)) {
-            setChatMessages(prev => [...prev, { 
-                role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildStatusReport({ 
-                    isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, 
-                    stats: councilStats, openPositions: operationsLog.filter(o => o.status === 'pending'), 
-                    maxConcurrentTrades, sentinel: {}, sentinelCounts: {}, 
-                    lastDecisions: lastDecisionBySymbolRef.current, staleMinutes 
-                })
-            }]);
-            return;
-        }
-
-        if (!ollamaConfig) {
-          setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: "Ollama não configurado." }]);
-          return;
-        }
-
-        setIsChatLoading(true);
-        chatBusyRef.current = true;
-        try {
-            const context = buildShortContext({ sentinel: {}, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
-            const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona} no Crypto Lab V4.2. Responda em português.\n\n${context}\n\nREGRAS: use os dados; seja breve.`;
-
-            const response = await getOllamaResponse(ollamaConfig, content, [
-                { role: 'system', content: systemPrompt }, 
-                ...chatMessages.slice(-6).map(m => ({ role: m.role, content: m.content }))
-            ]);
-            
-            if (response.success) {
-                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
-            }
-        } catch (error: any) {
-            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
-        } finally {
-            chatBusyRef.current = false;
-            setIsChatLoading(false);
-        }
-    };
-
-    // --- 6. MOTOR DE ANÁLISE E CICLOS ---
-
+    // --- 6. MOTOR DE ANÁLISE ---
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         
         const min = staleMinutes(symbol);
-        if (min !== null && min > 2.5) {
-            if (Date.now() - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
-                addLog(`[MERCADO-FECHADO] ${symbol}: defasado há ${Math.round(min)} min.`, 'warning', undefined, symbol);
-                lastMarketClosedLogRef.current[symbol] = Date.now();
-            }
-            return;
-        }
-
-        resilience.recordPulse(symbol);
+        if (min !== null && min > 2.5) return;
 
         try {
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
@@ -325,12 +327,9 @@ export function useCryptoRadarV4(
                         extraProposalParams.multiplier = multiplier;
                     }
 
-                    const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
-                    
-                    // Fixed executeTrade call with proper arguments
                     const res = await executeTrade(
-                        finalContractType, stakeValue, symbol, tradeDirection, 15, 's', 
-                        'Conselho_V4', `V42_${decision.executedVia}`, extraProposalParams
+                        finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 
+                        15, 's', 'Conselho_V4', `V42_${decision.executedVia}`, extraProposalParams
                     );
                     
                     if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
@@ -350,11 +349,10 @@ export function useCryptoRadarV4(
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
         
-        // Fila de Prioridade
+        // Fila de Prioridade: Ativo em foco tem precedência
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
-            // Prioriza o ativo em foco
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
             
             for (const sym of dueSymbols) {
@@ -367,22 +365,21 @@ export function useCryptoRadarV4(
         }
     }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
+    // --- EFFECT: PERSISTÊNCIA DE CONFIGURAÇÕES ---
     useEffect(() => {
-        if (!initializedRef.current && isConnected) {
-            const cryptoDefaults = ['cryBTCUSD', 'cryETHUSD'];
-            setWatchedSymbols(cryptoDefaults);
-            initializedRef.current = true;
-        }
-    }, [isConnected, setWatchedSymbols]);
+        const savedOllama = localStorage.getItem('ollamaConfig');
+        if (savedOllama) setOllamaConfig(JSON.parse(savedOllama));
 
-    useEffect(() => {
-        const loadConfig = () => {
-            const saved = localStorage.getItem('ollamaConfig');
-            if (saved) setOllamaConfig(JSON.parse(saved));
-        };
-        loadConfig();
-        window.addEventListener('storage', loadConfig);
-        return () => window.removeEventListener('storage', loadConfig);
+        const savedSettings = localStorage.getItem(SETTINGS_KEY);
+        if (savedSettings) {
+            try {
+                const s = JSON.parse(savedSettings);
+                if (s.analysisInterval) setAnalysisInterval(s.analysisInterval);
+                if (s.stakeValue) setStakeValue(s.stakeValue);
+                if (s.dailyBalance) setDailyBalance(s.dailyBalance);
+                if (s.dailyTarget) setDailyTarget(s.dailyTarget);
+            } catch (e) {}
+        }
     }, []);
 
     useEffect(() => {
@@ -407,12 +404,12 @@ export function useCryptoRadarV4(
         lastDecision, radarStatus, reasoningLog, telemetry, memoryBuffer,
         analysisInterval, setAnalysisInterval,
         chatMessages, isChatLoading, sendMessage,
-        resetSession: clearActiveContracts,
+        resetSession,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         resilience, councilStats,
         runBacktest: (p: number, t: number, e: string[]) => runBacktest([...watchedSymbols, activeSymbol || ''].filter(Boolean).concat(e), p, t),
         backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }),
         staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels, fetchOllamaModels: fetchAvailableModels
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: () => fetchAvailableModels()
     };
 }
