@@ -25,7 +25,7 @@ import {
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
     MessageSquare, Send, Gauge, Brain, User, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
-    TestTube, HardDrive
+    TestTube, HardDrive, Info
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -228,7 +228,7 @@ function CryptoLabContent() {
                                         ) : (
                                             <>
                                                 {status?.finalAction === 'CALL' || status?.finalAction === 'MULTUP' ? <TrendingUp className="h-4 w-4 text-green-500" /> : 
-                                                 status?.finalAction === 'FALL' || status?.finalAction === 'MULTDOWN' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
+                                                 status?.finalAction === 'FALL' || status?.finalAction === 'PUT' ? <TrendingDown className="h-4 w-4 text-red-500" /> : 
                                                  <Minus className="h-4 w-4 text-muted-foreground" />}
                                             </>
                                         )}
@@ -715,7 +715,7 @@ function CryptoLabContent() {
                                                 {log.details && log.details.length > 0 && <ChevronRight className={cn("h-2.5 w-2.5 transition-transform opacity-30 group-hover:opacity-100", expandedLogTs === log.ts && "rotate-90")} />}
                                             </div>
                                             {expandedLogTs === log.ts && log.details && (
-                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-purple-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
+                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-orange-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
                                                     {log.details.join('\n')}
                                                 </div>
                                             )}

@@ -1,12 +1,11 @@
 
-// /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview QUANT RADAR V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V5: Implementa Ciclo de Vida de Execução, Post-Mortem, Circuit Breaker,
  * Trailing Profit Floor e Motor Polimórfico de Contratos.
- * BTC/ETH Cluster como padrão.
+ * cryBTCUSD é o líder de referência.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -229,7 +228,6 @@ export function useCryptoRadarV4(
             return true; // Simplificado para o protótipo
         }
         
-        // Simulação de chamada contracts_for (em um app real seria makeRequest)
         contractsCacheRef.current[symbol] = { ts: now, data: true };
         return true;
     };
@@ -297,6 +295,34 @@ export function useCryptoRadarV4(
         processedTradesRef.current.clear();
         toast({ title: "Sessão Reiniciada", description: "O cockpit e os limites de risco foram resetados." });
     }, [clearActiveContracts, toast]);
+
+    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
+        setOllamaConfig(prev => {
+            const next = { ...prev, ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+    }, []);
+
+    const fetchAvailableModelsLocal = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableModels(data.models || []);
+            }
+        } catch (e) {
+            console.error("V4 Models Fetch Error:", e);
+        }
+    }, [ollamaConfig]);
+
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl) fetchAvailableModelsLocal();
+    }, [ollamaConfig?.baseUrl, fetchAvailableModelsLocal]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
@@ -415,6 +441,16 @@ export function useCryptoRadarV4(
         return () => clearInterval(id);
     }, [runMultiAssetCycle]);
 
+    const buildReport = useCallback(() => {
+        return buildBacktestReport({ 
+            ts: backtest.ts, 
+            payoutPct: backtest.payoutPct, 
+            assetMeta: backtest.assetMeta, 
+            merged: backtest.merged, 
+            perAsset: backtest.perAsset 
+        });
+    }, [backtest]);
+
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
@@ -430,7 +466,7 @@ export function useCryptoRadarV4(
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: () => {}
+        resilience, councilStats, runBacktest, backtest, buildBacktestReport: buildReport, staleMinutes,
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels: fetchAvailableModelsLocal
     };
 }

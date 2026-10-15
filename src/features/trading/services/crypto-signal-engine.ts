@@ -29,7 +29,6 @@ export interface EnhancedSignalCandidate extends SignalCandidate {
 
 /**
  * Seleciona o melhor tipo de contrato baseado na microestrutura e gravidade.
- * ADITIVO: Não altera regras de pontuação existentes.
  */
 export function polymorphicContractSelector(
   symbol: string,
@@ -44,12 +43,11 @@ export function polymorphicContractSelector(
   }
 
   // 2. Prioridade RISE_FALL_15M: Drift estável ou Exaustão com Baixa Entropia
-  // Requisito: Tendência limpa (ER > 0.6) e consenso unânime (Entropia < 0.3)
   if (f.er > 0.6 && entropy < 0.3 && Math.abs(f.rsi - 50) > 10) {
     return 'RISE_FALL_15M';
   }
 
-  // 3. Fallback: Options padrão para momentum de curto prazo
+  // 3. Fallback: Options padrão
   return 'OPTIONS';
 }
 
@@ -70,7 +68,7 @@ export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): 
     if (gravity) {
       const gravityWeight = gravity.gravityScore * 0.4;
       const momentumWeight = c.score * 0.35;
-      const volatilityWeight = (f.er * 100) * 0.25; // Eficiência de Kaufman
+      const volatilityWeight = (f.er * 100) * 0.25; 
       setupScore = gravityWeight + momentumWeight + volatilityWeight;
       
       if (gravity.vetoReason) {
@@ -98,20 +96,20 @@ export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): 
     const takeProfit = c.direction === 'CALL' ? f.price + takeProfitDist : f.price - takeProfitDist;
     const payoffRatio = takeProfitDist / stopLossDist;
 
-    // 4. SELEÇÃO POLIMÓRFICA (Entropia simulada em 0.2 para cálculo do Sentinel)
+    // 4. SELEÇÃO POLIMÓRFICA
     const recommendedContractMode = polymorphicContractSelector(symbol, f, 0.2);
 
     return {
       ...c,
       setupScore: Math.round(setupScore),
-      score: Math.round(setupScore), // Mantém compatibilidade com interface base
+      score: Math.round(setupScore), 
       reasons,
       stopLoss,
       takeProfit,
       payoffRatio,
       isExhausted,
       recommendedContractMode,
-      direction: setupScore > 75 ? c.direction : 'NONE' // Gatilho de Precisão > 75
+      direction: setupScore > 75 ? c.direction : 'NONE' 
     } as EnhancedSignalCandidate;
   });
 }
