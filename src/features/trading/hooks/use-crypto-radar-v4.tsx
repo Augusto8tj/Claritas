@@ -1,4 +1,4 @@
-// /src/features/trading/hooks/use-crypto-radar-v4.tsx
+
 'use client';
 
 /**
@@ -143,7 +143,7 @@ export function useCryptoRadarV4(
     // FINANCEIRO REAL-TIME
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
-            op.status !== 'pending' && op.initiator.startsWith('Conselho_V4')
+            op.status !== 'pending' && (op.initiator === 'Conselho_V4' || op.initiator === 'Conselho')
         );
         const wins = finishedTrades.filter(op => op.status === 'won').length;
         const total = finishedTrades.length;
@@ -152,13 +152,28 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
+    // MEMÓRIA: Snapshot de Performance Recente para o CIO
+    const recentPerformanceSummary = useMemo(() => {
+        return operationsLog
+            .filter(op => op.initiator.startsWith('Conselho') && op.asset === activeSymbol && op.status !== 'pending')
+            .slice(0, 5)
+            .map(op => ({
+                dir: op.direction,
+                res: op.status,
+                pnl: (Number(op.result) || 0).toFixed(2),
+                entry: (Number(op.entryPrice) || 0).toFixed(4),
+                exit: (Number(op.exitPrice) || 0).toFixed(4),
+                reasoning: op.strategy 
+            }));
+    }, [operationsLog, activeSymbol]);
+
     // --- 3. CICLO DE VIDA DE TRADE & POST-MORTEM ---
     useEffect(() => {
         if (!user) return;
 
         const tradesToProcess = operationsLog.filter(op => 
             op.status !== 'pending' && 
-            op.initiator.startsWith('Conselho_V4') && 
+            op.initiator.startsWith('Conselho') && 
             !processedTradesRef.current.has(op.id)
         );
 
@@ -452,6 +467,7 @@ export function useCryptoRadarV4(
         analysisInterval, setAnalysisInterval,
         chatMessages, isChatLoading, sendMessage,
         resetSession,
+        sessionStats,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         resilience, councilStats,
         runBacktest: (p: number, t: number, e: string[]) => runBacktest([...watchedSymbols, activeSymbol || ''].filter(Boolean).concat(e), p, t),

@@ -1,10 +1,11 @@
+
 // /src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Dashboard institucional com paridade de recursos V3 e foco em Criptoativos.
- * V5: Resolvido erros de referência e integrado motor de execução.
+ * V5: Integrado motor de execução, Post-Mortem e Circuit Breaker.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -67,7 +68,7 @@ function CryptoLabContent() {
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        resetSession
+        resetSession, sessionStats
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -109,14 +110,44 @@ function CryptoLabContent() {
         }
     };
 
-    const handleRunBacktest = () => {
+    const handleRunBacktest = useCallback(() => {
         runBacktest(payoutInput, targetCount, extraBacktestSymbols);
-    };
+    }, [runBacktest, payoutInput, targetCount, extraBacktestSymbols]);
 
     const copyLogs = () => {
         const text = filteredLogs.map(l => `[${l.time}] ${l.message}`).join('\n');
         navigator.clipboard.writeText(text);
         toast({ title: "Logs copiados!" });
+    };
+
+    const renderMessageContent = (content: string) => {
+        const thinkRegex = /<think>([\s\S]*?)<\/think>/i;
+        const match = content.match(thinkRegex);
+
+        if (match) {
+            const thinkText = match[1].trim();
+            const mainContent = content.replace(thinkRegex, '').trim();
+            
+            return (
+                <div className="space-y-2">
+                    <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="think" className="border-none">
+                            <AccordionTrigger className="py-1 px-2 text-[10px] bg-orange-500/5 hover:bg-orange-500/10 rounded-md hover:no-underline text-orange-600 font-bold uppercase tracking-widest">
+                                <div className="flex items-center gap-2">
+                                    <Brain className="h-3 w-3" /> Raciocínio Interno (Deep Think)
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-2 px-2 text-[11px] font-mono text-muted-foreground border-l-2 border-orange-500/30 whitespace-pre-wrap leading-relaxed">
+                                {thinkText}
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
+                    <p className="font-mono whitespace-pre-wrap">{mainContent}</p>
+                </div>
+            );
+        }
+
+        return <p className="font-mono whitespace-pre-wrap">{content}</p>;
     };
 
     return (
@@ -512,7 +543,7 @@ function CryptoLabContent() {
                                             <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
                                                 {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
                                             </span>
-                                            <p className="font-mono text-foreground">{msg.content}</p>
+                                            {msg.role === 'assistant' ? renderMessageContent(msg.content) : <p className="font-mono whitespace-pre-wrap">{msg.content}</p>}
                                         </div>
                                     ))}
                                     {isChatLoading && (
@@ -588,13 +619,21 @@ function CryptoLabContent() {
                         <CardContent className="p-4 space-y-4">
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold">Payout (%)</Label>
-                                    <Input type="number" value={payoutInput} onChange={(e) => setPayoutInput(Number(e.target.value))} className="h-8 text-xs font-mono" />
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout (%)</Label>
+                                    <Input 
+                                        type="number" 
+                                        value={payoutInput} 
+                                        onChange={(e) => setPayoutInput(Number(e.target.value))}
+                                        className="h-8 text-xs font-mono"
+                                        min={50} max={100}
+                                    />
                                 </div>
                                 <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold">Candles por ativo</Label>
+                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Candles por ativo</Label>
                                     <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
-                                        <SelectTrigger className="h-8 text-xs font-mono"><SelectValue /></SelectTrigger>
+                                        <SelectTrigger className="h-8 text-xs font-mono">
+                                            <SelectValue />
+                                        </SelectTrigger>
                                         <SelectContent>
                                             <SelectItem value="20000">20k</SelectItem>
                                             <SelectItem value="40000">40k</SelectItem>
@@ -603,10 +642,15 @@ function CryptoLabContent() {
                                     </Select>
                                 </div>
                             </div>
-                            <Button onClick={handleRunBacktest} disabled={backtest.running} size="sm" className="w-full h-8 bg-orange-600 text-white font-bold">
+                            <Button 
+                                onClick={handleRunBacktest} 
+                                disabled={backtest.running}
+                                size="sm"
+                                className="w-full h-8 bg-orange-600 text-white font-bold"
+                            >
                                 {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
                             </Button>
-                            {backtest.progress && <p className="text-[9px] text-center text-orange-600 animate-pulse font-bold">{backtest.progress}</p>}
+                            {backtest.progress && <p className="text-[10px] text-center text-orange-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
                         </CardContent>
                     </Card>
 
@@ -630,33 +674,44 @@ function CryptoLabContent() {
                              </div>
                              <div className="flex gap-2">
                                 {['all', 'decision', 'sentinel', 'execution', 'error'].map(f => (
-                                    <Badge key={f} variant={logFilter === f ? 'default' : 'outline'} className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-black" onClick={() => setLogFilter(f as any)}>
+                                    <Badge 
+                                        key={f} 
+                                        variant={logFilter === f ? 'default' : 'outline'} 
+                                        className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-black tracking-tighter"
+                                        onClick={() => setLogFilter(f as any)}
+                                    >
                                         {f === 'decision' ? 'Conselho' : f === 'sentinel' ? 'Sentinela' : f === 'execution' ? 'Execução' : f === 'error' ? 'Erros' : 'Todos'}
                                     </Badge>
                                 ))}
                              </div>
                         </div>
                         <CardContent className="p-0 flex-1 overflow-hidden relative">
-                            <ScrollArea className="h-full p-4 text-xs font-mono">
-                                {filteredLogs.map((log, i) => (
-                                    <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
-                                        <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
-                                            <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
-                                            {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-orange-200 text-orange-600">{log.symbol}</Badge>}
-                                            <span className={cn(
-                                                "font-medium break-words",
-                                                log.type === 'decision' ? "text-orange-600 font-bold" : 
-                                                log.type === 'execution' ? "text-green-600 font-bold" : 
-                                                log.type === 'warning' ? "text-amber-600" : "text-muted-foreground"
-                                            )}>{log.message}</span>
-                                        </div>
-                                        {expandedLogTs === log.ts && log.details && (
-                                            <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-orange-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
-                                                {log.details.join('\n')}
+                            <ScrollArea className="h-full p-4 text-[10px]">
+                                {filteredLogs.length === 0 ? (
+                                    <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
+                                ) : (
+                                    filteredLogs.map((log, i) => (
+                                        <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
+                                            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
+                                                <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
+                                                {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-orange-200 text-orange-600">{log.symbol}</Badge>}
+                                                <span className={cn(
+                                                    "font-medium break-words",
+                                                    log.type === 'decision' ? "text-orange-600 font-bold" : 
+                                                    log.type === 'execution' ? "text-green-600 font-bold" : 
+                                                    log.type === 'sentinel' ? "text-blue-500" :
+                                                    (log.type === 'error' || log.type === 'warning') ? "text-red-600" : "text-muted-foreground"
+                                                )}>{log.message}</span>
+                                                {log.details && log.details.length > 0 && <ChevronRight className={cn("h-2.5 w-2.5 transition-transform opacity-30 group-hover:opacity-100", expandedLogTs === log.ts && "rotate-90")} />}
                                             </div>
-                                        )}
-                                    </div>
-                                ))}
+                                            {expandedLogTs === log.ts && log.details && (
+                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-orange-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
+                                                    {log.details.join('\n')}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                )}
                             </ScrollArea>
                         </CardContent>
                     </Card>
