@@ -164,7 +164,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    Monitorar Criptos <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    Configurar Cluster BTC/ETH <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -195,7 +195,7 @@ function CryptoLabContent() {
                             </PopoverContent>
                         </Popover>
                         <Badge variant="outline" className="text-[9px] border-orange-500/30 text-orange-700 uppercase">
-                            Alta Liquidez (BTC Leader)
+                            cryBTCUSD LÍDER ATIVO
                         </Badge>
                     </div>
                 </CardHeader>

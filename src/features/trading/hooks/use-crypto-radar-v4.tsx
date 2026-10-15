@@ -79,7 +79,7 @@ export function useCryptoRadarV4(
     const { toast } = useToast();
     const resilience = useAdaptiveResilience();
 
-    // --- 1. CONFIGURAÇÃO DE CLUSTER PADRÃO ---
+    // --- 1. CONFIGURAÇÃO DE CLUSTER PADRÃO BTC/ETH ---
     const DEFAULT_CLUSTER = ['cryBTCUSD', 'cryETHUSD'];
 
     // --- 2. LOGS E TELEMETRIA ---
@@ -146,8 +146,6 @@ export function useCryptoRadarV4(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
-    const lastMarketClosedLogRef = useRef<Record<string, number>>({});
-    const chatBusyRef = useRef(false);
     const processedTradesRef = useRef<Set<number>>(new Set());
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
@@ -256,7 +254,6 @@ export function useCryptoRadarV4(
         const userMsg: ChatMessage = { role: 'user', content, time };
         setChatMessages(prev => [...prev, userMsg]);
         setIsChatLoading(true);
-        chatBusyRef.current = true;
 
         try {
             const context = buildShortContext({ 
@@ -278,7 +275,6 @@ export function useCryptoRadarV4(
         } catch (error: any) {
             setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
         } finally {
-            chatBusyRef.current = false;
             setIsChatLoading(false);
         }
     };
@@ -306,8 +302,8 @@ export function useCryptoRadarV4(
                         { 
                           symbol: 'cryBTCUSD', 
                           currentPrice: btcCandles[btcCandles.length-1].close, 
-                          rsi: 50, // Simplificado
-                          atrNow: 0.001, // Simplificado
+                          rsi: 50, 
+                          atrNow: 0.001, 
                           volatilityRatio: 1, 
                           momentum15m: 0 
                         } as any, 
@@ -404,9 +400,11 @@ export function useCryptoRadarV4(
     }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, resilience, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
 
     const runMultiAssetCycle = useCallback(async () => {
-        if (executionLockRef.current || !isConnected) return;
+        if (!isConnected || executionLockRef.current) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
+        
+        // Prioridade para o ativo em foco
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
@@ -434,6 +432,7 @@ export function useCryptoRadarV4(
             } catch (e) {}
         }
         
+        // Inicializa cluster padrão BTC/ETH
         if (isConnected && watchedSymbols.length === 0) {
             setWatchedSymbols(DEFAULT_CLUSTER);
         }
