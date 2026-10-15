@@ -5,7 +5,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * Dashboard institucional com paridade de recursos V3 e foco em Criptoativos.
- * V5: Integrado motor de execução, Post-Mortem e Circuit Breaker.
+ * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -24,14 +24,14 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Globe, Coins, Brain, Sparkles, User, Info, ShieldAlert, AlertCircle, Lock, Unlock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
+    MessageSquare, Send, Gauge, Brain, User, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
     TestTube, HardDrive
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useCryptoRadarV4 } from "@/features/trading/hooks/use-crypto-radar-v4";
+import { useCryptoRadarV4, type StrategicProfile } from "@/features/trading/hooks/use-crypto-radar-v4";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -69,7 +69,7 @@ function CryptoLabContent() {
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        resetSession, sessionStats
+        resetSession, sessionStats, lockedProfitFloor
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -79,7 +79,6 @@ function CryptoLabContent() {
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
 
-    // Backtest Config
     const [payoutInput, setPayoutInput] = useState(85);
     const [targetCount, setTargetCount] = useState(40000);
     const [extraBacktestSymbols, setExtraBacktestSymbols] = useState<string[]>([]);
@@ -128,7 +127,6 @@ function CryptoLabContent() {
         if (match) {
             const thinkText = match[1].trim();
             const mainContent = content.replace(thinkRegex, '').trim();
-            
             return (
                 <div className="space-y-2">
                     <Accordion type="single" collapsible className="w-full">
@@ -147,24 +145,23 @@ function CryptoLabContent() {
                 </div>
             );
         }
-
         return <p className="font-mono whitespace-pre-wrap">{content}</p>;
     };
 
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
-            {/* RADAR DE GRAVIDADE BITCOIN */}
+            {/* RADAR DE GRAVIDADE BITCOIN V5 */}
             <Card className="bg-orange-500/5 border-orange-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-orange-500/10 border-b border-orange-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
-                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V5
+                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V5 (Supreme)
                     </CardTitle>
                     <div className="flex items-center gap-4">
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    Configurar Cluster BTC/ETH <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    cluster institucional btc/eth <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -243,12 +240,18 @@ function CryptoLabContent() {
                                     {gravity && !isStale && (
                                         <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
                                             <div className="flex justify-between text-[8px] uppercase font-black">
-                                                <span className="opacity-70">BTC Vector:</span>
-                                                <span className={cn(
-                                                    gravity.btcVector.includes('UP') || gravity.btcVector.includes('BULL') ? "text-green-500" :
-                                                    gravity.btcVector.includes('DOWN') || gravity.btcVector.includes('BEAR') ? "text-red-500" : "text-muted-foreground"
-                                                )}>{gravity.btcVector}</span>
+                                                <span className="opacity-70">Pearson Corr:</span>
+                                                <span className={cn(gravity.correlation > 0.8 ? "text-green-500" : "text-muted-foreground")}>
+                                                    {gravity.correlation.toFixed(2)}
+                                                </span>
                                             </div>
+                                            <div className="flex justify-between text-[8px] uppercase font-black">
+                                                <span className="opacity-70">Beta Dyn:</span>
+                                                <span className="text-primary">{gravity.beta.toFixed(2)}</span>
+                                            </div>
+                                            {gravity.slingshotDetected && (
+                                                <Badge className="w-full text-[7px] bg-purple-600 h-3 py-0">SLINGSHOT_READY</Badge>
+                                            )}
                                         </div>
                                     )}
                                     {isStale && <p className="text-[9px] text-muted-foreground mt-2 italic text-center">Último dado: {Math.round(min || 0)} min atrás</p>}
@@ -259,21 +262,23 @@ function CryptoLabContent() {
                 </CardContent>
             </Card>
 
-            {/* HEADER CANÔNICO */}
+            {/* HEADER CANÔNICO V5 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">
                     <div className="bg-orange-500/10 p-2 rounded-xl border border-orange-500/20 shadow-sm">
                         <Zap className="h-8 w-8 text-orange-600 animate-pulse" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V4.2</h1>
+                        <h1 className="text-2xl font-bold tracking-tight font-headline text-orange-700">Crypto Lab V4.2 (Supreme)</h1>
                         <div className="flex items-center gap-2">
                              <Badge variant="secondary" className="font-mono text-xs flex items-center gap-1.5">
-                                <Coins className="h-3 w-3"/> Saldo: {accountBalance.loading ? '...' : formatCurrency(accountBalance.balance || 0)}
-                             </Badge>
-                             <Badge variant="outline" className="font-mono text-xs flex items-center gap-1.5">
                                 <Wallet className="h-3 w-3"/> P&L: {formatCurrency(sessionStats.pnl)}
                              </Badge>
+                             {lockedProfitFloor > 0 && (
+                                 <Badge variant="outline" className="font-mono text-xs flex items-center gap-1.5 border-green-600 text-green-600">
+                                    <Lock className="h-3 w-3"/> Floor: {formatCurrency(lockedProfitFloor)}
+                                 </Badge>
+                             )}
                              <Badge className={cn("text-[10px] font-bold shadow-sm border", isShadowMode ? "bg-purple-600 text-white" : "bg-red-600 text-white")}>
                                 {isShadowMode ? 'SHADOW TESTING' : 'LIVE PROTOCOL'}
                              </Badge>
@@ -593,6 +598,10 @@ function CryptoLabContent() {
                                         <p className="text-3xl font-black">{lastDecision.finalAction}</p>
                                         <p className="text-xs mt-2 font-mono font-bold">Certainty: {lastDecision.consensusConfidence}%</p>
                                     </div>
+                                    <div className="bg-muted/30 p-2 rounded border text-[10px] text-center uppercase font-bold flex items-center justify-center gap-2">
+                                        <Zap className="h-3 w-3 text-orange-600" />
+                                        Motor: {lastDecision.recommendedContract}
+                                    </div>
                                     <Button onClick={v4.executeManualDecision} className="w-full bg-orange-600 text-white font-bold" disabled={!lastDecision || lastDecision.finalAction === 'HOLD'}>
                                         Executar Sinal Manual
                                     </Button>
@@ -706,7 +715,7 @@ function CryptoLabContent() {
                                                 {log.details && log.details.length > 0 && <ChevronRight className={cn("h-2.5 w-2.5 transition-transform opacity-30 group-hover:opacity-100", expandedLogTs === log.ts && "rotate-90")} />}
                                             </div>
                                             {expandedLogTs === log.ts && log.details && (
-                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-orange-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
+                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-purple-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
                                                     {log.details.join('\n')}
                                                 </div>
                                             )}

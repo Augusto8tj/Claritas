@@ -5,10 +5,13 @@
  * @fileOverview CRYPTO SIGNAL ENGINE V5.0 (SUPREME)
  * Otimização de regras matemáticas do Sentinel com foco em Assimetria de Risco 
  * e proteção contra exaustão institucional.
+ * V5: Adicionado Seletor Polimórfico de Contratos.
  */
 
 import { evaluateSignals, type SignalFeatures, type SignalCandidate } from './signal-engine';
 import { BitcoinGravityResult } from './crypto-gravity-engine';
+
+export type RecommendedContractMode = 'MULTIPLIER' | 'RISE_FALL_15M' | 'OPTIONS' | 'ACCUMULATORS';
 
 export interface CryptoSignalFeatures extends SignalFeatures {
   gravity: BitcoinGravityResult | null;
@@ -21,6 +24,33 @@ export interface EnhancedSignalCandidate extends SignalCandidate {
   takeProfit: number;
   payoffRatio: number;
   isExhausted: boolean;
+  recommendedContractMode: RecommendedContractMode;
+}
+
+/**
+ * Seleciona o melhor tipo de contrato baseado na microestrutura e gravidade.
+ * ADITIVO: Não altera regras de pontuação existentes.
+ */
+export function polymorphicContractSelector(
+  symbol: string,
+  f: CryptoSignalFeatures,
+  entropy: number
+): RecommendedContractMode {
+  const { gravity } = f;
+
+  // 1. Prioridade MULTIPLIER: Impulso Gravitacional ou SlingShot (Explosão do BTC)
+  if (gravity?.isBtcExploding || gravity?.slingshotDetected) {
+    return 'MULTIPLIER';
+  }
+
+  // 2. Prioridade RISE_FALL_15M: Drift estável ou Exaustão com Baixa Entropia
+  // Requisito: Tendência limpa (ER > 0.6) e consenso unânime (Entropia < 0.3)
+  if (f.er > 0.6 && entropy < 0.3 && Math.abs(f.rsi - 50) > 10) {
+    return 'RISE_FALL_15M';
+  }
+
+  // 3. Fallback: Options padrão para momentum de curto prazo
+  return 'OPTIONS';
 }
 
 export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): EnhancedSignalCandidate[] {
@@ -60,7 +90,6 @@ export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): 
     }
 
     // 3. CÁLCULO ASSIMÉTRICO DE ALVOS (ATR BASED)
-    // SL = 1.5x ATR, TP = 2.8x ATR -> Payoff ~1:1.8
     const atrValue = (f.atrPct / 100) * f.price;
     const stopLossDist = atrValue * 1.5;
     const takeProfitDist = atrValue * 2.8;
@@ -68,6 +97,9 @@ export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): 
     const stopLoss = c.direction === 'CALL' ? f.price - stopLossDist : f.price + stopLossDist;
     const takeProfit = c.direction === 'CALL' ? f.price + takeProfitDist : f.price - takeProfitDist;
     const payoffRatio = takeProfitDist / stopLossDist;
+
+    // 4. SELEÇÃO POLIMÓRFICA (Entropia simulada em 0.2 para cálculo do Sentinel)
+    const recommendedContractMode = polymorphicContractSelector(symbol, f, 0.2);
 
     return {
       ...c,
@@ -78,6 +110,7 @@ export function evaluateCryptoSignals(symbol: string, f: CryptoSignalFeatures): 
       takeProfit,
       payoffRatio,
       isExhausted,
+      recommendedContractMode,
       direction: setupScore > 75 ? c.direction : 'NONE' // Gatilho de Precisão > 75
     } as EnhancedSignalCandidate;
   });
