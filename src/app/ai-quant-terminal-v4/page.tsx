@@ -160,7 +160,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    estabelecer o cluster institucional cryBTCUSD/cryETHUSD como padrão de abertura <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    Selecionar Ativos <ChevronsUpDown className="ml-2 h-3 w-3" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -316,7 +316,7 @@ function CryptoLabContent() {
                         </CardHeader>
                         <CardContent className="space-y-6">
                             <div className="flex items-center justify-between p-3 rounded-lg bg-card border shadow-sm">
-                                <Label htmlFor="shadow-mode" className="flex flex-col gap-0.5">
+                                <Label htmlFor="shadow-mode" className="flex flex-col space-y-1 flex-1 pr-4">
                                     <span className="text-xs font-bold uppercase">Shadow Mode</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas V4</span>
                                 </Label>

@@ -102,13 +102,13 @@ export function useCryptoRadarV4(
         }, ...prev].slice(0, 300));
     }, []);
 
-    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO
+    // INICIALIZAÇÃO DE ATIVOS CRIPTO PADRÃO (Soberania cryBTCUSD/cryETHUSD)
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
             const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
             if (watchedSymbols.length === 0 || isSyntheticDefault) {
                 setWatchedSymbols(DEFAULT_CLUSTER);
-                addLog("Cluster Institucional BTC/ETH configurado como padrão operacional.", "info");
+                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão operacional.", "info");
             }
             initializedRef.current = true;
         }
@@ -231,16 +231,7 @@ export function useCryptoRadarV4(
         });
     }, [operationsLog, user, addLog, resilience]);
 
-    // --- 6. VALIDADOR DE DISPONIBILIDADE DERIV ---
-    const validateContractAvailability = async (symbol: string, mode: string): Promise<boolean> => {
-        const cached = contractsCacheRef.current[symbol];
-        const now = Date.now();
-        if (cached && now - cached.ts < 300000) return true;
-        contractsCacheRef.current[symbol] = { ts: now, data: true };
-        return true;
-    };
-
-    // --- 7. CIRCUIT BREAKER V5 ---
+    // --- 6. CIRCUIT BREAKER V5 ---
     useEffect(() => {
         if (!isAutoMode) return;
         const hitStopLoss = sessionStats.pnl <= -dailyBalance;
@@ -268,16 +259,6 @@ export function useCryptoRadarV4(
         const last = candles[candles.length - 1];
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
-
-    const getSmartStake = (symbol: string): number => {
-        let stake = stakeValue;
-        const lastTrade = operationsLog.find(o => o.asset === symbol && o.initiator.startsWith('Conselho') && o.status !== 'pending');
-        if (lastTrade && lastTrade.status === 'lost') {
-            stake *= 0.5;
-            addLog(`[SMART-STAKE] Reduzindo risco em ${symbol} após perda recente: $${stake.toFixed(2)}`, 'info', undefined, symbol);
-        }
-        return Math.max(0.35, Number(stake.toFixed(2)));
-    };
 
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
@@ -385,31 +366,22 @@ export function useCryptoRadarV4(
             setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, gravity, timestamp: Date.now(), isQualified: shouldExecute } }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                const finalStake = getSmartStake(symbol);
+                const finalStake = stakeValue;
                 if (isShadowMode) {
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar', undefined, symbol);
                 } else {
-                    let contractToUse = decision.recommendedContract;
-                    if (contractToUse === 'OPTIONS') {
-                        const is15mAvail = await validateContractAvailability(symbol, 'RISE_FALL_15M');
-                        if (!is15mAvail) {
-                            addLog(`[POLYMORPHIC FALLBACK] Rise/Fall 15m indisponível para ${symbol}. Convertendo para Multiplier.`, 'warning', undefined, symbol);
-                            contractToUse = 'MULTIPLIERS';
-                        }
-                    }
-
                     let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     const params: Record<string, any> = {};
-                    if (contractToUse === 'MULTIPLIERS') {
+                    if (decision.recommendedContract === 'MULTIPLIERS') {
                         finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN';
                         params.multiplier = multiplier;
                     }
                     const res = await executeTrade(finalContractType, finalStake, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
-                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado via ${contractToUse}.`, 'execution', undefined, symbol);
+                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado via ${decision.recommendedContract}.`, 'execution', undefined, symbol);
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, lastDecision]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, multiplier, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
