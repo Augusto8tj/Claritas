@@ -1,39 +1,46 @@
 
 ================================================================================
-CLARITAS COPILOT - ESPECIFICAÇÃO TÉCNICA: CRYPTO LAB V4.2 (SUPREME)
+CLARITAS COPILOT - ESPECIFICAÇÃO TÉCNICA: CRYPTO LAB V4.2 (SUPREME V5.3)
 ================================================================================
 
-1. ARQUITETURA DE ARQUIVOS E MÓDULOS
+1. ARQUITETURA DE ARQUIVOS E MÓDULOS (V5.3)
 --------------------------------------------------------------------------------
-- src/app/ai-quant-terminal-v4/page.tsx: View mestre, cockpit de comando e backtest.
-- src/features/trading/hooks/use-crypto-radar-v4.tsx: Orquestrador BTC-Leader.
-- src/features/trading/services/crypto-gravity-engine.ts: Motor de correlação líder (BTC).
-- src/features/trading/services/quant-council-engine.ts: Motor multi-agente paralelo.
-- src/features/trading/services/trade-memory-service.ts: Persistência de Post-Mortem.
+- src/app/ai-quant-terminal-v4/page.tsx: Dashboard mestre, renderização de Deep Think e Radar Gravitacional.
+- src/features/trading/hooks/use-crypto-radar-v4.tsx: Orquestrador soberano. Gerencia o Ciclo de Vida V5 e a Governança de Capital.
+- src/features/trading/services/crypto-gravity-engine.ts: Motor matemático de correlação Pearson, Beta dinâmico e SlingShot Status.
+- src/features/trading/services/crypto-signal-engine.ts: Sentinel V5 com Seletor Polimórfico (Multiplier vs Rise/Fall 15m).
+- src/features/trading/services/quant-council-engine.ts: Síntese multi-agente com cálculo de Entropia de Shannon e Failover Matemático.
+- src/features/trading/services/trade-memory-service.ts: Persistência de Post-Mortem e injeção de contexto anti-erro (Pattern Cooldown).
+- src/features/trading/services/report-builders.ts: Construtor de Dossiers Táticos de alta densidade para alimentação do chat tático.
+- src/app/api/ollama/crypto-agent/route.ts: Gateway de inferência otimizado para baixa latência e tratamento estrito de JSON.
 
-2. CLUSTER DE ATIVOS PADRÃO (HIGH LIQUIDITY)
+2. CLUSTER INSTITUCIONAL PADRÃO
 --------------------------------------------------------------------------------
-- LÍDER (REFERÊNCIA): cryBTCUSD
-- ALVO 1: cryETHUSD
-- ALVO 2: cryBTCUSD (Self-referential execution)
+- LÍDER (ÂNCORA): cryBTCUSD (Fornece o vetor de momentum e validação gravitacional).
+- ALVO PRIMÁRIO: cryETHUSD (Operação via Lead-Lag Arbitrage).
+- STATUS DE ABERTURA: Cluster BTC/ETH configurado por padrão (V5 Policy).
 
-3. REGRAS DE NEGÓCIO (POLÍTICAS V5)
+3. REGRAS DE NEGÓCIO E GOVERNANÇA (V5.3)
 --------------------------------------------------------------------------------
 - LIDERANÇA GRAVITACIONAL: 
-  * cryBTCUSD define o vetor de momentum e o regime de volatilidade sistêmica.
-  * Operações em cryETHUSD são bloqueadas se houver divergência forte com o BTC.
-- GOVERNANÇA FINANCEIRA:
-  * Daily Balance (Stop Loss): Piloto desliga ao atingir o limite de perda.
-  * Daily Target: Piloto desliga ao atingir a meta de lucro.
-- APRENDIZADO POST-MORTEM:
-  * Cada trade encerrado gera um log de performance injetado nas próximas inferências.
+  * Bloqueio de execuções em Altcoins se a Correlação Pearson com BTC < 0.65.
+  * Ativação de SLINGSHOT se o BTC disparar (Z-Score > 1.8) e a Altcoin estiver em Lag.
+- MOTOR POLIMÓRFICO:
+  * MULTIPLIER: Selecionado em expansão de volatilidade (SlingShot) com alvos ATR.
+  * RISE_FALL_15M: Selecionado em drift estável ou exaustão técnica (Z-Score > 2.2).
+- DAILY TRAILING PROFIT FLOOR (HWM):
+  * Meta 50% atingida -> Piso em 0 (Break-even garantido).
+  * Meta 80% atingida -> Piso em 50% do lucro alcançado (Lucro travado).
+- SMART STAKE:
+  * Redução de 50% após LOSS.
+  * Bônus de 15% em setups A+ (Entropia < 0.2).
 
-4. TELEMETRIA E AUDITORIA
+4. TELEMETRIA E AUDITORIA (HYPER-DENSE)
 --------------------------------------------------------------------------------
-- ENTROPIA DE CONSENSO: Mede a divergência entre os 3 agentes de IA.
-- T2T (Tick-to-Trade): Latência ponta-a-ponta da decisão à execução.
-- REASONING ENGINE: Histórico de 300 eventos com filtros granulares.
+- DOSSIER V5.3: Injeção de Beta, Pearson, ER (Efficiency Ratio) e P&L Real no Chat Tático.
+- ENTROPIA DE CONSENSO: Mede a divergência entre Momentum, Risk e Archivist.
+- POST-MORTEM ATIVO: Registro de falhas por gap de liquidez ou erro de timing no Firestore.
 
 ================================================================================
-GERADO PELO ARQUITETO CLARITAS - PRONTO PARA OPERAÇÃO BTC/ETH
+ARQUITETURA SUPREME V5.3 - PRONTA PARA OPERAÇÃO INSTITUCIONAL
 ================================================================================
