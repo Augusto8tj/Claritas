@@ -1,5 +1,4 @@
-// /src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
-'use server';
+'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION) - MODULARIZED
