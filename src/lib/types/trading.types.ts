@@ -1,3 +1,4 @@
+
 // /src/lib/types/trading.types.ts
 import { z } from 'zod';
 
@@ -92,7 +93,7 @@ export const OperationSchema = z.object({
   validationLog: z.any().optional(),
   executionLatency: z.number().optional(),
   resolvedBy: z.enum(['api', 'timeout', 'shadow']).optional(),
-  payoutPct: z.number().optional(), // Etapa 8
+  payoutPct: z.number().optional(), 
 });
 
 export const RobotStrategySchema = z.object({
@@ -323,10 +324,21 @@ export interface CryptoShadowTrade {
   confidence: number;
   payoutRatio: number;
   ev: number;
-  result?: 'won' | 'lost';
+  result?: 'won' | 'lost' | 'draw';
   pnl?: number;
   status: 'pending' | 'completed';
-  stake: number; // Etapa 8
+  stake: number; 
+  // Metadata 8A
+  decisionTs?: number;
+  entryTs?: number;
+  exitTs?: number;
+  llmLatencyMs?: number;
+  settleDelayMs?: number;
+  lateSettle?: boolean;
+  rsiAtEntry?: number;
+  bbwAtEntry?: number;
+  correlationAtEntry?: number;
+  entropyAtEntry?: number;
 }
 
 /**
@@ -483,4 +495,24 @@ export interface AssetAnalysisInput {
   duration: number;
   durationUnit: string;
   recentTrades: any[];
+}
+
+export interface TradePostMortem {
+  id: string;
+  timestamp: number;
+  contract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
+  result: 'WIN' | 'LOSS' | 'DRAW';
+  pnl: number;
+  rsi: number;
+  volatilityYangZhang: number;
+  candlePattern: string;
+  failureDiagnosis?: string;
+  btcRegime?: string;
+  gravityCorrelation?: number;
+  councilEntropy?: number;
+  // Campos 8A
+  entryPrice?: number;
+  exitPrice?: number;
+  executionLatency?: number;
+  lateSettle?: boolean;
 }

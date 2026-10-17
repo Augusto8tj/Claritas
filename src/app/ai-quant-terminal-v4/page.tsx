@@ -97,8 +97,8 @@ function CryptoLabContent() {
 
     const filteredLogs = useMemo(() => {
         if (logFilter === 'all') return reasoningLog;
-        if (logFilter === 'error') return reasoningLog.filter(l => l.type === 'error' || l.type === 'warning');
-        return reasoningLog.filter(l => l.type === logFilter);
+        if (logFilter === 'error') return reasoningLog.filter((l: any) => l.type === 'error' || l.type === 'warning');
+        return reasoningLog.filter((l: any) => l.type === logFilter);
     }, [reasoningLog, logFilter]);
 
     const handleChatSubmit = (e: React.FormEvent) => {
@@ -134,7 +134,7 @@ function CryptoLabContent() {
     }, [runBacktest, watchedSymbols, extraBacktestSymbols, payoutInput, targetCount, toast, backtest.merged]);
 
     const copyLogs = () => {
-        const text = filteredLogs.map(l => `[${l.time}] ${l.message}`).join('\n');
+        const text = filteredLogs.map((l: any) => `[${l.time}] ${l.message}`).join('\n');
         navigator.clipboard.writeText(text);
         toast({ title: "Logs copiados!" });
     };
@@ -195,7 +195,7 @@ function CryptoLabContent() {
                                                         key={asset.value}
                                                         onSelect={() => {
                                                             const newSymbols = watchedSymbols.includes(asset.value)
-                                                                ? watchedSymbols.filter(s => s !== asset.value)
+                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
                                                                 : [...watchedSymbols, asset.value];
                                                             setWatchedSymbols(newSymbols);
                                                         }}
@@ -376,14 +376,14 @@ function CryptoLabContent() {
                                         <span className="text-muted-foreground flex items-center gap-1.5"><BrainCircuit className="h-3.5 w-3.5"/> Confiança Mínima</span>
                                         <span className="font-mono text-orange-700 font-bold">{confidenceThreshold}%</span>
                                     </div>
-                                    <Slider value={[confidenceThreshold]} min={40} max={95} step={5} onValueChange={(v) => setConfidenceThreshold(v[0])} disabled={isAutoMode} />
+                                    <Slider value={[confidenceThreshold]} min={40} max={95} step={5} onValueChange={(v: any) => setConfidenceThreshold(v[0])} disabled={isAutoMode} />
                                 </div>
                                 <div className="space-y-2">
                                     <div className="flex justify-between items-center text-xs">
                                         <span className="text-muted-foreground flex items-center gap-1.5"><Timer className="h-3.5 w-3.5"/> Ciclo de Análise</span>
                                         <span className="font-mono text-orange-700 font-bold">{analysisInterval}s</span>
                                     </div>
-                                    <Slider value={[analysisInterval]} min={15} max={600} step={15} onValueChange={(v) => setAnalysisInterval(v[0])} disabled={isAutoMode} />
+                                    <Slider value={[analysisInterval]} min={15} max={600} step={15} onValueChange={(v: any) => setAnalysisInterval(v[0])} disabled={isAutoMode} />
                                 </div>
                             </div>
 
@@ -572,7 +572,7 @@ function CryptoLabContent() {
                                             <p className="text-xs font-mono">Conselho em prontidão operacional.</p>
                                         </div>
                                     )}
-                                    {chatMessages.map((msg, i) => (
+                                    {chatMessages.map((msg: any, i: number) => (
                                         <div key={i} className={cn(
                                             "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
                                             msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
@@ -731,7 +731,7 @@ function CryptoLabContent() {
                                 {filteredLogs.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    filteredLogs.map((log, i) => (
+                                    filteredLogs.map((log: any, i: number) => (
                                         <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
                                             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}

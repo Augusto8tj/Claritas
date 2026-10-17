@@ -298,6 +298,7 @@ export function useCryptoRadarV4(
             symbol: assetSym,
             currentPrice: assetCandles[assetCandles.length - 1].close,
             priceHistory: assetCandles.map(c => c.close),
+            epochHistory: assetCandles.map(c => c.epoch),
             rsi: feats.rsi,
             adx: inds.adx || 30,
             atrNow: inds.atr || 0.001,
@@ -377,7 +378,7 @@ ${context}`;
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
-            const bestCandidate = candidates.filter(c => c.direction !== 'NONE').sort((a, b) => b.score - a.score)[0];
+            const bestCandidate = candidates.filter((c: any) => c.direction !== 'NONE').sort((a: any, b: any) => b.score - a.score)[0];
 
             if (!bestCandidate && requireSentinelCandidate) {
                 addLog(`[SENTINEL] ${symbol}: Sem candidato técnico qualificado. Abortando conselho.`, 'sentinel', undefined, symbol);
