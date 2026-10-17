@@ -23,6 +23,7 @@ import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
 import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
+import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -190,7 +191,7 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // Heartbeat
+    // ETAPA 4: Conectar recordPulse aos streams de dados
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) {
             resilience.recordPulse(activeSymbol);
@@ -205,7 +206,7 @@ export function useCryptoRadarV4(
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
 
-    // Persistência e Heartbeat
+    // Persistência local de segredos
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
@@ -252,6 +253,7 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
+    // ETAPA 5: Função auxiliar para extrair telemetria dinâmica
     const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
         const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
         const feats = computeSignalFeatures(assetCandles as any);
@@ -326,6 +328,7 @@ ${context}`;
             const baseFeats = computeSignalFeatures(candles as any);
             if (!baseFeats) return;
 
+            // ETAPA 5: Telemetria Dinâmica do Bitcoin
             let gravity: BitcoinGravity | null = null;
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
@@ -344,7 +347,7 @@ ${context}`;
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
             
-            // Etapa 7: Sentinel Influence
+            // ETAPA 7: Injeção de Candidatos do Sentinel
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             const bestCandidate = candidates
                 .filter(c => c.direction !== 'NONE')
@@ -388,7 +391,7 @@ ${context}`;
             executionLockRef.current = true;
             const decision = await runQuantCouncil(marketSnapshot as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             
-            // Etapa 7: Divergence Check
+            // ETAPA 7: Verificação de Divergência
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 addLog(`[WARNING] ${symbol}: Divergência detectada. Sentinel=${bestCandidate.direction} vs Conselho=${decision.finalAction}. Forçando HOLD.`, 'warning', undefined, symbol);
                 decision.finalAction = 'HOLD';
@@ -417,7 +420,22 @@ ${context}`;
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 if (isShadowMode) {
-                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado.`, 'radar', undefined, symbol);
+                    addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
+                    // ETAPA 8: Registrar Trade Sombra no Firestore
+                    await CryptoShadowEngine.logTrade(user.uid, {
+                        symbol,
+                        direction: decision.finalAction,
+                        contract: decision.recommendedContract,
+                        entryPrice: candles[candles.length - 1].close,
+                        rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
+                        score: decision.consensusConfidence,
+                        gravityState: gravity?.btcVector || 'CHOP',
+                        confidence: decision.consensusConfidence,
+                        payoutRatio: backtest.payoutPct || 85,
+                        duration: 15,
+                        durationUnit: 's',
+                        ev: 0
+                    });
                 } else {
                     let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     const params: Record<string, any> = {};
@@ -430,13 +448,14 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+        
         if (dueSymbols.length > 0) {
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
             for (const sym of dueSymbols) {
@@ -447,7 +466,36 @@ ${context}`;
                 }
             }
         }
-    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
+
+        // ETAPA 8: Liquidar Trades Sombra Pendentes
+        if (user && isShadowMode) {
+            await CryptoShadowEngine.settlePending(user.uid, 
+                (sym) => {
+                    const c = getCandlesFor(sym);
+                    return c.length > 0 ? c[c.length - 1].close : null;
+                },
+                async (sym, win, pnl, trade) => {
+                    resilience.processResult(sym, win);
+                    const cs = getCandlesFor(sym);
+                    const indicators = calculateAllIndicators(cs, [], '1m', { duration: 15, unit: 's' });
+                    
+                    await TradeMemoryManager.addTrade(user.uid, sym, {
+                        id: `shadow_${trade.id}`,
+                        timestamp: Date.now(),
+                        contract: trade.contract,
+                        result: win ? 'WIN' : 'LOSS',
+                        pnl,
+                        rsi: indicators?.rsi || 50,
+                        volatilityYangZhang: indicators?.bbw || 0,
+                        candlePattern: 'SHADOW_SIM',
+                        btcRegime: trade.gravityState,
+                        gravityCorrelation: trade.confidence / 100,
+                        councilEntropy: telemetry.consensusEntropy
+                    });
+                }
+            );
+        }
+    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol, user, isShadowMode, resilience, telemetry.consensusEntropy]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);

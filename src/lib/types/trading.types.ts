@@ -91,7 +91,8 @@ export const OperationSchema = z.object({
   apiStatus: z.enum(['won', 'lost']).optional(),
   validationLog: z.any().optional(),
   executionLatency: z.number().optional(),
-  resolvedBy: z.enum(['api', 'timeout']).optional(),
+  resolvedBy: z.enum(['api', 'timeout', 'shadow']).optional(),
+  payoutPct: z.number().optional(), // Etapa 8
 });
 
 export const RobotStrategySchema = z.object({
@@ -325,6 +326,7 @@ export interface CryptoShadowTrade {
   result?: 'won' | 'lost';
   pnl?: number;
   status: 'pending' | 'completed';
+  stake: number; // Etapa 8
 }
 
 /**
