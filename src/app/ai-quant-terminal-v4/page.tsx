@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -108,9 +109,29 @@ function CryptoLabContent() {
         }
     };
 
-    const handleRunBacktest = useCallback(() => {
-        runBacktest(payoutInput, targetCount, extraBacktestSymbols);
-    }, [runBacktest, payoutInput, targetCount, extraBacktestSymbols]);
+    const handleRunBacktest = useCallback(async () => {
+        const uniqueSymbols = Array.from(new Set([...watchedSymbols, ...extraBacktestSymbols])).filter(s => !!s);
+        
+        if (uniqueSymbols.length === 0) {
+            toast({
+                title: "Ativos necessários",
+                description: "Selecione pelo menos um ativo para rodar o backtest.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        await runBacktest(uniqueSymbols, payoutInput, targetCount);
+        
+        // Verificação de resultados após a conclusão
+        if (Object.keys(backtest.merged).length === 0) {
+            toast({
+                title: "Backtest sem resultados",
+                description: "Nenhum dado estatístico foi gerado. Verifique os ativos selecionados.",
+                variant: "destructive"
+            });
+        }
+    }, [runBacktest, watchedSymbols, extraBacktestSymbols, payoutInput, targetCount, toast, backtest.merged]);
 
     const copyLogs = () => {
         const text = filteredLogs.map(l => `[${l.time}] ${l.message}`).join('\n');

@@ -1,3 +1,4 @@
+
 import { SignalCandidate, SignalFeatures } from './signal-engine';
 import { CouncilDecision, CouncilStats } from '../types/council';
 import { RuleReport } from './backtest';
@@ -172,7 +173,7 @@ export function buildBacktestReport(params: {
             const reports = periods[pKey as 'recent' | 'older'];
             if (!reports) return;
             
-            const pLabel = pKey === 'recent' ? "OOS (FORA DA AMOSTRA)" : "IS (DENTRO DA AMOSTRA)";
+            const pLabel = pKey === 'recent' ? "PERÍODO RECENTE" : "PERÍODO ANTERIOR";
             report += `\n[${pLabel}]\n`;
             
             reports.forEach(r => {
