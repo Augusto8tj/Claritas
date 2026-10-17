@@ -1,9 +1,10 @@
+
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5.3: Injeção de Telemetria Hiper-Densa e Governança V5.
- * V5.4: Remoção de secrets e correção de referências de escopo.
+ * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
+ * Exibe métricas institucionais de gravidade, beta e correlação.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -103,6 +104,7 @@ export function useCryptoRadarV4(
     const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
+    const [requireSentinelCandidate] = useState(true);
 
     const [lockedProfitFloor, setLockedProfitFloor] = useState(0);
     const dailyHighWaterMark = useRef(0);
@@ -188,14 +190,7 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // Persistência e Heartbeat
-    useEffect(() => {
-        const savedOllama = localStorage.getItem('ollamaConfig');
-        if (savedOllama) {
-            try { setOllamaConfig(JSON.parse(savedOllama)); } catch (e) {}
-        }
-    }, []);
-
+    // Heartbeat
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) {
             resilience.recordPulse(activeSymbol);
@@ -210,6 +205,14 @@ export function useCryptoRadarV4(
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
 
+    // Persistência e Heartbeat
+    useEffect(() => {
+        const savedOllama = localStorage.getItem('ollamaConfig');
+        if (savedOllama) {
+            try { setOllamaConfig(JSON.parse(savedOllama)); } catch (e) {}
+        }
+    }, []);
+
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
             const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
@@ -219,7 +222,7 @@ export function useCryptoRadarV4(
             }
             initializedRef.current = true;
         }
-    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog, DEFAULT_CLUSTER]);
 
     useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) {
@@ -340,12 +343,58 @@ ${context}`;
             }
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
+            
+            // Etapa 7: Sentinel Influence
+            const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
+            const bestCandidate = candidates
+                .filter(c => c.direction !== 'NONE')
+                .sort((a, b) => b.score - a.score)[0];
+
+            if (!bestCandidate && requireSentinelCandidate) {
+                addLog(`[SENTINEL] ${symbol}: Sem candidato técnico qualificado. Abortando conselho.`, 'sentinel', undefined, symbol);
+                setRadarStatus(prev => ({
+                    ...prev,
+                    [symbol]: {
+                        symbol, lastAction: 'HOLD', confidence: 0, timestamp: Date.now(),
+                        holdReason: 'SENTINEL_EMPTY: Nenhum gatilho de base detectado.',
+                        indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw }
+                    }
+                }));
+                return;
+            }
+
+            if (bestCandidate) {
+                addLog(`[SENTINEL] ${symbol}: Candidato ${bestCandidate.rule} (${bestCandidate.direction}) detectado com score ${bestCandidate.score}.`, 'sentinel', undefined, symbol);
+            }
+
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
+            const marketSnapshot = {
+                ...cryptoFeats,
+                symbol,
+                price: candles[candles.length - 1].close,
+                strategicProfile,
+                sentinel: bestCandidate ? {
+                    rule: bestCandidate.rule,
+                    score: bestCandidate.score,
+                    mode: bestCandidate.recommendedContractMode,
+                    sl: bestCandidate.stopLoss,
+                    tp: bestCandidate.takeProfit
+                } : null
+            };
+
             executionLockRef.current = true;
-            const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            const decision = await runQuantCouncil(marketSnapshot as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            
+            // Etapa 7: Divergence Check
+            if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
+                addLog(`[WARNING] ${symbol}: Divergência detectada. Sentinel=${bestCandidate.direction} vs Conselho=${decision.finalAction}. Forçando HOLD.`, 'warning', undefined, symbol);
+                decision.finalAction = 'HOLD';
+                decision.holdReason = `DIVERGENCE: Sentinel(${bestCandidate.direction}) discorda do Conselho.`;
+            }
+
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
 
             if (symbol === activeSymbol) { setLastDecision(decision); setTelemetry(decision.telemetry); setMemoryBuffer(buffer); }
@@ -381,7 +430,7 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -410,6 +459,7 @@ ${context}`;
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
+        requireSentinelCandidate,
         stakeValue, setStakeValue, multiplier, setMultiplier,
         dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
