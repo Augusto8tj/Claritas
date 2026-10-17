@@ -1,4 +1,3 @@
-
 // src/app/status/page.tsx
 'use client';
 
@@ -113,7 +112,11 @@ function StatusPageContent() {
 
         if (ollamaConfigRaw) {
             const config = JSON.parse(ollamaConfigRaw) as OllamaConfig;
-            ollamaRes = await checkOllamaConnection(config);
+            const res = await checkOllamaConnection(config);
+            ollamaRes = {
+                success: res.success,
+                modelCount: res.modelCount ?? 0
+            };
             ollamaUrl = config.baseUrl;
         }
 
@@ -123,7 +126,7 @@ function StatusPageContent() {
             checkFirestoreConnection()
         ]);
 
-        setOllamaInfo({ modelCount: ollamaRes.modelCount || 0, url: ollamaUrl });
+        setOllamaInfo({ modelCount: ollamaRes.modelCount, url: ollamaUrl });
 
         setStatuses({
             deriv: isConnecting ? 'loading' : isConnected ? 'operational' : 'critical',
@@ -219,7 +222,7 @@ function StatusPageContent() {
 
                             <div className="space-y-2">
                                 <span className="text-xs font-bold uppercase text-[#E6EDF3] flex items-center gap-2">
-                                    <Clock className="h-3 w-3" /> WebSocket Event Timeline
+                                    <Clock className="h-3 w-3" /> Linha do Tempo da Conexão
                                 </span>
                                 <div className="bg-[#0D1117] border border-[#30363D] rounded-md p-3 max-h-48 overflow-y-auto">
                                     {connectionEvents && connectionEvents.length > 0 ? (

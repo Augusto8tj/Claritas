@@ -114,7 +114,7 @@ export interface DerivApiContextTypeV2 {
   getProposal: (params: any) => Promise<any>;
 }
 
-export const DerivApiContextV2 = createContext<DerivApiContextV2 | undefined>(undefined);
+export const DerivApiContextV2 = createContext<DerivApiContextTypeV2 | undefined>(undefined);
 
 const marketNameMapping: Record<string, string> = {
     'synthetic_index': 'Índices Sintéticos',
@@ -277,7 +277,7 @@ export function useDerivApiV2State() {
           const GRACE_MS = 8000; 
           let hasChanges = false;
 
-          const updatedOps = operationsLogRef.current.map(op => {
+          const updatedOps = (operationsLogRef.current as Operation[]).map(op => {
               if (op.status === 'pending' && op.expirationTime && now > op.expirationTime + GRACE_MS) {
                   hasChanges = true;
                   const fallbackExitEpoch = Math.floor(now / 1000);
@@ -724,7 +724,7 @@ export function useDerivApiV2State() {
         return { success: false, message: "A conexão não está ativa." };
     }
 
-    const contract = operationsLogRef.current.find(op => op.id === contractId);
+    const contract = (operationsLogRef.current as Operation[]).find(op => op.id === contractId);
     if (contract && contract.expirationTime) {
       const remainingTime = contract.expirationTime - Date.now();
       if (remainingTime < 1000) { 
@@ -1104,6 +1104,8 @@ export function DerivApiProviderV2({ children }: { children: ReactNode }) {
 
 export function useDerivApiV2() {
   const context = useContext(DerivApiContextV2);
-  if (context === undefined) throw new Error('useDerivApiV2 must be used within a DerivApiProviderV2');
+  if (context === undefined) {
+    throw new Error('useDerivApiV2 must be used within a DerivApiProviderV2');
+  }
   return context;
 }

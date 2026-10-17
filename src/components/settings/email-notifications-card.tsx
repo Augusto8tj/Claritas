@@ -30,7 +30,8 @@ export function EmailNotificationsCard() {
         }
 
         setIsSending(true);
-        const result = await sendFinancialSummaryEmail(user.uid, user.email);
+        // Enviando com resumo financeiro zerado para o teste manual
+        const result = await sendFinancialSummaryEmail(user.uid, user.email, { income: 0, expenses: 0, balance: 0 });
         setIsSending(false);
 
         if (result.success) {

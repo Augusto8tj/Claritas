@@ -25,6 +25,9 @@ import { useBacktestRunner } from './use-backtest-runner';
 
 const SETTINGS_KEY = 'quantV3Settings';
 
+// Re-exportando o tipo para conformidade externa
+export type { AllowedContractsV3 };
+
 export interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;

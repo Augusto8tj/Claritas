@@ -1,4 +1,4 @@
-
+// src/features/ai-copilot/components/ai-copilot-dashboard.tsx
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -20,7 +20,9 @@ import {
     AlertCircle,
     CheckCircle2,
     BarChart3,
-    Compass
+    Compass,
+    User,
+    Info as InfoIcon
 } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/use-auth";
 import { getChatbotInsightsResponse } from "@/app/actions";
@@ -62,7 +64,7 @@ export function AICopilotDashboard() {
 
             if (response.success) {
                 const raw = response.success;
-                const jsonMatch = raw.match(/\[.*\]/s);
+                const jsonMatch = raw.match(/\[[\s\S]*\]/);
                 if (jsonMatch) {
                     const parsed = JSON.parse(jsonMatch[0]);
                     const mapped: Insight[] = parsed.map((item: any, i: number) => ({
@@ -70,7 +72,7 @@ export function AICopilotDashboard() {
                         id: `insight-${i}`,
                         icon: item.type === 'opportunity' ? <Zap className="h-4 w-4 text-yellow-500" /> : 
                               item.type === 'risk' ? <ShieldAlert className="h-4 w-4 text-destructive" /> : 
-                              <Info className="h-4 w-4 text-blue-500" />
+                              <InfoIcon className="h-4 w-4 text-blue-500" />
                     }));
                     setInsights(mapped);
                 }
@@ -303,25 +305,4 @@ export function AICopilotDashboard() {
             </div>
         </div>
     );
-}
-
-function Info(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 16v-4" />
-      <path d="M12 8h.01" />
-    </svg>
-  )
 }

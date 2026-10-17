@@ -1,4 +1,4 @@
-
+// src/features/trading/hooks/use-ai-quant-terminal.tsx
 'use client';
 
 /**
@@ -107,7 +107,7 @@ export function useAIQuantTerminal(
 
     // MEMÓRIA: Snapshot de Performance Recente para o CIO
     const recentPerformanceSummary = useMemo(() => {
-        return operationsLog
+        return (operationsLog as Operation[])
             .filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol && op.status !== 'pending')
             .slice(0, 5)
             .map(op => ({
@@ -295,7 +295,7 @@ export function useAIQuantTerminal(
             if (response.error) throw new Error(response.error);
 
             const rawContent = (response.success || "").replace(/```json|```/g, "").trim();
-            const jsonMatch = rawContent.match(/\{.*\}/s);
+            const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
             if (!jsonMatch) throw new Error("IA retornou formato inválido.");
             
             const decision: QuantDecision = JSON.parse(jsonMatch[0]);
