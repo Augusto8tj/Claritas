@@ -3,7 +3,7 @@ export interface TradePostMortem {
   id: string;
   timestamp: number;
   contract: 'ACCUMULATORS' | 'MULTIPLIERS' | 'OPTIONS';
-  result: 'WIN' | 'LOSS';
+  result: 'WIN' | 'LOSS' | 'DRAW';
   pnl: number;
   rsi: number;
   volatilityYangZhang: number;
@@ -16,6 +16,7 @@ export interface TradePostMortem {
   entryPrice?: number;
   exitPrice?: number;
   executionLatency?: number;
+  lateSettle?: boolean;
 }
 
 export interface TradeMemoryBuffer {
@@ -49,7 +50,7 @@ export interface CouncilDecision {
   stakeRatio: number;
   consensusConfidence: number;
   opinions: AgentOpinion[];
-  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO' | 'NO_VOTERS';
+  executedVia: 'COUNCIL_LLM' | 'MATH_FALLBACK' | 'COUNCIL_VETO' | 'NO_VOTERS' | 'COOLDOWN_PATTERN' | 'HIGH_ENTROPY';
   executionMode: 'REAL' | 'SHADOW';
   t2tLatencyMs: number;
   telemetry: CouncilTelemetry;

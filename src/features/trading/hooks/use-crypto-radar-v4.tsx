@@ -261,7 +261,7 @@ export function useCryptoRadarV4(
         if (!user || !isShadowMode) return;
         
         const settleInterval = setInterval(() => {
-            CryptoShadowEngine.settlePending(user.uid, 
+            CryptoShadowEngine.settlePending(user.uid!, 
                 (sym) => {
                     const c = getCandlesForRef.current(sym);
                     return c.length > 0 ? c[c.length - 1].close : null;
@@ -451,7 +451,7 @@ ${context}`;
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
                     shadowExecutionTimestampsRef.current[symbol] = entryTs;
 
-                    await CryptoShadowEngine.logTrade(user.uid, {
+                    await CryptoShadowEngine.logTrade(user.uid!, {
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                         entryPrice, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
