@@ -1,9 +1,9 @@
-
 import { NextResponse } from 'next/server';
 
 /**
  * GATEWAY DE INFERÊNCIA CRYPTO V4.2
  * Otimizado para baixa latência e alta seletividade.
+ * V5.4: Implementação de allowlist para segurança de host.
  */
 
 const VALID_CONTRACTS = ['OPTIONS', 'ACCUMULATORS', 'MULTIPLIERS'];
@@ -36,6 +36,20 @@ export async function POST(req: Request) {
     const { systemPrompt, marketSnapshot, config } = await req.json();
 
     if (!config?.baseUrl) return NextResponse.json({ error: 'Config missing' }, { status: 400 });
+
+    // ETAPA 3: Validação de Host contra allowlist configurada
+    const allowedHosts = (process.env.OLLAMA_ALLOWED_HOSTS || "").split(',').map(h => h.trim()).filter(Boolean);
+    try {
+        const urlObj = new URL(config.baseUrl);
+        if (allowedHosts.length > 0 && !allowedHosts.includes(urlObj.host)) {
+            console.error(`[Agent API] Acesso negado para host: ${urlObj.host}`);
+            return NextResponse.json({ 
+                error: 'Host não autorizado. Adicione o domínio na variável OLLAMA_ALLOWED_HOSTS.' 
+            }, { status: 400 });
+        }
+    } catch (e) {
+        return NextResponse.json({ error: 'URL do Gateway Ollama inválida.' }, { status: 400 });
+    }
 
     const url = config.baseUrl.replace(/\/+$/, '') + '/api/generate';
     

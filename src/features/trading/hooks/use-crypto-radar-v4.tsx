@@ -3,6 +3,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V5.3: Injeção de Telemetria Hiper-Densa e Governança V5.
+ * V5.4: Remoção de secrets e correção de referências de escopo.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -96,17 +97,6 @@ export function useCryptoRadarV4(
         }, ...prev].slice(0, 300));
     }, []);
 
-    useEffect(() => {
-        if (!initializedRef.current && isConnected) {
-            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
-            if (watchedSymbols.length === 0 || isSyntheticDefault) {
-                setWatchedSymbols(DEFAULT_CLUSTER);
-                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão.", "info");
-            }
-            initializedRef.current = true;
-        }
-    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
-
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(60); 
@@ -133,10 +123,11 @@ export function useCryptoRadarV4(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     
+    // ETAPA 3: Remoção de segredos hardcoded
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>({
-        baseUrl: "https://boxlike-barrack-silencer.ngrok-free.dev",
-        apiKey: "augusto123",
-        model: "deepseek-r1:7b",
+        baseUrl: "",
+        apiKey: "",
+        model: "",
         temperature: 0.1,
         keepAlive: "5m"
     });
@@ -148,7 +139,68 @@ export function useCryptoRadarV4(
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
 
-    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+    // ETAPA 3: Persistência e Handshake
+    useEffect(() => {
+        const savedOllama = localStorage.getItem('ollamaConfig');
+        if (savedOllama) {
+            try {
+                setOllamaConfig(JSON.parse(savedOllama));
+            } catch (e) { console.error("Falha ao carregar ollamaConfig", e); }
+        }
+
+        const savedSettings = localStorage.getItem(SETTINGS_KEY);
+        if (savedSettings) {
+            try {
+                const s = JSON.parse(savedSettings);
+                if (s.analysisInterval) setAnalysisInterval(s.analysisInterval);
+                if (s.strategicProfile) setStrategicProfile(s.strategicProfile);
+                if (s.confidenceThreshold) setConfidenceThreshold(s.confidenceThreshold);
+                if (s.stakeValue) setStakeValue(s.stakeValue);
+                if (s.dailyBalance) setDailyBalance(s.dailyBalance);
+                if (s.dailyTarget) setDailyTarget(s.dailyTarget);
+            } catch (e) { console.error("Falha ao carregar settings", e); }
+        }
+    }, []);
+
+    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
+        setOllamaConfig(prev => {
+            const next = { ...prev, ...updates };
+            localStorage.setItem('ollamaConfig', JSON.stringify(next));
+            return next;
+        });
+    }, []);
+
+    const fetchAvailableModels = useCallback(async () => {
+        if (!ollamaConfig?.baseUrl) return;
+        try {
+            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
+            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
+            const res = await fetch(url, { headers });
+            if (res.ok) {
+                const data = await res.json();
+                setAvailableModels(data.models || []);
+            }
+        } catch (e) {}
+    }, [ollamaConfig]);
+
+    useEffect(() => {
+        if (ollamaConfig?.baseUrl) fetchAvailableModels();
+    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
+
+    const resetSession = useCallback(() => {
+        setIsAutoMode(false);
+        setIsShadowMode(true);
+        clearActiveContracts();
+        setRadarStatus({});
+        setReasoningLog([]);
+        setChatMessages([]);
+        setLockedProfitFloor(0);
+        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
+        scheduleRef.current = {};
+        setLastDecision(null);
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados foram resetados." });
+    }, [clearActiveContracts, toast]);
 
     const sessionStats = useMemo(() => {
         const finishedTrades = operationsLog.filter(op => 
@@ -160,6 +212,19 @@ export function useCryptoRadarV4(
         const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
+
+    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
+            if (watchedSymbols.length === 0 || isSyntheticDefault) {
+                setWatchedSymbols(DEFAULT_CLUSTER);
+                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão.", "info");
+            }
+            initializedRef.current = true;
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog]);
 
     useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) {
@@ -188,42 +253,6 @@ export function useCryptoRadarV4(
         const last = candles[candles.length - 1];
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
-
-    const resetSession = useCallback(() => {
-        setIsAutoMode(false);
-        setIsShadowMode(true);
-        clearActiveContracts();
-        setRadarStatus({});
-        setReasoningLog([]);
-        setChatMessages([]);
-        setLockedProfitFloor(0);
-        setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
-        scheduleRef.current = {};
-        setLastDecision(null);
-        toast({ title: "Sessão Reiniciada", description: "Todos os dados foram resetados." });
-    }, [clearActiveContracts, toast]);
-
-    const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
-        setOllamaConfig(prev => {
-            const next = { ...prev, ...updates };
-            localStorage.setItem('ollamaConfig', JSON.stringify(next));
-            return next;
-        });
-    }, []);
-
-    const fetchAvailableModels = useCallback(async () => {
-        if (!ollamaConfig?.baseUrl) return;
-        try {
-            const url = ollamaConfig.baseUrl.replace(/\/+$/, '') + '/api/tags';
-            const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-            if (ollamaConfig.apiKey) headers['Authorization'] = `Bearer ${ollamaConfig.apiKey}`;
-            const res = await fetch(url, { headers });
-            if (res.ok) {
-                const data = await res.json();
-                setAvailableModels(data.models || []);
-            }
-        } catch (e) {}
-    }, [ollamaConfig]);
 
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
