@@ -249,19 +249,30 @@ export function useCryptoRadarV4(
     }, [getCandlesFor]);
 
     // 8A: Ciclo de Liquidação Independente (2s)
+    // Refs evitam recriar o intervalo a cada render (resilience/getCandlesFor mudam de identidade a cada tick).
+    const getCandlesForRef = useRef(getCandlesFor);
+    const resilienceRef = useRef(resilience);
+    useEffect(() => {
+        getCandlesForRef.current = getCandlesFor;
+        resilienceRef.current = resilience;
+    });
+
     useEffect(() => {
         if (!user || !isShadowMode) return;
         
         const settleInterval = setInterval(() => {
             CryptoShadowEngine.settlePending(user.uid, 
                 (sym) => {
-                    const c = getCandlesFor(sym);
+                    const c = getCandlesForRef.current(sym);
                     return c.length > 0 ? c[c.length - 1].close : null;
                 },
                 async (sym, win, pnl, trade) => {
-                    resilience.processResult(sym, win);
-                    const cs = getCandlesFor(sym);
-                    const inds = calculateAllIndicators(cs, [], '1m', { duration: 15, unit: 's' });
+                    // Liquidação tardia (preço de saída longe do vencimento) não alimenta rigor nem memória.
+                    if (trade.lateSettle) {
+                        addLog(`[SHADOW] ${sym}: liquidação tardia (${Math.round((trade.settleDelayMs || 0) / 1000)}s de atraso) excluída das estatísticas.`, 'warning', undefined, sym);
+                        return;
+                    }
+                    resilienceRef.current.processResult(sym, win);
                     
                     await TradeMemoryManager.addTrade(user.uid, sym, {
                         id: `shadow_${trade.id}`,
@@ -282,7 +293,7 @@ export function useCryptoRadarV4(
         }, 2000);
 
         return () => clearInterval(settleInterval);
-    }, [user, isShadowMode, getCandlesFor, resilience]);
+    }, [user, isShadowMode, addLog]);
 
     const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
         const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
@@ -317,7 +328,15 @@ export function useCryptoRadarV4(
             });
 
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.
+
+DIRETRIZES RÍGIDAS DE DADOS (V5.3):
+1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
+2. PROIBIDO ALUCINAR: Nunca invente ativos (como 'Ativo A') ou preços (como '$100').
+3. Se um valor não estiver no dossier, diga "Dados Não Disponíveis no Snapshot".
+4. Baseie seu rigor de risco no P&L de $${sessionStats.pnl.toFixed(2)} e no Piso de $${lockedProfitFloor.toFixed(2)}.
+
+${context}`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -357,27 +376,37 @@ export function useCryptoRadarV4(
                 }
             }
 
+            if (gravity) {
+                addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
+            }
+
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             const bestCandidate = candidates.filter(c => c.direction !== 'NONE').sort((a, b) => b.score - a.score)[0];
 
             if (!bestCandidate && requireSentinelCandidate) {
+                addLog(`[SENTINEL] ${symbol}: Sem candidato técnico qualificado. Abortando conselho.`, 'sentinel', undefined, symbol);
                 setRadarStatus(prev => ({
                     ...prev,
-                    [symbol]: { symbol, lastAction: 'HOLD', confidence: 0, timestamp: Date.now(), holdReason: 'SENTINEL_EMPTY', indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } }
+                    [symbol]: { symbol, finalAction: 'HOLD', lastAction: 'HOLD', consensusConfidence: 0, confidence: 0, timestamp: Date.now(), holdReason: 'SENTINEL_EMPTY', indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } }
                 }));
                 return;
             }
 
+            if (bestCandidate) {
+                addLog(`[SENTINEL] ${symbol}: Candidato ${bestCandidate.rule} (${bestCandidate.direction}) detectado com score ${bestCandidate.score}.`, 'sentinel', undefined, symbol);
+            }
+
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
-            const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: ['OPTIONS', 'MULTIPLIERS'], allowedActions: ['CALL', 'PUT'] };
+            const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
             const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 decision.finalAction = 'HOLD';
+                addLog(`[WARNING] ${symbol}: Divergência detectada. Sentinel=${bestCandidate.direction} vs Conselho=${decision.finalAction}. Forçando HOLD.`, 'warning', undefined, symbol);
                 decision.holdReason = `DIVERGENCE: Sentinel(${bestCandidate.direction}) vs Conselho(${decision.finalAction}).`;
             }
 
@@ -428,6 +457,7 @@ export function useCryptoRadarV4(
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
                         confidence: decision.consensusConfidence, payoutRatio: backtest.payoutPct || 85,
                         duration: 15, durationUnit: 's', ev: 0, stake: stakeValue,
+                        timestamp: new Date(entryTs).toISOString(),
                         decisionTs: analysisStartTs, entryTs, llmLatencyMs,
                         rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
                         correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy

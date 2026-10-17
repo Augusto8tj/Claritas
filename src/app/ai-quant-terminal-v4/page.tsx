@@ -64,7 +64,7 @@ function CryptoLabContent() {
         resilience, stakeValue, setStakeValue,
         dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
-        multiplier, setMultiplier, takeProfitPct, setTakeProfitPct, stopLossPct, setStopLossPct,
+        multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,

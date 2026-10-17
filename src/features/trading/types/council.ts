@@ -102,6 +102,34 @@ export interface PortfolioRiskState {
 }
 
 /**
+ * Estatísticas agregadas de uma regra (por estado de gravidade e símbolo).
+ */
+export interface RuleEdgeStats {
+  rule: string;
+  gravityState: string;
+  symbol: string;
+  n: number;
+  wins: number;
+  pnl: number;
+  posteriorMean: number;
+  lowerBound: number;
+  avgProfit: number;
+  avgLoss: number;
+  profitFactor: number;
+  maxDrawdown: number;
+}
+
+export interface CouncilStats {
+  total: number;
+  call: number;
+  put: number;
+  hold: number;
+  vetoes: number;
+  fallbacks: number;
+  avgLatencyMs: number;
+}
+
+/**
  * Shadow Trade V4.2
  */
 export interface CryptoShadowTrade {
