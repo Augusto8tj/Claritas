@@ -1,4 +1,3 @@
-
 // /src/features/trading/services/crypto-gravity-engine.ts
 
 /**
@@ -33,6 +32,8 @@ export interface BitcoinGravityResult {
   slingshotDetected: boolean; // Lead-Lag Arbitrage trigger
   vetoReason?: string;
 }
+
+export type BitcoinGravity = BitcoinGravityResult;
 
 // ============================================================================
 // 2. MATH UTILITIES

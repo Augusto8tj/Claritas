@@ -1,4 +1,3 @@
-// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -10,7 +9,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
-import { initialCouncilStrategies } from '../strategies/v4-crypto-council';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';

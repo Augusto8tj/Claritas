@@ -9,6 +9,9 @@ export interface TradePostMortem {
   volatilityYangZhang: number;
   candlePattern: string;
   failureDiagnosis?: string;
+  btcRegime?: string;
+  gravityCorrelation?: number;
+  councilEntropy?: number;
 }
 
 export interface TradeMemoryBuffer {
@@ -79,6 +82,7 @@ export interface AssetExecutionPermission {
   allowedActions: ('CALL' | 'PUT')[];
   maxStake: number;
   enabled: boolean;
+  userId?: string;
 }
 
 /**
