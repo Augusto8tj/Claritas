@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -61,6 +60,7 @@ const AGENT_PERSONAS = {
 };
 
 const SETTINGS_KEY = 'cryptoLabV4Settings';
+const DEFAULT_ANALYSIS_INTERVAL = 120;
 
 export function useCryptoRadarV4(
     activeSymbol: string | null,
@@ -100,7 +100,7 @@ export function useCryptoRadarV4(
 
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
-    const [analysisInterval, setAnalysisInterval] = useState(AnalysisInterval); 
+    const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
 
@@ -188,7 +188,14 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // Conectar recordPulse para provar vida dos ativos do cluster
+    // Persistência e Heartbeat
+    useEffect(() => {
+        const savedOllama = localStorage.getItem('ollamaConfig');
+        if (savedOllama) {
+            try { setOllamaConfig(JSON.parse(savedOllama)); } catch (e) {}
+        }
+    }, []);
+
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) {
             resilience.recordPulse(activeSymbol);
@@ -242,6 +249,24 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
+    const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
+        const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
+        const feats = computeSignalFeatures(assetCandles as any);
+        if (!inds || !feats) return null;
+        return {
+            symbol: assetSym,
+            currentPrice: assetCandles[assetCandles.length - 1].close,
+            priceHistory: assetCandles.map(c => c.close),
+            rsi: feats.rsi,
+            adx: inds.adx || 30,
+            atrNow: inds.atr || 0.001,
+            bbw: inds.bbw || 1.0,
+            volatilityRatio: feats.atrRatio || 1,
+            momentumShort: feats.mom5,
+            momentumMedium: feats.mom15
+        };
+    };
+
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
         const time = new Date().toLocaleTimeString();
@@ -291,25 +316,6 @@ ${context}`;
         const min = staleMinutes(symbol);
         if (min !== null && min > 2.5) return;
 
-        // ETAPA 5: Função auxiliar local para extração de telemetria dinâmica
-        const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
-            const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
-            const feats = computeSignalFeatures(assetCandles as any);
-            if (!inds || !feats) return null;
-            return {
-                symbol: assetSym,
-                currentPrice: assetCandles[assetCandles.length - 1].close,
-                priceHistory: assetCandles.map(c => c.close),
-                rsi: feats.rsi,
-                adx: inds.adx || 30,
-                atrNow: inds.atr || 0.001,
-                bbw: inds.bbw || 1.0,
-                volatilityRatio: feats.atrRatio || 1,
-                momentumShort: feats.mom5,
-                momentumMedium: feats.mom15
-            };
-        };
-
         try {
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             if (!indicators) return;
@@ -321,7 +327,6 @@ ${context}`;
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
-                    // ETAPA 5: Substituição de valores fixos por telemetria dinâmica do BTC
                     const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
                     const targetFeats = buildAssetFeatures(symbol, candles);
                     if (btcFeats && targetFeats) {
@@ -330,7 +335,6 @@ ${context}`;
                 }
             }
 
-            // ETAPA 5: Logging de Radar com o vetor gravitacional real
             if (gravity) {
                 addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
             }
@@ -341,7 +345,7 @@ ${context}`;
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
-            const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile }, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
 
             if (symbol === activeSymbol) { setLastDecision(decision); setTelemetry(decision.telemetry); setMemoryBuffer(buffer); }
