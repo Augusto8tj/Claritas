@@ -24,7 +24,7 @@ import {
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
     MessageSquare, Send, Gauge, Brain, User, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
-    TestTube, HardDrive, Info
+    TestTube, HardDrive, Info, ShieldX
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -180,7 +180,7 @@ function CryptoLabContent() {
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
                             <PopoverTrigger asChild>
                                 <Button variant="outline" size="sm" className="h-7 text-[10px] uppercase font-bold border-orange-200">
-                                    Selecionar Ativos <ChevronsUpDown className="ml-2 h-3 w-3" />
+                                    Selecionar Ativos <ChevronsUpDown className="ml-2 h-4 w-4" />
                                 </Button>
                             </PopoverTrigger>
                             <PopoverContent className="w-[300px] p-0" align="end">
@@ -255,6 +255,18 @@ function CryptoLabContent() {
                                     </div>
                                     
                                     {!isStale && <RadarResilienceBadges rigor={rigor} isStable={isStable} />}
+
+                                    <div className="mt-2 pt-2 border-t border-current/10 space-y-1">
+                                        {status?.isQualified ? (
+                                            <Badge variant="outline" className="text-green-600 border-green-200 flex gap-1 items-center font-bold">
+                                                <ShieldCheck className="h-3 w-3" /> PRONTO PARA LIVE
+                                            </Badge>
+                                        ) : (
+                                            <Badge variant="outline" className="text-red-600 border-red-200 flex gap-1 items-center font-bold">
+                                                <ShieldX className="h-3 w-3" /> BLOQUEIO: N {"<"} 200
+                                            </Badge>
+                                        )}
+                                    </div>
 
                                     {gravity && !isStale && (
                                         <div className="mt-2 pt-2 border-t border-current/10 space-y-1">

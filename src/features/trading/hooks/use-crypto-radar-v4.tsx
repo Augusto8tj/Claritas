@@ -1,3 +1,4 @@
+
 // src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
@@ -193,7 +194,6 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // ETAPA 4: Heartbeat de liquidez
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) resilience.recordPulse(activeSymbol);
     }, [priceTicks, activeSymbol, resilience]);
@@ -204,7 +204,6 @@ export function useCryptoRadarV4(
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
 
-    // Persistência local
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
@@ -248,8 +247,6 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
-    // 8A: Ciclo de Liquidação Independente (2s)
-    // Refs evitam recriar o intervalo a cada render (resilience/getCandlesFor mudam de identidade a cada tick).
     const getCandlesForRef = useRef(getCandlesFor);
     const resilienceRef = useRef(resilience);
     useEffect(() => {
@@ -267,7 +264,6 @@ export function useCryptoRadarV4(
                     return c.length > 0 ? c[c.length - 1].close : null;
                 },
                 async (sym, win, pnl, trade) => {
-                    // Liquidação tardia (preço de saída longe do vencimento) não alimenta rigor nem memória.
                     if (trade.lateSettle) {
                         addLog(`[SHADOW] ${sym}: liquidação tardia (${Math.round((trade.settleDelayMs || 0) / 1000)}s de atraso) excluída das estatísticas.`, 'warning', undefined, sym);
                         return;
@@ -422,7 +418,6 @@ ${context}`;
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 if (isShadowMode) {
-                    // IMPLEMENTAÇÃO 8A
                     if (symbol === 'cryBTCUSD') {
                         addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol);
                         return;

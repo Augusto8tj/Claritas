@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 # AVISO: Este script irá forçar o envio das suas alterações locais,
