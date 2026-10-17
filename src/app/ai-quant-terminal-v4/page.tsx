@@ -174,7 +174,7 @@ function CryptoLabContent() {
             <Card className="bg-orange-500/5 border-orange-500/20 shadow-sm overflow-hidden">
                 <CardHeader className="py-3 px-6 bg-orange-500/10 border-b border-orange-500/20 flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-xs font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
-                        <Radar className="h-4 w-4 animate-spin-slow" /> Bitcoin Gravity Radar V5 (Supreme)
+                        <Radar className="h-4 w-4 animate-spin-slow" /> Radar de Gravidade Bitcoin V5 (Supreme)
                     </CardTitle>
                     <div className="flex items-center gap-4">
                         <Popover open={isSelectorOpen} onOpenChange={setIsSelectorOpen}>
@@ -584,7 +584,7 @@ function CryptoLabContent() {
                                         </div>
                                     ))}
                                     {isChatLoading && (
-                                        <div className="flex items-center gap-2 text-xs text-orange-600 animate-pulse font-mono p-3">
+                                        <div className="flex items-center gap-2 text-orange-600 animate-pulse font-mono p-3">
                                             <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
                                         </div>
                                     )}

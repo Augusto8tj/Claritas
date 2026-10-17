@@ -1,5 +1,4 @@
 
-// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**

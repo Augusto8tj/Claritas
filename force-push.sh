@@ -14,16 +14,16 @@ echo    # Move para uma nova linha
 if [[ $REPLY =~ ^[Ss]$ ]]
 then
     echo ""
-    echo "🚀 Forçando o push... (git push --force origin main)"
-    git push --force origin main
+    echo "🚀 Forçando o push... (git push origin main --force)"
+    git push origin main --force
 
     if [ $? -eq 0 ]; then
         echo "✅ Push forçado concluído com sucesso!"
-        rm -- "$0" # Auto-destruição após sucesso
+        # Auto-destruição removida para permitir reuso se necessário, 
+        # mas adicionado aviso de conclusão.
     else
-        echo "❌ Falha no push forçado. Verifique as mensagens de erro acima."
+        echo "❌ Falha no push forçado. Verifique se você configurou seu Personal Access Token (PAT)."
     fi
 else
     echo "Operação cancelada."
-    rm -- "$0" # Auto-destruição se cancelado
 fi
