@@ -100,7 +100,7 @@ export function useCryptoRadarV4(
 
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
-    const [analysisInterval, setAnalysisInterval] = useState(60); 
+    const [analysisInterval, setAnalysisInterval] = useState(AnalysisInterval); 
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
 
@@ -124,7 +124,6 @@ export function useCryptoRadarV4(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     
-    // ETAPA 3: Remoção de segredos hardcoded e persistência
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>({
         baseUrl: "",
         apiKey: "",
@@ -189,7 +188,7 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // ETAPA 4: Conectar recordPulse para provar vida dos ativos do cluster
+    // Conectar recordPulse para provar vida dos ativos do cluster
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) {
             resilience.recordPulse(activeSymbol);
@@ -292,6 +291,25 @@ ${context}`;
         const min = staleMinutes(symbol);
         if (min !== null && min > 2.5) return;
 
+        // ETAPA 5: Função auxiliar local para extração de telemetria dinâmica
+        const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
+            const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
+            const feats = computeSignalFeatures(assetCandles as any);
+            if (!inds || !feats) return null;
+            return {
+                symbol: assetSym,
+                currentPrice: assetCandles[assetCandles.length - 1].close,
+                priceHistory: assetCandles.map(c => c.close),
+                rsi: feats.rsi,
+                adx: inds.adx || 30,
+                atrNow: inds.atr || 0.001,
+                bbw: inds.bbw || 1.0,
+                volatilityRatio: feats.atrRatio || 1,
+                momentumShort: feats.mom5,
+                momentumMedium: feats.mom15
+            };
+        };
+
         try {
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             if (!indicators) return;
@@ -303,11 +321,18 @@ ${context}`;
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
-                    gravity = calculateBitcoinGravity(
-                        { symbol: 'cryBTCUSD', currentPrice: btcCandles[btcCandles.length-1].close, priceHistory: btcCandles.map(c => c.close), rsi: 50, adx: 30, atrNow: 0.001, bbw: 1.0, volatilityRatio: 1, momentumShort: 0, momentumMedium: 0 } as any, 
-                        { symbol, currentPrice: candles[candles.length-1].close, priceHistory: candles.map(c => c.close), rsi: baseFeats.rsi, adx: indicators.adx || 30, atrNow: indicators.atr || 0.001, bbw: indicators.bbw || 1.0, volatilityRatio: 1, momentumShort: baseFeats.mom5, momentumMedium: baseFeats.mom15 } as any
-                    );
+                    // ETAPA 5: Substituição de valores fixos por telemetria dinâmica do BTC
+                    const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
+                    const targetFeats = buildAssetFeatures(symbol, candles);
+                    if (btcFeats && targetFeats) {
+                        gravity = calculateBitcoinGravity(btcFeats as any, targetFeats as any);
+                    }
                 }
+            }
+
+            // ETAPA 5: Logging de Radar com o vetor gravitacional real
+            if (gravity) {
+                addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
             }
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
