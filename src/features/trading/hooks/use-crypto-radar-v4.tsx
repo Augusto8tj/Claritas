@@ -1,3 +1,4 @@
+
 'use client';
 
 /**
@@ -123,7 +124,7 @@ export function useCryptoRadarV4(
     const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [isChatLoading, setIsChatLoading] = useState(false);
     
-    // ETAPA 3: Remoção de segredos hardcoded
+    // ETAPA 3: Remoção de segredos hardcoded e persistência
     const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>({
         baseUrl: "",
         apiKey: "",
@@ -138,29 +139,6 @@ export function useCryptoRadarV4(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
-
-    // ETAPA 3: Persistência e Handshake
-    useEffect(() => {
-        const savedOllama = localStorage.getItem('ollamaConfig');
-        if (savedOllama) {
-            try {
-                setOllamaConfig(JSON.parse(savedOllama));
-            } catch (e) { console.error("Falha ao carregar ollamaConfig", e); }
-        }
-
-        const savedSettings = localStorage.getItem(SETTINGS_KEY);
-        if (savedSettings) {
-            try {
-                const s = JSON.parse(savedSettings);
-                if (s.analysisInterval) setAnalysisInterval(s.analysisInterval);
-                if (s.strategicProfile) setStrategicProfile(s.strategicProfile);
-                if (s.confidenceThreshold) setConfidenceThreshold(s.confidenceThreshold);
-                if (s.stakeValue) setStakeValue(s.stakeValue);
-                if (s.dailyBalance) setDailyBalance(s.dailyBalance);
-                if (s.dailyTarget) setDailyTarget(s.dailyTarget);
-            } catch (e) { console.error("Falha ao carregar settings", e); }
-        }
-    }, []);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         setOllamaConfig(prev => {
@@ -183,10 +161,6 @@ export function useCryptoRadarV4(
             }
         } catch (e) {}
     }, [ollamaConfig]);
-
-    useEffect(() => {
-        if (ollamaConfig?.baseUrl) fetchAvailableModels();
-    }, [ollamaConfig?.baseUrl, fetchAvailableModels]);
 
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
@@ -214,6 +188,21 @@ export function useCryptoRadarV4(
     }, [operationsLog]);
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+
+    // ETAPA 4: Conectar recordPulse para provar vida dos ativos do cluster
+    useEffect(() => {
+        if (activeSymbol && priceTicks.length > 0) {
+            resilience.recordPulse(activeSymbol);
+        }
+    }, [priceTicks, activeSymbol, resilience]);
+
+    useEffect(() => {
+        Object.keys(multiAssetCandles).forEach(symbol => {
+            if (watchedSymbols.includes(symbol)) {
+                resilience.recordPulse(symbol);
+            }
+        });
+    }, [multiAssetCandles, watchedSymbols, resilience]);
 
     useEffect(() => {
         if (!initializedRef.current && isConnected) {
@@ -322,8 +311,6 @@ ${context}`;
             }
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
-            const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
-            
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
