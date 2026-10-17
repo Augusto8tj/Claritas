@@ -25,7 +25,7 @@ import { CouncilAutopilotInterfaceV2 } from "@/features/trading/components/deriv
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { ApiStatusIndicatorV2 } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { IndicatorPanel } from "@/features/trading/components/deriv-trader/indicator-panel";
-import type { CandleData } from '@/lib/types';
+import type { CandleData, ChartData } from '@/lib/types';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 
@@ -100,7 +100,7 @@ const IsolatedMarketChart = () => {
         chartType, setChartType, timePeriod, setTimePeriod, tradeAnnotations
     } = useDerivApiV2();
     
-    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    const candleData = useMemo(() => chartData.filter((d: ChartData): d is CandleData => 'close' in d), [chartData]);
     
     // Otimização: Apenas obtemos os indicadores, sem recalcular toda a lógica do conselho
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], candleData, 0);
@@ -137,7 +137,7 @@ const IsolatedMarketChart = () => {
 
 const MainContent = () => {
     const { activeSymbol, priceTicks, dataVersion, operationsLog, sellContract, chartData, clearActiveContracts } = useDerivApiV2();
-    const candleData = useMemo(() => chartData.filter((d): d is CandleData => 'close' in d), [chartData]);
+    const candleData = useMemo(() => chartData.filter((d: ChartData): d is CandleData => 'close' in d), [chartData]);
     const robotCouncil = useRobotCouncilV2(activeSymbol, priceTicks, candleData, dataVersion);
     
     return (

@@ -1080,7 +1080,7 @@ export function useDerivApiV2State() {
     setTokens: (t: { demo?: string; real?: string }) => { if(t.demo) { localStorage.setItem(DERIV_DEMO_TOKEN_KEY, t.demo); setDemoToken(t.demo); } if(t.real) { localStorage.setItem(DERIV_REAL_TOKEN_KEY, t.real); setRealToken(t.real); } setTriggerReconnect(c => c + 1); },
     disconnect: (type: AccountType) => { if(type === 'demo') localStorage.removeItem(DERIV_DEMO_TOKEN_KEY); else localStorage.removeItem(DERIV_REAL_TOKEN_KEY); setTriggerReconnect(c => c + 1); },
     reconnect: async () => { setTriggerReconnect(c => c + 1); return true; },
-    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol: (s) => { setActiveSymbol(s); activeSymbolRef.current = s; }, 
+    accountBalance, operationsLog, assetGroups, isAssetsLoading, activeSymbol, setActiveSymbol: (s: string | null) => { setActiveSymbol(s); activeSymbolRef.current = s; }, 
     chartData, botCandleData, priceTicks, isChartLoading, chartError, chartType, setChartType, 
     timePeriod, setTimePeriod, dataVersion, executeTrade, sellContract, getHistoricalData, 
     clearActiveContracts: () => { setAndPersistOperationsLog([]); setTradeAnnotations([]); }, tradeAnnotations, durationLimits,

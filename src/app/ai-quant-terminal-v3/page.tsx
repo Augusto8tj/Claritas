@@ -22,7 +22,7 @@ import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, t
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from "@/features/trading/components/deriv-trader/ApiStatusIndicatorV2";
 import { MarketChart } from "@/features/trading/components/deriv-trader/market-chart";
-import { useAIQuantTerminalV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
+import { useAIQuantTerminalV3, type AllowedContractsV3 } from "@/features/trading/hooks/use-ai-quant-terminal-v3";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
@@ -36,6 +36,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { groupOf } from '@/features/trading/services/report-builders';
+import { Asset, AssetGroup, Operation } from '@/lib/types';
 
 function TerminalV3Content() {
     const { 
@@ -115,8 +116,8 @@ function TerminalV3Content() {
 
     const filteredLogs = useMemo(() => {
         if (logFilter === 'all') return reasoningLog;
-        if (logFilter === 'error') return reasoningLog.filter(l => l.type === 'error' || l.type === 'warning');
-        return reasoningLog.filter(l => l.type === logFilter);
+        if (logFilter === 'error') return reasoningLog.filter((l: any) => l.type === 'error' || l.type === 'warning');
+        return reasoningLog.filter((l: any) => l.type === logFilter);
     }, [reasoningLog, logFilter]);
 
     const scanEstimateSec = Math.round(watchedSymbols.length * (councilStats.avgLatencyMs || 4000) / 1000);
@@ -175,7 +176,7 @@ function TerminalV3Content() {
     return (
         <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6 bg-background min-h-screen text-foreground">
             
-            {/* ALERTAS DE RISCO (MODO REAL) */}
+            {/* ALERTA DE RISCO (MODO REAL) */}
             {!isShadowMode && (
               <Alert className="bg-red-500/10 border-red-500/30 text-red-600">
                 <AlertCircle className="h-4 w-4" />
@@ -207,14 +208,14 @@ function TerminalV3Content() {
                                     <CommandInput placeholder="Filtrar ativos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group) => (
+                                        {assetGroups.map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
-                                                {group.options.map((asset) => (
+                                                {group.options.map((asset: Asset) => (
                                                     <CommandItem
                                                         key={asset.value}
                                                         onSelect={() => {
                                                             const newSymbols = watchedSymbols.includes(asset.value)
-                                                                ? watchedSymbols.filter(s => s !== asset.value)
+                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
                                                                 : [...watchedSymbols, asset.value];
                                                             setWatchedSymbols(newSymbols);
                                                         }}
@@ -236,7 +237,7 @@ function TerminalV3Content() {
                 </CardHeader>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {watchedSymbols.map((symbol) => {
+                        {watchedSymbols.map((symbol: any) => {
                             const status = radarStatus[symbol];
                             const sent = sentinel[symbol];
                             const min = staleMinutes(symbol);
@@ -244,7 +245,7 @@ function TerminalV3Content() {
 
                             return (
                                 <div 
-                                    key={symbol} 
+                                    key={String(symbol)} 
                                     onClick={() => setActiveSymbol(symbol)}
                                     title={isStale ? `Mercado Defasado: ${Math.round(min || 0)} min` : `${status?.debugVotes ?? ''} ${status?.holdReason ?? ''}`}
                                     className={cn(
@@ -255,7 +256,7 @@ function TerminalV3Content() {
                                     )}
                                 >
                                     <div className="flex justify-between items-center mb-1">
-                                        <span className="text-[10px] font-bold font-mono">{symbol}</span>
+                                        <span className="text-[10px] font-bold font-mono">{String(symbol)}</span>
                                         {status?.isQualified && !isStale && <Zap className="h-3 w-3 text-yellow-500 fill-current" />}
                                         {isStale && <Badge variant="outline" className="h-3.5 px-1 text-[8px] bg-red-50 text-red-600 border-red-200">OFFLINE</Badge>}
                                     </div>
@@ -278,7 +279,7 @@ function TerminalV3Content() {
 
                                     <div className="flex gap-1 mt-1.5 pt-1.5 border-t border-current/10">
                                         {['OPTIONS', 'MULTIPLIERS', 'ACCUMULATORS'].map((cat) => {
-                                            const cand = sent?.candidates.find(c => c.contract === cat);
+                                            const cand = sent?.candidates.find((c: any) => c.contract === cat);
                                             const score = isStale ? 'fechado' : (cand?.score ?? '--');
                                             const isHigh = !isStale && typeof score === 'number' && score >= 55;
                                             return (
@@ -383,7 +384,7 @@ function TerminalV3Content() {
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas para validação</span>
                                 </Label>
-                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={handleShadowModeToggle} />
+                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={(val: any) => setIsShadowMode(val)} />
                             </div>
 
                             <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
@@ -473,7 +474,7 @@ function TerminalV3Content() {
                                             <div key={contract} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`contract-${contract}`} 
-                                                    checked={allowedContracts[contract as keyof typeof allowedContracts]}
+                                                    checked={allowedContracts[contract as keyof AllowedContractsV3]}
                                                     onCheckedChange={(checked) => {
                                                         setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
                                                     }}
@@ -864,14 +865,14 @@ function TerminalV3Content() {
                                                 <CommandInput placeholder="Buscar ativos (Forex, Cripto...)" />
                                                 <CommandList>
                                                     <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                                    {assetGroups.map((group) => (
+                                                    {assetGroups.map((group: AssetGroup) => (
                                                         <CommandGroup key={group.label} heading={group.label}>
-                                                            {group.options.map((asset) => (
+                                                            {group.options.map((asset: Asset) => (
                                                                 <CommandItem
                                                                     key={asset.value}
                                                                     onSelect={() => {
                                                                         const newSymbols = extraBacktestSymbols.includes(asset.value)
-                                                                            ? extraBacktestSymbols.filter(s => s !== asset.value)
+                                                                            ? extraBacktestSymbols.filter((s: string) => s !== asset.value)
                                                                             : [...extraBacktestSymbols, asset.value];
                                                                         setExtraBacktestSymbols(newSymbols);
                                                                     }}
@@ -889,7 +890,7 @@ function TerminalV3Content() {
                                     
                                     {extraBacktestSymbols.length > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-2">
-                                            {extraBacktestSymbols.map(sym => (
+                                            {extraBacktestSymbols.map((sym: string) => (
                                                 <Badge key={sym} variant="secondary" className="text-[9px] h-5 pl-1 pr-0.5 flex items-center gap-1">
                                                     {sym}
                                                     <Button 
@@ -921,7 +922,7 @@ function TerminalV3Content() {
                                 <div className="space-y-4">
                                     <Alert className="bg-muted/30 border-dashed p-2">
                                         <Info className="h-3 w-3" />
-                                        <AlertDescription className="text-[9px] leading-tight">
+                                        <AlertDescription className="text-[9px] font-bold leading-tight">
                                             O período Anterior não foi inspecionado antes. Efeito que aparece no Recente e some no Anterior é ruído. Resultados brutos, sem spread nem comissão.
                                         </AlertDescription>
                                     </Alert>
@@ -935,7 +936,7 @@ function TerminalV3Content() {
                                         {['SINTETICOS', 'REAIS'].map(group => (
                                             <TabsContent key={group} value={group} className="mt-2 space-y-4">
                                                 {['recent', 'older'].map(period => {
-                                                    const reports = backtest.merged[group]?.[period as 'recent' | 'older'];
+                                                    const reports = (backtest.merged[group] as any)?.[period];
                                                     if (!reports) return null;
 
                                                     const groupMeta = Object.entries(backtest.assetMeta)
@@ -957,7 +958,7 @@ function TerminalV3Content() {
                                                             <div className="text-[10px] font-black uppercase text-muted-foreground flex items-center justify-between">
                                                                 <div className="flex items-center gap-1">
                                                                   {period === 'recent' ? 'Recente (50%)' : 'Anterior (Confirmação 50%)'}
-                                                                  <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s,r)=>s+r.stat.n, 0)}</Badge>
+                                                                  <Badge variant="outline" className="h-3.5 text-[8px] py-0 px-1">n total: {reports.reduce((s: number, r: any) => s + r.stat.n, 0)}</Badge>
                                                                 </div>
                                                                 <span className="opacity-60">{minDate} - {maxDate}</span>
                                                             </div>
@@ -975,7 +976,7 @@ function TerminalV3Content() {
                                                                         </TableRow>
                                                                     </TableHeader>
                                                                     <TableBody>
-                                                                        {reports.map(r => {
+                                                                        {reports.map((r: any) => {
                                                                             const verdictLower = r.verdict.toLowerCase();
                                                                             const isBad = verdictLower.includes('abaixo do ponto de equilibrio') || verdictLower.includes('abaixo do acaso');
                                                                             const isGood = verdictLower.includes('acima do ponto de equilibrio') || verdictLower.includes('acima do acaso');
@@ -1034,20 +1035,20 @@ function TerminalV3Content() {
                                                       <div key={group} className="mb-6">
                                                         <p className="font-black text-purple-700 mb-2 underline">MERCADO: {group}</p>
                                                         {['recent', 'older'].map(pKey => {
-                                                          const reps = periods[pKey as 'recent' | 'older'];
+                                                          const reps = (periods as any)?.[pKey];
                                                           if (!reps) return null;
                                                           return (
                                                             <div key={pKey} className="ml-2 mb-4">
                                                               <p className="font-bold text-muted-foreground mb-1">[{pKey.toUpperCase()}]</p>
-                                                              {reps.map(r => (
+                                                              {reps.map((r: any) => (
                                                                 <div key={r.rule} className="ml-2 mb-3 border-l pl-2 border-purple-200">
                                                                   <p className="font-bold">{r.rule}</p>
                                                                   <div className="flex gap-4 opacity-70 mb-1">
-                                                                    {r.buckets.map(b => <span key={b.label}>{b.label}: {(b.stat.rate*100).toFixed(1)}% (n={b.stat.n})</span>)}
+                                                                    {r.buckets.map((b: any) => <span key={b.label}>{b.label}: {(b.stat.rate*100).toFixed(1)}% (n={b.stat.n})</span>)}
                                                                   </div>
                                                                   <div className="space-y-0.5">
                                                                     {Object.keys(backtest.perAsset).filter(sym => groupOf(sym) === group).map(sym => {
-                                                                      const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : backtest.perAsset[sym].older)?.find(x => x.rule === r.rule);
+                                                                      const assetRep = (pKey === 'recent' ? backtest.perAsset[sym].recent : (backtest.perAsset[sym] as any).older)?.find((x: any) => x.rule === r.rule);
                                                                       return (
                                                                         <div key={sym} className="flex justify-between max-w-[200px]">
                                                                           <span>{sym}:</span>
@@ -1115,7 +1116,7 @@ function TerminalV3Content() {
                                 {filteredLogs.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    filteredLogs.map((log, i) => (
+                                    filteredLogs.map((log: any) => (
                                         <div key={log.ts} className="mb-1.5 border-l-2 border-purple-500/30 pl-2">
                                             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}

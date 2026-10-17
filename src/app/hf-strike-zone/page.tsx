@@ -51,7 +51,7 @@ function PageContent() {
   const [dailyTarget, setDailyTarget] = useState(50.0);
   const [stakeValue, setStakeValue] = useState(1.0);
 
-  const hfOperations = useMemo(() => operationsLog.filter(op => op.initiator === 'HF_Strike'), [operationsLog]);
+  const hfOperations = useMemo(() => operationsLog.filter((op: Operation) => op.initiator === 'HF_Strike'), [operationsLog]);
 
   const {
     activeStrikeZone,

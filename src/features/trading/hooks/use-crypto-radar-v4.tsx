@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -181,13 +180,13 @@ export function useCryptoRadarV4(
     }, [clearActiveContracts, toast]);
 
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
+        const finishedTrades = operationsLog.filter((op: Operation) => 
             op.status !== 'pending' && op.initiator.startsWith('Conselho')
         );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : null;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        const pnl = finishedTrades.reduce((acc: number, op: Operation) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
@@ -336,7 +335,7 @@ ${context}`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
-                ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+                ...chatMessages.slice(-8).map((m: any) => ({ role: m.role, content: m.content }))
             ]);
 
             if (response.success) {
@@ -394,7 +393,7 @@ ${context}`;
             }
 
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
-            const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
+            const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter((op: Operation) => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter((op: Operation) => op.status === 'pending').reduce((s: number, o: Operation) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
@@ -423,8 +422,8 @@ ${context}`;
                         return;
                     }
 
-                    const pending = CryptoShadowEngine.getPendingFromCache().filter(t => t.symbol === symbol);
-                    const hasSamePending = pending.some(t => t.direction === decision.finalAction);
+                    const pending = CryptoShadowEngine.getPendingFromCache().filter((t: any) => t.symbol === symbol);
+                    const hasSamePending = pending.some((t: any) => t.direction === decision.finalAction);
                     const now = Date.now();
                     const lastExec = shadowExecutionTimestampsRef.current[symbol] || 0;
 

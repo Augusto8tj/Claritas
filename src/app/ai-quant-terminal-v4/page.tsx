@@ -1,4 +1,3 @@
-
 'use client';
 
 /**
@@ -44,6 +43,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Asset, AssetGroup } from '@/lib/types';
 
 function CryptoLabContent() {
     const { 
@@ -188,9 +188,9 @@ function CryptoLabContent() {
                                     <CommandInput placeholder="Filtrar criptos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group) => (
+                                        {assetGroups.map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
-                                                {group.options.map((asset) => (
+                                                {group.options.map((asset: Asset) => (
                                                     <CommandItem
                                                         key={asset.value}
                                                         onSelect={() => {
@@ -217,7 +217,7 @@ function CryptoLabContent() {
                 </CardHeader>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {watchedSymbols.map((symbol) => {
+                        {watchedSymbols.map((symbol: any) => {
                             const status = radarStatus[symbol];
                             const gravity = status?.gravity;
                             const isStable = resilience.checkStability(symbol);
@@ -227,7 +227,7 @@ function CryptoLabContent() {
 
                             return (
                                 <div 
-                                    key={symbol} 
+                                    key={String(symbol)} 
                                     onClick={() => setActiveSymbol(symbol)}
                                     className={cn(
                                         "p-3 rounded-lg border transition-all cursor-pointer group hover:scale-105",
@@ -237,7 +237,7 @@ function CryptoLabContent() {
                                     )}
                                 >
                                     <div className="flex justify-between items-center mb-1">
-                                        <span className="text-[10px] font-bold font-mono">{symbol}</span>
+                                        <span className="text-[10px] font-bold font-mono">{String(symbol)}</span>
                                         {gravity?.isBtcExploding && !isStale && <Zap className="h-3 w-3 text-yellow-400 fill-current animate-pulse" />}
                                         {isStale && <Badge variant="outline" className="h-3.5 px-1 text-[8px] bg-red-50 text-red-600 border-red-200">OFFLINE</Badge>}
                                     </div>
@@ -316,7 +316,7 @@ function CryptoLabContent() {
                         </div>
                     </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-4">
+                <div className="flex wrap items-center gap-4">
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
@@ -574,7 +574,7 @@ function CryptoLabContent() {
                                     )}
                                     {chatMessages.map((msg: any, i: number) => (
                                         <div key={i} className={cn(
-                                            "flex flex-col max-w-[85%] rounded-lg p-3 text-xs leading-relaxed border shadow-sm",
+                                            "flex flex-col max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed border shadow-sm",
                                             msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
                                         )}>
                                             <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">

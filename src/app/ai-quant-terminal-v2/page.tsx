@@ -1,4 +1,3 @@
-
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -41,6 +40,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Operation } from '@/lib/types';
 
 function TerminalContentV2() {
     const { 
@@ -50,7 +50,7 @@ function TerminalContentV2() {
         clearActiveContracts, accountType, setAccountType 
     } = useDerivApi();
 
-    const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, botCandleData);
+    const quant = useAIQuantTerminalV2(activeSymbol, priceTicks, chartData as any);
     const { indicators: councilIndicators } = useRobotCouncilV2(activeSymbol, [], botCandleData, dataVersion);
     
     const { 
@@ -105,14 +105,14 @@ function TerminalContentV2() {
 
     const terminalSessionTrades = useMemo(() => {
         const today = new Date().toDateString();
-        return operationsLog.filter(op => 
+        return operationsLog.filter((op: Operation) => 
             op.initiator === 'Conselho' && 
             new Date(op.timestamp).toDateString() === today
         );
     }, [operationsLog]);
 
     const activeAssetsWithTrades = useMemo(() => {
-        const assets = new Set(terminalSessionTrades.map(op => op.asset));
+        const assets = new Set(terminalSessionTrades.map((op: Operation) => op.asset));
         if (activeSymbol) assets.add(activeSymbol);
         return Array.from(assets).sort();
     }, [terminalSessionTrades, activeSymbol]);
@@ -142,7 +142,7 @@ function TerminalContentV2() {
                 </CardHeader>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {Object.values(radarStatus).map((asset) => (
+                        {Object.values(radarStatus).map((asset: any) => (
                             <div 
                                 key={asset.symbol} 
                                 onClick={() => setActiveSymbol(asset.symbol)}
@@ -254,7 +254,7 @@ function TerminalContentV2() {
                                 <Slider 
                                     value={[confidenceThreshold]} 
                                     min={10} max={95} step={1} 
-                                    onValueChange={(v) => setConfidenceThreshold(v[0])}
+                                    onValueChange={(v: any) => setConfidenceThreshold(v[0])}
                                     disabled={isAutoMode}
                                 />
                             </div>
@@ -275,7 +275,7 @@ function TerminalContentV2() {
                                 className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive" : "bg-primary")}
                             >
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {isAutoMode ? 'Pausar Automação' : 'Ativar Automação'}
+                                {isAutoMode ? 'Parar Automação' : 'Ativar Automação'}
                             </Button>
                         </CardContent>
                     </Card>
@@ -348,8 +348,8 @@ function TerminalContentV2() {
                                 <div className="px-2 border-b bg-muted/20 overflow-x-auto no-scrollbar">
                                     <TabsList className="h-8 justify-start bg-transparent p-0 flex-nowrap w-max">
                                         <TabsTrigger value="ALL" className="text-[9px] font-bold h-7 uppercase">Global</TabsTrigger>
-                                        {activeAssetsWithTrades.map(asset => (
-                                            <TabsTrigger key={asset} value={asset} className="text-[9px] font-bold h-7 uppercase">{asset}</TabsTrigger>
+                                        {activeAssetsWithTrades.map((asset: any) => (
+                                            <TabsTrigger key={String(asset)} value={String(asset)} className="text-[9px] font-bold h-7 uppercase">{String(asset)}</TabsTrigger>
                                         ))}
                                     </TabsList>
                                 </div>
@@ -358,9 +358,9 @@ function TerminalContentV2() {
                                     <TabsContent value="ALL" className="m-0 border-none">
                                         {renderTradeList(terminalSessionTrades, formatCurrency)}
                                     </TabsContent>
-                                    {activeAssetsWithTrades.map(asset => (
-                                        <TabsContent key={asset} value={asset} className="m-0 border-none">
-                                            {renderTradeList(terminalSessionTrades.filter(op => op.asset === asset), formatCurrency)}
+                                    {activeAssetsWithTrades.map((asset: any) => (
+                                        <TabsContent key={String(asset)} value={String(asset)} className="m-0 border-none">
+                                            {renderTradeList(terminalSessionTrades.filter((op: Operation) => op.asset === asset), formatCurrency)}
                                         </TabsContent>
                                     ))}
                                 </ScrollArea>
@@ -522,7 +522,7 @@ function TerminalContentV2() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader>
                             <CardTitle className="text-sm flex items-center gap-2 text-muted-foreground">
-                                <Cpu className="h-4 w-4" /> Telemetria Tick-to-Trade
+                                <Cpu className="h-4 w-4 text-muted-foreground" /> Telemetria Tick-to-Trade
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 text-xs">
@@ -600,7 +600,7 @@ function renderTradeList(trades: any[], formatCurrency: (v: number) => string) {
     }
     return (
         <div className="divide-y divide-border">
-            {trades.map((op) => (
+            {trades.map((op: Operation) => (
                 <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
                     <div className="flex items-center justify-between mb-1">
                         <div className="flex items-center gap-2">
@@ -611,7 +611,7 @@ function renderTradeList(trades: any[], formatCurrency: (v: number) => string) {
                             )}
                             <span className="text-[10px] font-black uppercase font-mono">{op.asset}</span>
                         </div>
-                        <Badge variant={op.status === 'won' ? 'default' : op.status === 'lost' ? 'destructive' : 'outline'} className="text-[8px] h-4 py-0 px-1 font-bold">
+                        <Badge variant={op.status === 'won' ? 'default' : 'destructive'} className="text-[8px] h-4 py-0 px-1 font-bold">
                             {op.status.toUpperCase()}
                         </Badge>
                     </div>

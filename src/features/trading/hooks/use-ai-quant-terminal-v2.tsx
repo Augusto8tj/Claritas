@@ -90,7 +90,7 @@ export function useAIQuantTerminalV2(
     priceTicks: TickData[],
     chartData: CandleData[]
 ) {
-    const { isConnected, executeTrade, operationsLog, accountBalance, multiAssetCandles, watchedSymbols, clearActiveContracts } = useDerivApiV2();
+    const { isConnected, executeTrade, operationsLog, accountBalance, multiAssetCandles, watchedSymbols, clearActiveContracts } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
 
@@ -128,25 +128,25 @@ export function useAIQuantTerminalV2(
     }, [chartData]);
 
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
+        const finishedTrades = operationsLog.filter((op: Operation) => 
             op.status !== 'pending' && op.initiator === 'Conselho' && op.asset === activeSymbol
         );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : null;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        const pnl = finishedTrades.reduce((acc: number, op: Operation) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog, activeSymbol]);
 
     const globalSessionStats = useMemo(() => {
         const today = new Date().toDateString();
-        const v2Trades = operationsLog.filter(op => 
+        const v2Trades = operationsLog.filter((op: Operation) => 
             op.initiator === 'Conselho' && 
             new Date(op.timestamp).toDateString() === today &&
             op.status !== 'pending'
         );
-        const wins = v2Trades.filter(op => op.status === 'won').length;
-        const pnl = v2Trades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        const wins = v2Trades.filter((op: Operation) => op.status === 'won').length;
+        const pnl = v2Trades.reduce((acc: number, op: Operation) => acc + (Number(op.result) || 0), 0);
         return {
             total: v2Trades.length,
             wins,
@@ -176,9 +176,9 @@ export function useAIQuantTerminalV2(
     // FEEDBACK LOOP: Extrai os últimos 3 erros operacionais para o prompt
     const recentFailuresContext = useMemo(() => {
         return operationsLog
-            .filter(op => op.status === 'lost' && op.initiator === 'Conselho')
+            .filter((op: Operation) => op.status === 'lost' && op.initiator === 'Conselho')
             .slice(0, 3)
-            .map(op => `- Falha em ${op.asset}: Sugestão ${op.direction.toUpperCase()} em regime ${op.strategy?.split('_')[0] || 'N/A'}`)
+            .map((op: Operation) => `- Falha em ${op.asset}: Sugestão ${op.direction.toUpperCase()} em regime ${op.strategy?.split('_')[0] || 'N/A'}`)
             .join('\n');
     }, [operationsLog]);
 
@@ -323,7 +323,7 @@ export function useAIQuantTerminalV2(
         if (!isConnected || executionLockRef.current) return;
 
         const now = Date.now();
-        const dueSymbols = watchedSymbols.filter(sym => {
+        const dueSymbols = watchedSymbols.filter((sym: string) => {
             const sched = scheduleRef.current[sym];
             return !sched || now >= sched.nextRunAt;
         });
@@ -364,7 +364,7 @@ export function useAIQuantTerminalV2(
 
                 // LOGICA DE EXECUÇÃO (REAL OU SOMBRA)
                 if ((isAutoMode || isShadowMode) && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
-                    const hasOpenTrade = operationsLog.some(op => op.asset === dueSymbol && op.status === 'pending');
+                    const hasOpenTrade = operationsLog.some((op: Operation) => op.asset === dueSymbol && op.status === 'pending');
                     
                     if (!hasOpenTrade) {
                         if (isShadowMode) {

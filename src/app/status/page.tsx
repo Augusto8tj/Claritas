@@ -107,7 +107,7 @@ function StatusPageContent() {
         setStatuses(prev => ({ ...prev, gemini: 'loading', firestore: 'loading', ollama: 'loading' }));
         
         const ollamaConfigRaw = localStorage.getItem('ollamaConfig');
-        let ollamaRes = { success: false, modelCount: 0 };
+        let ollamaRes: { success: boolean; modelCount: number } = { success: false, modelCount: 0 };
         let ollamaUrl = 'N/D';
 
         if (ollamaConfigRaw) {

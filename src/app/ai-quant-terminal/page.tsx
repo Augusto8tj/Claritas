@@ -1,4 +1,3 @@
-
 // src/app/ai-quant-terminal/page.tsx
 'use client';
 
@@ -14,7 +13,7 @@ import {
     BrainCircuit, Zap, ShieldCheck, Terminal as TerminalIcon, 
     Timer, LineChart, PlayCircle, 
     PauseCircle, Cpu, RefreshCw, MessageSquare, Send, 
-    Settings2, Activity, Brain, Wallet, Target, History,
+    Activity, Brain, Wallet, Target, History,
     ArrowUpCircle, ArrowDownCircle, Clock, ShieldAlert,
     TrendingUp, BarChart3, Binary, Trash2, Microscope
 } from "lucide-react";
@@ -28,6 +27,7 @@ import { cn } from "@/lib/utils";
 import { Separator } from "@/components/ui/separator";
 import { useRobotCouncilV2 } from '@/features/trading/hooks/use-robot-council-v2';
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Operation } from '@/lib/types';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -68,7 +68,7 @@ function TerminalContent() {
     };
 
     const filteredTerminalTrades = useMemo(() => {
-        return operationsLog.filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol);
+        return operationsLog.filter((op: Operation) => op.initiator === 'Conselho' && op.asset === activeSymbol);
     }, [operationsLog, activeSymbol]);
 
     const getDurationLabel = (unit: string) => {
@@ -149,7 +149,7 @@ function TerminalContent() {
                                     min={10} 
                                     max={95} 
                                     step={1} 
-                                    onValueChange={(v) => quant.setConfidenceThreshold(v[0])}
+                                    onValueChange={(v: any) => quant.setConfidenceThreshold(v[0])}
                                     disabled={quant.isAutoMode}
                                 />
                                 <p className="text-[9px] text-muted-foreground italic">Limiar de laboratório para execução automática.</p>
@@ -166,7 +166,7 @@ function TerminalContent() {
                                     min={30} 
                                     max={3000} 
                                     step={30} 
-                                    onValueChange={(v) => quant.setAnalysisInterval(v[0])}
+                                    onValueChange={(v: any) => quant.setAnalysisInterval(v[0])}
                                     disabled={quant.isAutoMode}
                                 />
                             </div>
@@ -305,7 +305,7 @@ function TerminalContent() {
                                             <p className="text-[10px] font-mono">Sem execuções para este ativo</p>
                                         </div>
                                     ) : (
-                                        filteredTerminalTrades.map((op) => (
+                                        filteredTerminalTrades.map((op: Operation) => (
                                             <div key={op.id} className="p-3 hover:bg-muted/10 transition-colors">
                                                 <div className="flex items-center justify-between mb-1">
                                                     <div className="flex items-center gap-2">
@@ -520,9 +520,7 @@ function TerminalContent() {
                                                 log.type === 'decision' ? "text-primary" : 
                                                 log.type === 'execution' ? "text-green-600" : 
                                                 log.type === 'error' ? "text-destructive" : "text-muted-foreground"
-                                            )}>
-                                                {log.message}
-                                            </span>
+                                            )}>{log.message}</span>
                                         </div>
                                     ))
                                 )}

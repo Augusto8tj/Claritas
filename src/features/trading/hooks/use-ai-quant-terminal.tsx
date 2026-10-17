@@ -22,7 +22,7 @@ import { initialCouncilStrategies } from '../services/council-strategies';
 import { detectMarketRegime } from '../services/advanced-trading-services';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
-import { saveCouncilDecisionLog, getTransactions, getTradeDecisionLogs, getCouncilDecisionLogs } from '@/services/financial-data-service';
+import { saveCouncilDecisionLog, getTransactions, getCouncilDecisionLogs } from '@/services/financial-data-service';
 
 interface QuantDecision {
     action: 'RISE' | 'FALL' | 'HOLD';
@@ -83,18 +83,18 @@ export function useAIQuantTerminal(
 
     // ESTATÍSTICAS DA SESSÃO (Segmentadas por Ativo)
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
+        const finishedTrades = operationsLog.filter((op: Operation) => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' &&
             op.asset === activeSymbol
         );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
         
         // MELHORIA 6: Corrigir Win Rate exibindo "—" antes de qualquer trade
         const winRate = total > 0 ? (wins / total) * 100 : null;
         
-        const pnl = finishedTrades.reduce((acc, op) => {
+        const pnl = finishedTrades.reduce((acc: number, op: Operation) => {
             return acc + (Number(op.result) || 0);
         }, 0);
         
@@ -108,9 +108,9 @@ export function useAIQuantTerminal(
     // MEMÓRIA: Snapshot de Performance Recente para o CIO
     const recentPerformanceSummary = useMemo(() => {
         return (operationsLog as Operation[])
-            .filter(op => op.initiator === 'Conselho' && op.asset === activeSymbol && op.status !== 'pending')
+            .filter((op: Operation) => op.initiator === 'Conselho' && op.asset === activeSymbol && op.status !== 'pending')
             .slice(0, 5)
-            .map(op => ({
+            .map((op: Operation) => ({
                 dir: op.direction,
                 res: op.status,
                 pnl: (Number(op.result) || 0).toFixed(2),
@@ -186,10 +186,10 @@ export function useAIQuantTerminal(
         if (!activeSymbol || !isConnected || !ollamaConfig || chartData.length < 30) return;
         if (executionLockRef.current) return;
 
-        const recentResults = recentPerformanceSummary.map(t => t.res);
+        const recentResults = recentPerformanceSummary.map((t: any) => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
-                               lastLosses.every(r => r === 'lost');
+                               lastLosses.every((r: string) => r === 'lost');
         const hitDailyLossLimit = sessionStats.pnl <= maxDailyLoss;
 
         if (hitLossStreak || hitDailyLossLimit) {

@@ -1,5 +1,5 @@
 // /src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
-'use client';
+'use server';
 
 /**
  * @fileOverview TERMINAL QUANT V3.9.6 (COUNCIL EDITION) - MODULARIZED
@@ -25,7 +25,6 @@ import { useBacktestRunner } from './use-backtest-runner';
 
 const SETTINGS_KEY = 'quantV3Settings';
 
-// Re-exportando o tipo para conformidade externa
 export type { AllowedContractsV3 };
 
 export interface ChatMessage {
@@ -176,7 +175,7 @@ export function useAIQuantTerminalV3(
         setSentinelCounts({ OPTIONS: 0, MULTIPLIERS: 0, ACCUMULATORS: 0 });
         sentinelEpisodeRef.current = {};
         lastMarketClosedLogRef.current = {};
-        toast({ title: "Sessão Reiniciada", description: "Todos os dados voláteis foram limpos." });
+        toast({ title: "Sessão Reiniciada", description: "Todos os dados foram resetados." });
     }, [clearActiveContracts, toast]);
 
     const clearMemory = useCallback(async () => {
@@ -310,11 +309,11 @@ export function useAIQuantTerminalV3(
                 ...(feats ? { bbPos: feats.bbPos, bwPct: feats.bwPct, atrRatio: feats.atrRatio, er: feats.er, mom5: feats.mom5, mom15: feats.mom15, streak: feats.streak } : {})
             };
 
-            const nonOrphanOps = operationsLogRef.current.filter(op => !isOrphanOp(op));
+            const nonOrphanOps = operationsLogRef.current.filter((op: Operation) => !isOrphanOp(op));
             const portfolioState: PortfolioRiskState = {
-                openPositions: nonOrphanOps.filter(op => op.status === 'pending').length,
+                openPositions: nonOrphanOps.filter((op: Operation) => op.status === 'pending').length,
                 maxConcurrentPositions: maxConcurrentTrades,
-                totalExposure: nonOrphanOps.filter(op => op.status === 'pending').reduce((sum, op) => sum + op.stake, 0),
+                totalExposure: nonOrphanOps.filter((op: Operation) => op.status === 'pending').reduce((sum: number, op: Operation) => sum + op.stake, 0),
                 maxTotalExposure: dailyBalance,
                 lockedSymbols: new Set(),
                 plannedStake: stakeValue
@@ -522,7 +521,7 @@ export function useAIQuantTerminalV3(
         if (content.match(REPORT)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildStatusReport({ isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, stats: councilStats, openPositions: operationsLog.filter(o => o.status === 'pending'), maxConcurrentTrades, sentinel, sentinelCounts, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes })
+                content: buildStatusReport({ isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, stats: councilStats, openPositions: operationsLog.filter((o: Operation) => o.status === 'pending'), maxConcurrentTrades, sentinel, sentinelCounts, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes })
             }]);
             return;
         }
@@ -556,13 +555,13 @@ export function useAIQuantTerminalV3(
     };
 
     const sessionStatsLocal = useMemo(() => {
-        const finishedTrades = operationsLog.filter(op => 
+        const finishedTrades = operationsLog.filter((op: Operation) => 
             op.status !== 'pending' && op.initiator === 'Conselho_V3'
         );
-        const wins = finishedTrades.filter(op => op.status === 'won').length;
+        const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
         const winRate = total > 0 ? (wins / total) * 100 : null;
-        const pnl = finishedTrades.reduce((acc, op) => acc + (Number(op.result) || 0), 0);
+        const pnl = finishedTrades.reduce((acc: number, op: Operation) => acc + (Number(op.result) || 0), 0);
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
@@ -594,6 +593,6 @@ export function useAIQuantTerminalV3(
         watchedSymbols, setWatchedSymbols, resetSession, clearMemory, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        setAccountType, accountType, runBacktest: (p, t, e) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e), p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes
+        setAccountType, accountType, runBacktest: (p: any, t: any, e: any) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e), p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes
     };
 }

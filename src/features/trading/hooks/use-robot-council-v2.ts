@@ -176,7 +176,7 @@ const calculateTechnicalVote = (
   const setVote = (newVote: 'RISE' | 'FALL', newConfidence: number, newReason: string) => {
     if (newConfidence <= 0) return;
     vote = newVote;
-    confidence = Math.min(100, Math.max(0, newConfidence));
+    confidence = newConfidence;
     reason = newReason;
     suggestedStake = baseStake * (1 + (newConfidence / 100)); 
   };
@@ -305,7 +305,7 @@ export function useRobotCouncilV2(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: 0, fall: 0 },
+    consensusSum: { rise: number, fall: number },
     totalWeight: 0,
   });
 
@@ -419,13 +419,13 @@ export function useRobotCouncilV2(
         }
         
         if (isDynamicExitOn) {
-            const activeCouncilContracts = operationsLog.filter(op => 
+            const activeCouncilContracts = operationsLog.filter((op: Operation) => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
                 op.durationUnit !== 't'
             );
 
-            activeCouncilContracts.forEach(contract => {
+            activeCouncilContracts.forEach((contract: Operation) => {
                 if (councilExecutionRef.current.sellingContracts.has(contract.id)) return;
 
                 const chandelier = currentIndicators.chandelier;
@@ -541,7 +541,7 @@ export function useRobotCouncilV2(
             }
         }
         
-        const lastRealOperation = operationsLog.find(op => 
+        const lastRealOperation = operationsLog.find((op: Operation) => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' && 
             !processedRealTradesRef.current.has(op.id)
@@ -733,7 +733,7 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
-        const openCouncilTrade = operationsLog.find(op => op.initiator === 'Conselho' && op.status === 'pending');
+        const openCouncilTrade = operationsLog.find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
         if (openCouncilTrade) {
             councilExecutionRef.current.isExecuting = false;
             return;
@@ -794,7 +794,7 @@ export function useRobotCouncilV2(
                     finalDuration,
                     finalDurationUnit,
                     'Conselho'
-                ).then(tradeResult => {
+                ).then((tradeResult: any) => {
                      if(tradeResult.success && tradeResult.contractId) {
                          const logId = `log-${Date.now()}`;
                          const log: TradeDecisionLog = {
