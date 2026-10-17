@@ -1,10 +1,9 @@
-
+// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5: Integrado motor de execução, Post-Mortem, Circuit Breaker e Trailing Profit Floor.
- * Exibe métricas institucionais de gravidade, beta e correlação.
+ * V5.4.1: Estabilização de Shadow Trading, Cooldown de 60s e Heartbeat de Liquidação.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -63,6 +62,7 @@ const AGENT_PERSONAS = {
 
 const SETTINGS_KEY = 'cryptoLabV4Settings';
 const DEFAULT_ANALYSIS_INTERVAL = 120;
+const SHADOW_COOLDOWN_SEC = 60;
 
 export function useCryptoRadarV4(
     activeSymbol: string | null,
@@ -141,6 +141,7 @@ export function useCryptoRadarV4(
     const executionLockRef = useRef(false);
     const scheduleRef = useRef<Record<string, number>>({});
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
+    const shadowExecutionTimestampsRef = useRef<Record<string, number>>({});
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         setOllamaConfig(prev => {
@@ -174,6 +175,7 @@ export function useCryptoRadarV4(
         setLockedProfitFloor(0);
         setCouncilStats({ total: 0, call: 0, put: 0, hold: 0, vetoes: 0, fallbacks: 0, avgLatencyMs: 0 });
         scheduleRef.current = {};
+        shadowExecutionTimestampsRef.current = {};
         setLastDecision(null);
         toast({ title: "Sessão Reiniciada", description: "Todos os dados foram resetados." });
     }, [clearActiveContracts, toast]);
@@ -191,22 +193,18 @@ export function useCryptoRadarV4(
 
     useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
 
-    // ETAPA 4: Conectar recordPulse aos streams de dados
+    // ETAPA 4: Heartbeat de liquidez
     useEffect(() => {
-        if (activeSymbol && priceTicks.length > 0) {
-            resilience.recordPulse(activeSymbol);
-        }
+        if (activeSymbol && priceTicks.length > 0) resilience.recordPulse(activeSymbol);
     }, [priceTicks, activeSymbol, resilience]);
 
     useEffect(() => {
         Object.keys(multiAssetCandles).forEach(symbol => {
-            if (watchedSymbols.includes(symbol)) {
-                resilience.recordPulse(symbol);
-            }
+            if (watchedSymbols.includes(symbol)) resilience.recordPulse(symbol);
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
 
-    // Persistência local de segredos
+    // Persistência local
     useEffect(() => {
         const savedOllama = localStorage.getItem('ollamaConfig');
         if (savedOllama) {
@@ -226,10 +224,7 @@ export function useCryptoRadarV4(
     }, [isConnected, watchedSymbols, setWatchedSymbols, addLog, DEFAULT_CLUSTER]);
 
     useEffect(() => {
-        if (sessionStats.pnl > dailyHighWaterMark.current) {
-            dailyHighWaterMark.current = sessionStats.pnl;
-        }
-
+        if (sessionStats.pnl > dailyHighWaterMark.current) dailyHighWaterMark.current = sessionStats.pnl;
         const profitRatio = sessionStats.pnl / dailyTarget;
         if (profitRatio >= 0.8) {
             const floor = sessionStats.pnl * 0.5;
@@ -253,7 +248,42 @@ export function useCryptoRadarV4(
         return (Date.now() / 1000 - last.epoch) / 60;
     }, [getCandlesFor]);
 
-    // ETAPA 5: Função auxiliar para extrair telemetria dinâmica
+    // 8A: Ciclo de Liquidação Independente (2s)
+    useEffect(() => {
+        if (!user || !isShadowMode) return;
+        
+        const settleInterval = setInterval(() => {
+            CryptoShadowEngine.settlePending(user.uid, 
+                (sym) => {
+                    const c = getCandlesFor(sym);
+                    return c.length > 0 ? c[c.length - 1].close : null;
+                },
+                async (sym, win, pnl, trade) => {
+                    resilience.processResult(sym, win);
+                    const cs = getCandlesFor(sym);
+                    const inds = calculateAllIndicators(cs, [], '1m', { duration: 15, unit: 's' });
+                    
+                    await TradeMemoryManager.addTrade(user.uid, sym, {
+                        id: `shadow_${trade.id}`,
+                        timestamp: trade.entryTs || Date.now(),
+                        contract: trade.contract,
+                        result: win ? 'WIN' : 'LOSS',
+                        pnl,
+                        rsi: trade.rsiAtEntry || 50,
+                        volatilityYangZhang: trade.bbwAtEntry || 0,
+                        candlePattern: 'SHADOW_SIM',
+                        btcRegime: trade.gravityState,
+                        gravityCorrelation: trade.correlationAtEntry || 0,
+                        councilEntropy: trade.entropyAtEntry || 0,
+                        failureDiagnosis: win ? undefined : 'Vencimento em simulado sombra'
+                    });
+                }
+            );
+        }, 2000);
+
+        return () => clearInterval(settleInterval);
+    }, [user, isShadowMode, getCandlesFor, resilience]);
+
     const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
         const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
         const feats = computeSignalFeatures(assetCandles as any);
@@ -283,23 +313,11 @@ export function useCryptoRadarV4(
                 sentinel: radarStatus, 
                 lastDecisions: lastDecisionBySymbolRef.current, 
                 staleMinutes,
-                financialState: {
-                    pnl: sessionStats.pnl,
-                    floor: lockedProfitFloor,
-                    balance: accountBalance.balance || 0
-                }
+                financialState: { pnl: sessionStats.pnl, floor: lockedProfitFloor, balance: accountBalance.balance || 0 }
             });
 
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.
-            
-DIRETRIZES RÍGIDAS DE DADOS (V5.3):
-1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
-2. PROIBIDO ALUCINAR: Nunca invente ativos (como 'Ativo A') ou preços (como '$100').
-3. Se um valor não estiver no dossier, diga "Dados Não Disponíveis no Snapshot".
-4. Baseie seu rigor de risco no P&L de $${sessionStats.pnl.toFixed(2)} e no Piso de $${lockedProfitFloor.toFixed(2)}.
-
-${context}`;
+            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
@@ -318,6 +336,7 @@ ${context}`;
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
+        const analysisStartTs = Date.now();
         const min = staleMinutes(symbol);
         if (min !== null && min > 2.5) return;
 
@@ -328,74 +347,38 @@ ${context}`;
             const baseFeats = computeSignalFeatures(candles as any);
             if (!baseFeats) return;
 
-            // ETAPA 5: Telemetria Dinâmica do Bitcoin
             let gravity: BitcoinGravity | null = null;
             if (symbol !== 'cryBTCUSD') {
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
                     const targetFeats = buildAssetFeatures(symbol, candles);
-                    if (btcFeats && targetFeats) {
-                        gravity = calculateBitcoinGravity(btcFeats as any, targetFeats as any);
-                    }
+                    if (btcFeats && targetFeats) gravity = calculateBitcoinGravity(btcFeats as any, targetFeats as any);
                 }
             }
 
-            if (gravity) {
-                addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
-            }
-
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
-            
-            // ETAPA 7: Injeção de Candidatos do Sentinel
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
-            const bestCandidate = candidates
-                .filter(c => c.direction !== 'NONE')
-                .sort((a, b) => b.score - a.score)[0];
+            const bestCandidate = candidates.filter(c => c.direction !== 'NONE').sort((a, b) => b.score - a.score)[0];
 
             if (!bestCandidate && requireSentinelCandidate) {
-                addLog(`[SENTINEL] ${symbol}: Sem candidato técnico qualificado. Abortando conselho.`, 'sentinel', undefined, symbol);
                 setRadarStatus(prev => ({
                     ...prev,
-                    [symbol]: {
-                        symbol, lastAction: 'HOLD', confidence: 0, timestamp: Date.now(),
-                        holdReason: 'SENTINEL_EMPTY: Nenhum gatilho de base detectado.',
-                        indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw }
-                    }
+                    [symbol]: { symbol, lastAction: 'HOLD', confidence: 0, timestamp: Date.now(), holdReason: 'SENTINEL_EMPTY', indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } }
                 }));
                 return;
             }
 
-            if (bestCandidate) {
-                addLog(`[SENTINEL] ${symbol}: Candidato ${bestCandidate.rule} (${bestCandidate.direction}) detectado com score ${bestCandidate.score}.`, 'sentinel', undefined, symbol);
-            }
-
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
             const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter(op => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter(op => op.status === 'pending').reduce((s, o) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
-            const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
-
-            const marketSnapshot = {
-                ...cryptoFeats,
-                symbol,
-                price: candles[candles.length - 1].close,
-                strategicProfile,
-                sentinel: bestCandidate ? {
-                    rule: bestCandidate.rule,
-                    score: bestCandidate.score,
-                    mode: bestCandidate.recommendedContractMode,
-                    sl: bestCandidate.stopLoss,
-                    tp: bestCandidate.takeProfit
-                } : null
-            };
+            const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: ['OPTIONS', 'MULTIPLIERS'], allowedActions: ['CALL', 'PUT'] };
 
             executionLockRef.current = true;
-            const decision = await runQuantCouncil(marketSnapshot as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
             
-            // ETAPA 7: Verificação de Divergência
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
-                addLog(`[WARNING] ${symbol}: Divergência detectada. Sentinel=${bestCandidate.direction} vs Conselho=${decision.finalAction}. Forçando HOLD.`, 'warning', undefined, symbol);
                 decision.finalAction = 'HOLD';
-                decision.holdReason = `DIVERGENCE: Sentinel(${bestCandidate.direction}) discorda do Conselho.`;
+                decision.holdReason = `DIVERGENCE: Sentinel(${bestCandidate.direction}) vs Conselho(${decision.finalAction}).`;
             }
 
             lastDecisionBySymbolRef.current[symbol] = { ts: Date.now(), decision };
@@ -406,43 +389,53 @@ ${context}`;
 
             const shouldExecute = isManual || (isAutoMode && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold);
 
-            setRadarStatus(prev => ({ 
-                ...prev, 
-                [symbol]: { 
-                    ...decision, 
-                    features: cryptoFeats,
-                    gravity, 
-                    timestamp: Date.now(), 
-                    isQualified: shouldExecute, 
-                    indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } 
-                } 
-            }));
+            setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, features: cryptoFeats, gravity, timestamp: Date.now(), isQualified: shouldExecute, indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } } }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 if (isShadowMode) {
+                    // IMPLEMENTAÇÃO 8A
+                    if (symbol === 'cryBTCUSD') {
+                        addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol);
+                        return;
+                    }
+
+                    const pending = CryptoShadowEngine.getPendingFromCache().filter(t => t.symbol === symbol);
+                    const hasSamePending = pending.some(t => t.direction === decision.finalAction);
+                    const now = Date.now();
+                    const lastExec = shadowExecutionTimestampsRef.current[symbol] || 0;
+
+                    if (hasSamePending) {
+                        addLog(`[SHADOW-BLOCK] ${symbol}: Ordem ${decision.finalAction} bloqueada (já existe pendente).`, 'radar', undefined, symbol);
+                        return;
+                    }
+
+                    if (now - lastExec < SHADOW_COOLDOWN_SEC * 1000) {
+                        addLog(`[SHADOW-BLOCK] ${symbol}: Cooldown sombra ativo.`, 'radar', undefined, symbol);
+                        return;
+                    }
+
+                    const freshCandles = getCandlesFor(symbol);
+                    const entryPrice = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
+                    const entryTs = Date.now();
+                    const llmLatencyMs = decision.t2tLatencyMs;
+
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado em modo sombra.`, 'radar', undefined, symbol);
-                    // ETAPA 8: Registrar Trade Sombra no Firestore
+                    shadowExecutionTimestampsRef.current[symbol] = entryTs;
+
                     await CryptoShadowEngine.logTrade(user.uid, {
-                        symbol,
-                        direction: decision.finalAction,
-                        contract: decision.recommendedContract,
-                        entryPrice: candles[candles.length - 1].close,
-                        rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
-                        score: decision.consensusConfidence,
-                        gravityState: gravity?.btcVector || 'CHOP',
-                        confidence: decision.consensusConfidence,
-                        payoutRatio: backtest.payoutPct || 85,
-                        duration: 15,
-                        durationUnit: 's',
-                        ev: 0
+                        symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                        entryPrice, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
+                        score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
+                        confidence: decision.consensusConfidence, payoutRatio: backtest.payoutPct || 85,
+                        duration: 15, durationUnit: 's', ev: 0, stake: stakeValue,
+                        decisionTs: analysisStartTs, entryTs, llmLatencyMs,
+                        rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
+                        correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
                     });
                 } else {
                     let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     const params: Record<string, any> = {};
-                    if (decision.recommendedContract === 'MULTIPLIERS') {
-                        finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN';
-                        params.multiplier = 400;
-                    }
+                    if (decision.recommendedContract === 'MULTIPLIERS') { finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; params.multiplier = 400; }
                     const res = await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
                     if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado.`, 'execution', undefined, symbol);
                 }
@@ -466,36 +459,7 @@ ${context}`;
                 }
             }
         }
-
-        // ETAPA 8: Liquidar Trades Sombra Pendentes
-        if (user && isShadowMode) {
-            await CryptoShadowEngine.settlePending(user.uid, 
-                (sym) => {
-                    const c = getCandlesFor(sym);
-                    return c.length > 0 ? c[c.length - 1].close : null;
-                },
-                async (sym, win, pnl, trade) => {
-                    resilience.processResult(sym, win);
-                    const cs = getCandlesFor(sym);
-                    const indicators = calculateAllIndicators(cs, [], '1m', { duration: 15, unit: 's' });
-                    
-                    await TradeMemoryManager.addTrade(user.uid, sym, {
-                        id: `shadow_${trade.id}`,
-                        timestamp: Date.now(),
-                        contract: trade.contract,
-                        result: win ? 'WIN' : 'LOSS',
-                        pnl,
-                        rsi: indicators?.rsi || 50,
-                        volatilityYangZhang: indicators?.bbw || 0,
-                        candlePattern: 'SHADOW_SIM',
-                        btcRegime: trade.gravityState,
-                        gravityCorrelation: trade.confidence / 100,
-                        councilEntropy: telemetry.consensusEntropy
-                    });
-                }
-            );
-        }
-    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol, user, isShadowMode, resilience, telemetry.consensusEntropy]);
+    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
@@ -507,7 +471,6 @@ ${context}`;
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
-        requireSentinelCandidate,
         stakeValue, setStakeValue, multiplier, setMultiplier,
         dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         maxConcurrentTrades, setMaxConcurrentTrades,
@@ -516,8 +479,8 @@ ${context}`;
         analysisInterval, setAnalysisInterval,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
-        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels
+        ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
+        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };
 }

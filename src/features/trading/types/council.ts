@@ -12,6 +12,10 @@ export interface TradePostMortem {
   btcRegime?: string;
   gravityCorrelation?: number;
   councilEntropy?: number;
+  // Campos 8A
+  entryPrice?: number;
+  exitPrice?: number;
+  executionLatency?: number;
 }
 
 export interface TradeMemoryBuffer {
@@ -95,4 +99,40 @@ export interface PortfolioRiskState {
   maxTotalExposure: number;
   lockedSymbols: Set<string>; // Ativos já processados neste ciclo
   plannedStake?: number;
+}
+
+/**
+ * Shadow Trade V4.2
+ */
+export interface CryptoShadowTrade {
+  id?: string;
+  symbol: string;
+  direction: 'CALL' | 'PUT' | 'NONE';
+  contract: 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS';
+  entryPrice: number;
+  exitPrice?: number;
+  timestamp: string;
+  duration: number;
+  durationUnit: string;
+  gravityState: string;
+  rule: string;
+  score: number;
+  confidence: number;
+  payoutRatio: number;
+  ev: number;
+  result?: 'won' | 'lost' | 'draw';
+  pnl?: number;
+  status: 'pending' | 'completed';
+  stake: number;
+  // Metadata 8A
+  decisionTs?: number;
+  entryTs?: number;
+  exitTs?: number;
+  llmLatencyMs?: number;
+  settleDelayMs?: number;
+  lateSettle?: boolean;
+  rsiAtEntry?: number;
+  bbwAtEntry?: number;
+  correlationAtEntry?: number;
+  entropyAtEntry?: number;
 }
