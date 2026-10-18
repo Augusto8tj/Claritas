@@ -21,7 +21,7 @@ import {
     CheckCircle2,
     BarChart3,
     Compass,
-    User,
+    User as UserIcon,
     Info as InfoIcon
 } from "lucide-react";
 import { useAuth } from "@/features/auth/hooks/use-auth";
@@ -228,7 +228,7 @@ export function AICopilotDashboard() {
                                                 : "bg-card mr-auto rounded-tl-none border-border"
                                         )}>
                                             <div className="flex items-center gap-2 mb-2 opacity-50 text-[10px] font-bold uppercase">
-                                                {m.role === 'user' ? <User className="h-3 w-3"/> : <Brain className="h-3 w-3"/>}
+                                                {m.role === 'user' ? <UserIcon className="h-3 w-3"/> : <Brain className="h-3 w-3"/>}
                                                 {m.role === 'user' ? 'Comando' : 'Claritas'}
                                             </div>
                                             <p className="whitespace-pre-wrap">{m.content}</p>
@@ -306,3 +306,4 @@ export function AICopilotDashboard() {
         </div>
     );
 }
+

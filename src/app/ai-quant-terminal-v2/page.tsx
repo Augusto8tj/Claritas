@@ -1,3 +1,4 @@
+// src/app/ai-quant-terminal-v2/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
@@ -360,7 +361,7 @@ function TerminalContentV2() {
                                     </TabsContent>
                                     {activeAssetsWithTrades.map((asset: any) => (
                                         <TabsContent key={String(asset)} value={String(asset)} className="m-0 border-none">
-                                            {renderTradeList(terminalSessionTrades.filter((op: Operation) => op.asset === asset), formatCurrency)}
+                                            {renderTradeList(terminalSessionTrades.filter((op: any) => op.asset === asset), formatCurrency)}
                                         </TabsContent>
                                     ))}
                                 </ScrollArea>

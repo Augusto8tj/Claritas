@@ -130,7 +130,7 @@ function evaluateSignalQuality(
   }
   
   // 3. Performance recente (20 pontos)
-  const recentTrades = operationsLog.slice(-10).filter((op: Operation) => op.status !== 'pending');
+  const recentTrades = (operationsLog as Operation[]).slice(-10).filter((op: Operation) => op.status !== 'pending');
   if (recentTrades.length >= 5) {
     const recentWins = recentTrades.filter((t: Operation) => t.result && t.result > 0).length;
     const recentWinRate = recentWins / recentTrades.length;
@@ -170,7 +170,7 @@ export function useMasterAutopilot() {
   const { user } = useAuth();
   const { toast } = useToast();
 
-  const { projectionExperts, strongestSignal, stats, adaptiveDrifts, meanReversionSignal, volatilityRegime } = useStochasticModels(botCandleData, priceTicks, operationsLog, null);
+  const { projectionExperts, strongestSignal, stats, adaptiveDrifts, meanReversionSignal, volatilityRegime } = useStochasticModels(botCandleData, priceTicks, operationsLog as Operation[], null);
 
   const [isAutopilotOn, setIsAutopilotOn] = useState(false);
   const [contractType, setContractType] = useState<ContractType>('Rise/Fall');
@@ -260,12 +260,12 @@ export function useMasterAutopilot() {
     }
 
     // Evaluate signal quality
-    const quality = evaluateSignalQuality(finalSignal, projectionExperts, stats, operationsLog);
+    const quality = evaluateSignalQuality(finalSignal, projectionExperts, stats, operationsLog as Operation[]);
     setSignalQuality(quality);
 
     // Calculate stake
-    const wins = operationsLog.filter((op: Operation) => op.result && op.result > 0);
-    const losses = operationsLog.filter((op: Operation) => op.result && op.result < 0);
+    const wins = (operationsLog as Operation[]).filter((op: Operation) => op.result && op.result > 0);
+    const losses = (operationsLog as Operation[]).filter((op: Operation) => op.result && op.result < 0);
     const winRate = wins.length / (wins.length + losses.length || 1) * 100;
     const avgWin = wins.reduce((s: number, op: Operation) => s + op.result!, 0) / (wins.length || 1);
     const avgLoss = losses.reduce((s: number, op: Operation) => s + op.result!, 0) / (losses.length || 1);
@@ -287,7 +287,7 @@ export function useMasterAutopilot() {
         reason = `Sinal ${finalSignal.direction} (${finalSignal.source}) com qualidade de ${quality.score.toFixed(0)} aprovado.`
     }
 
-    const openTrades = operationsLog.filter((op: Operation) => op.status === 'pending').length;
+    const openTrades = (operationsLog as Operation[]).filter((op: Operation) => op.status === 'pending').length;
     if (shouldTrade && openTrades === 0) {
         executionLockRef.current = true;
         executeTradeAction('Piloto', finalSignal, user)

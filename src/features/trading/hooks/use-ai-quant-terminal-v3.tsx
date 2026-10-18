@@ -1,3 +1,4 @@
+// /src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
@@ -308,7 +309,7 @@ export function useAIQuantTerminalV3(
                 ...(feats ? { bbPos: feats.bbPos, bwPct: feats.bwPct, atrRatio: feats.atrRatio, er: feats.er, mom5: feats.mom5, mom15: feats.mom15, streak: feats.streak } : {})
             };
 
-            const nonOrphanOps = operationsLogRef.current.filter((op: Operation) => !isOrphanOp(op));
+            const nonOrphanOps = (operationsLogRef.current as Operation[]).filter((op: Operation) => !isOrphanOp(op));
             const portfolioState: PortfolioRiskState = {
                 openPositions: nonOrphanOps.filter((op: Operation) => op.status === 'pending').length,
                 maxConcurrentPositions: maxConcurrentTrades,
@@ -520,7 +521,7 @@ export function useAIQuantTerminalV3(
         if (content.match(REPORT)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
-                content: buildStatusReport({ isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, stats: councilStats, openPositions: operationsLog.filter((o: Operation) => o.status === 'pending'), maxConcurrentTrades, sentinel, sentinelCounts, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes })
+                content: buildStatusReport({ isShadowMode, isAutoMode, accountType, balance: accountBalance.balance || 0, stats: councilStats, openPositions: (operationsLog as any[]).filter((o: Operation) => o.status === 'pending'), maxConcurrentTrades, sentinel, sentinelCounts, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes })
             }]);
             return;
         }
@@ -554,7 +555,7 @@ export function useAIQuantTerminalV3(
     };
 
     const sessionStatsLocal = useMemo(() => {
-        const finishedTrades = operationsLog.filter((op: Operation) => 
+        const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
             op.status !== 'pending' && op.initiator === 'Conselho_V3'
         );
         const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;

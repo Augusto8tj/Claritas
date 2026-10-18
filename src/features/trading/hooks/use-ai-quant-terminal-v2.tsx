@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-ai-quant-terminal-v2.tsx
 'use client';
 
 /**
@@ -7,7 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation } from '@/lib/types';
-import { useDerivApiV2 } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { getOllamaResponse } from '@/app/actions';
 import { calculateAllIndicators, type Indicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
@@ -128,7 +129,7 @@ export function useAIQuantTerminalV2(
     }, [chartData]);
 
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter((op: Operation) => 
+        const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
             op.status !== 'pending' && op.initiator === 'Conselho' && op.asset === activeSymbol
         );
         const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
@@ -140,7 +141,7 @@ export function useAIQuantTerminalV2(
 
     const globalSessionStats = useMemo(() => {
         const today = new Date().toDateString();
-        const v2Trades = operationsLog.filter((op: Operation) => 
+        const v2Trades = (operationsLog as Operation[]).filter((op: Operation) => 
             op.initiator === 'Conselho' && 
             new Date(op.timestamp).toDateString() === today &&
             op.status !== 'pending'
@@ -175,7 +176,7 @@ export function useAIQuantTerminalV2(
 
     // FEEDBACK LOOP: Extrai os últimos 3 erros operacionais para o prompt
     const recentFailuresContext = useMemo(() => {
-        return operationsLog
+        return (operationsLog as Operation[])
             .filter((op: Operation) => op.status === 'lost' && op.initiator === 'Conselho')
             .slice(0, 3)
             .map((op: Operation) => `- Falha em ${op.asset}: Sugestão ${op.direction.toUpperCase()} em regime ${op.strategy?.split('_')[0] || 'N/A'}`)
@@ -323,7 +324,7 @@ export function useAIQuantTerminalV2(
         if (!isConnected || executionLockRef.current) return;
 
         const now = Date.now();
-        const dueSymbols = watchedSymbols.filter((sym: string) => {
+        const dueSymbols = (watchedSymbols as string[]).filter((sym: string) => {
             const sched = scheduleRef.current[sym];
             return !sched || now >= sched.nextRunAt;
         });
@@ -335,7 +336,7 @@ export function useAIQuantTerminalV2(
             if (!candles || candles.length < 30) continue;
 
             const isFocused = dueSymbol === activeSymbol;
-            const decision = await runInference(dueSymbol, isFocused ? chartData : candles, !isFocused);
+            const decision = await runInference(dueSymbol, isFocused ? chartData : (candles as CandleData[]), !isFocused);
 
             if (decision) {
                 const regime = decision._detectedRegime || 'ranging';
@@ -364,7 +365,7 @@ export function useAIQuantTerminalV2(
 
                 // LOGICA DE EXECUÇÃO (REAL OU SOMBRA)
                 if ((isAutoMode || isShadowMode) && decision.action !== 'HOLD' && (decision.confidence ?? 0) >= confidenceThreshold) {
-                    const hasOpenTrade = operationsLog.some((op: Operation) => op.asset === dueSymbol && op.status === 'pending');
+                    const hasOpenTrade = (operationsLog as Operation[]).some((op: Operation) => op.asset === dueSymbol && op.status === 'pending');
                     
                     if (!hasOpenTrade) {
                         if (isShadowMode) {

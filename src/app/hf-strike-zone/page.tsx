@@ -51,7 +51,10 @@ function PageContent() {
   const [dailyTarget, setDailyTarget] = useState(50.0);
   const [stakeValue, setStakeValue] = useState(1.0);
 
-  const hfOperations = useMemo(() => operationsLog.filter((op: Operation) => op.initiator === 'HF_Strike'), [operationsLog]);
+  const hfOperations = useMemo(
+    () => (operationsLog as Operation[]).filter((op: Operation) => op.initiator === 'HF_Strike'),
+    [operationsLog]
+  );
 
   const {
     activeStrikeZone,
@@ -149,7 +152,7 @@ function PageContent() {
 
 
   return (
-    <div className="flex-1 space-y-6 p-4 sm:p-8 pt-6">
+    <div className="max-w-7xl mx-auto space-y-6 p-4 sm:p-8 pt-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight font-headline">⚡ HF Strike Zone</h1>
@@ -213,7 +216,7 @@ function PageContent() {
 
             <HFStrategyTuningPanel 
                 params={strategyParams}
-                onParamChange={updateStrategyParams}
+                onParamChange={handleUpdateStrategyParams}
                 gbmConfidenceThreshold={gbmConfidenceThreshold}
                 calibrationMeta={calibrationResults ? Object.entries(calibrationResults).map(([key, res]) => res ? ({
                     strategy: key as StrategyType,
@@ -267,3 +270,4 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
+

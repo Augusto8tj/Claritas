@@ -43,7 +43,7 @@ export function EmailNotificationsCard() {
             toast({
                 variant: "destructive",
                 title: "Falha no Envio",
-                description: result.error || "Não foi possível enviar o email de teste.",
+                description: (result as any).error || "Não foi possível enviar o email de teste.",
             });
         }
     }
@@ -94,3 +94,4 @@ export function EmailNotificationsCard() {
     </Card>
   );
 }
+

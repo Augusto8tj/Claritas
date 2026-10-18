@@ -83,7 +83,7 @@ export function useAIQuantTerminal(
 
     // ESTATÍSTICAS DA SESSÃO (Segmentadas por Ativo)
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter((op: Operation) => 
+        const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' &&
             op.asset === activeSymbol
@@ -134,7 +134,7 @@ export function useAIQuantTerminal(
     }, []);
 
     const addLog = useCallback((message: string, type: ReasoningLog['type'] = 'info') => {
-        const entry = {
+        const entry: ReasoningLog = {
             time: new Date().toLocaleTimeString(),
             message,
             type
@@ -189,7 +189,7 @@ export function useAIQuantTerminal(
         const recentResults = recentPerformanceSummary.map((t: any) => t.res);
         const lastLosses = recentResults.slice(0, maxConsecutiveLosses);
         const hitLossStreak = lastLosses.length === maxConsecutiveLosses && 
-                               lastLosses.every((r: string) => r === 'lost');
+                               lastLosses.every((r: any) => r === 'lost');
         const hitDailyLossLimit = sessionStats.pnl <= maxDailyLoss;
 
         if (hitLossStreak || hitDailyLossLimit) {
@@ -212,7 +212,7 @@ export function useAIQuantTerminal(
             if (isAutoMode) {
                 addLog(`🎯 Meta de lucro de $${profitTarget} atingida. Pausando Autopilot.`, 'info');
                 setIsAutoMode(false);
-                toast({ title: "🏆 Meta Atingida", description: "O lucro alvo da sessão foi alcançado." });
+                toast({ title: "🎯 Meta Atingida", description: "O lucro alvo da sessão foi alcançado." });
             }
             return;
         }
@@ -472,3 +472,4 @@ export function useAIQuantTerminal(
         executeManualDecision: () => lastDecision && executeTradeAction(lastDecision)
     };
 }
+

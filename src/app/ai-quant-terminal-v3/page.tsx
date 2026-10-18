@@ -1,3 +1,4 @@
+// src/app/ai-quant-terminal-v3/page.tsx
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -36,7 +37,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { groupOf } from '@/features/trading/services/report-builders';
-import { Asset, AssetGroup, Operation } from '@/lib/types';
+import { Asset, Operation } from '@/lib/types';
+
+type AssetGroup = { label: string; options: Asset[] };
 
 function TerminalV3Content() {
     const { 
@@ -116,8 +119,8 @@ function TerminalV3Content() {
 
     const filteredLogs = useMemo(() => {
         if (logFilter === 'all') return reasoningLog;
-        if (logFilter === 'error') return reasoningLog.filter((l: any) => l.type === 'error' || l.type === 'warning');
-        return reasoningLog.filter((l: any) => l.type === logFilter);
+        if (logFilter === 'error') return (reasoningLog as any[]).filter((l: any) => l.type === 'error' || l.type === 'warning');
+        return (reasoningLog as any[]).filter((l: any) => l.type === logFilter);
     }, [reasoningLog, logFilter]);
 
     const scanEstimateSec = Math.round(watchedSymbols.length * (councilStats.avgLatencyMs || 4000) / 1000);
@@ -208,14 +211,14 @@ function TerminalV3Content() {
                                     <CommandInput placeholder="Filtrar ativos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group: AssetGroup) => (
+                                        {assetGroups.map((group: any) => (
                                             <CommandGroup key={group.label} heading={group.label}>
-                                                {group.options.map((asset: Asset) => (
+                                                {group.options.map((asset: any) => (
                                                     <CommandItem
                                                         key={asset.value}
                                                         onSelect={() => {
                                                             const newSymbols = watchedSymbols.includes(asset.value)
-                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
+                                                                ? watchedSymbols.filter((s: any) => s !== asset.value)
                                                                 : [...watchedSymbols, asset.value];
                                                             setWatchedSymbols(newSymbols);
                                                         }}
@@ -303,30 +306,6 @@ function TerminalV3Content() {
                 </CardContent>
             </Card>
 
-            {/* BARRA DE CONTROLE COMPACTA (MOBILE/TABLET) */}
-            <div className="lg:hidden flex flex-wrap items-center gap-3 p-3 bg-muted/30 rounded-xl border">
-                <div className="flex items-center gap-2 bg-background p-2 rounded-lg border shadow-sm">
-                    <Label htmlFor="mobile-shadow-mode" className="text-[10px] font-black uppercase">Shadow</Label>
-                    <Switch id="mobile-shadow-mode" checked={isShadowMode} onCheckedChange={handleShadowModeToggle} />
-                </div>
-                <Button 
-                    onClick={handleAutoModeToggle} 
-                    size="sm"
-                    className={cn("flex-1 h-9 font-bold text-[10px] uppercase tracking-tighter", isAutoMode ? "bg-destructive text-white" : "bg-purple-600 text-white")}
-                >
-                    {isAutoMode ? <PauseCircle className="mr-1.5 h-4 w-4" /> : <PlayCircle className="mr-1.5 h-4 w-4" />}
-                    {isAutoMode ? 'Parar Conselho' : 'Ativar Conselho'}
-                </Button>
-                <div className="flex gap-1.5">
-                    <Badge variant={isShadowMode ? "outline" : "destructive"} className="text-[9px] h-9 px-3 border-2 uppercase font-black">
-                        {isShadowMode ? 'Shadow' : 'Real'}
-                    </Badge>
-                    <Badge variant={isAutoMode ? "default" : "secondary"} className="text-[9px] h-9 px-3 uppercase font-black">
-                        PILOTO {isAutoMode ? 'ON' : 'OFF'}
-                    </Badge>
-                </div>
-            </div>
-
             {/* HEADER CANÔNICO V3 */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b pb-6">
                 <div className="flex items-center gap-3">
@@ -352,7 +331,7 @@ function TerminalV3Content() {
                     <ToggleGroup 
                         type="single" 
                         value={accountType} 
-                        onValueChange={(v: AccountType) => v && setAccountType(v)} 
+                        onValueChange={(v: any) => v && setAccountType(v)} 
                         className="bg-muted p-1 rounded-lg border border-border"
                         disabled={isAutoMode}
                     >
@@ -447,13 +426,13 @@ function TerminalV3Content() {
                                         <TrendingUp className="h-3 w-3" /> Ações Permitidas
                                     </Label>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {Object.keys(allowedActions).map((action) => (
+                                        {Object.keys(allowedActions).map((action: any) => (
                                             <div key={action} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`action-${action}`} 
                                                     checked={allowedActions[action as keyof typeof allowedActions]}
                                                     onCheckedChange={(checked) => {
-                                                        setAllowedActions(prev => ({ ...prev, [action]: !!checked }));
+                                                        setAllowedActions((prev: any) => ({ ...prev, [action]: !!checked }));
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
@@ -470,13 +449,13 @@ function TerminalV3Content() {
                                         <Layers className="h-3 w-3" /> Categorias Permitidas
                                     </Label>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {Object.keys(allowedContracts).map((contract) => (
+                                        {Object.keys(allowedContracts).map((contract: any) => (
                                             <div key={contract} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`contract-${contract}`} 
                                                     checked={allowedContracts[contract as keyof AllowedContractsV3]}
                                                     onCheckedChange={(checked) => {
-                                                        setAllowedContracts(prev => ({ ...prev, [contract]: !!checked }));
+                                                        setAllowedContracts((prev: any) => ({ ...prev, [contract]: !!checked }));
                                                     }}
                                                     disabled={isAutoMode}
                                                 />
@@ -521,8 +500,8 @@ function TerminalV3Content() {
                                                     <SelectValue placeholder="Model..." />
                                                 </SelectTrigger>
                                                 <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
-                                                    {v3.availableModels && v3.availableModels.length > 0 ? (
-                                                        v3.availableModels
+                                                    {availableModels && availableModels.length > 0 ? (
+                                                        availableModels
                                                             .filter((model: any, index: number, self: any[]) => 
                                                                 index === self.findIndex((m) => m.name === model.name)
                                                             )
@@ -814,7 +793,7 @@ function TerminalV3Content() {
                                             toast({ title: "Relatório Copiado", description: "O sumário estatístico foi enviado para a área de transferência." });
                                         });
                                     }}
-                                    title="Copiar Relatório Completo"
+                                    title="Relatório Copiado"
                                 >
                                     <Copy className="h-3.5 w-3.5" />
                                 </Button>
@@ -865,9 +844,9 @@ function TerminalV3Content() {
                                                 <CommandInput placeholder="Buscar ativos (Forex, Cripto...)" />
                                                 <CommandList>
                                                     <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                                    {assetGroups.map((group: AssetGroup) => (
+                                                    {assetGroups.map((group: any) => (
                                                         <CommandGroup key={group.label} heading={group.label}>
-                                                            {group.options.map((asset: Asset) => (
+                                                            {group.options.map((asset: any) => (
                                                                 <CommandItem
                                                                     key={asset.value}
                                                                     onSelect={() => {
@@ -943,12 +922,12 @@ function TerminalV3Content() {
                                                       .filter(([sym]) => groupOf(sym) === group)
                                                       .map(([, m]) => m);
                                                     
-                                                    const minDate = groupMeta.reduce((acc, m) => {
+                                                    const minDate = (groupMeta as any[]).reduce((acc: any, m: any) => {
                                                       const d = (period === 'recent' ? (m.mid || m.from) : m.from);
                                                       return !acc || d < acc ? d : acc;
                                                     }, "");
                                                     
-                                                    const maxDate = groupMeta.reduce((acc, m) => {
+                                                    const maxDate = (groupMeta as any[]).reduce((acc: any, m: any) => {
                                                       const d = (period === 'recent' ? m.to : (m.mid || m.from));
                                                       return !acc || d > acc ? d : acc;
                                                     }, "");
@@ -1116,7 +1095,7 @@ function TerminalV3Content() {
                                 {filteredLogs.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    filteredLogs.map((log: any) => (
+                                    (filteredLogs as any[]).map((log: any) => (
                                         <div key={log.ts} className="mb-1.5 border-l-2 border-purple-500/30 pl-2">
                                             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}

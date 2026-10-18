@@ -1,3 +1,4 @@
+// /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -7,7 +8,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
-import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -180,7 +181,7 @@ export function useCryptoRadarV4(
     }, [clearActiveContracts, toast]);
 
     const sessionStats = useMemo(() => {
-        const finishedTrades = operationsLog.filter((op: Operation) => 
+        const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
             op.status !== 'pending' && op.initiator.startsWith('Conselho')
         );
         const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
@@ -304,7 +305,8 @@ export function useCryptoRadarV4(
             bbw: inds.bbw || 1.0,
             volatilityRatio: feats.atrRatio || 1,
             momentumShort: feats.mom5,
-            momentumMedium: feats.mom15
+            momentumMedium: feats.mom15,
+            atrRatio: feats.atrRatio || 1
         };
     };
 
@@ -393,7 +395,7 @@ ${context}`;
             }
 
             const buffer = await TradeMemoryManager.getBuffer(user.uid, symbol);
-            const portfolio: PortfolioRiskState = { openPositions: operationsLog.filter((op: Operation) => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: operationsLog.filter((op: Operation) => op.status === 'pending').reduce((s: number, o: Operation) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
+            const portfolio: PortfolioRiskState = { openPositions: (operationsLog as any[]).filter((op: Operation) => op.status === 'pending').length, maxConcurrentPositions: maxConcurrentTrades, totalExposure: (operationsLog as any[]).filter((op: Operation) => op.status === 'pending').reduce((s: number, o: Operation) => s + o.stake, 0), maxTotalExposure: dailyBalance, lockedSymbols: new Set() };
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;

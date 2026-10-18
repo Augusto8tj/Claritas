@@ -305,7 +305,7 @@ export function useRobotCouncilV2(
     },
     robotPerformance: [],
     consensusReached: false,
-    consensusSum: { rise: number, fall: number },
+    consensusSum: { rise: 0, fall: 0 },
     totalWeight: 0,
   });
 
@@ -419,7 +419,7 @@ export function useRobotCouncilV2(
         }
         
         if (isDynamicExitOn) {
-            const activeCouncilContracts = operationsLog.filter((op: Operation) => 
+            const activeCouncilContracts = (operationsLog as Operation[]).filter((op: Operation) => 
                 op.status === 'pending' && 
                 op.initiator === 'Conselho' &&
                 op.durationUnit !== 't'
@@ -541,7 +541,7 @@ export function useRobotCouncilV2(
             }
         }
         
-        const lastRealOperation = operationsLog.find((op: Operation) => 
+        const lastRealOperation = (operationsLog as Operation[]).find((op: Operation) => 
             op.status !== 'pending' && 
             op.initiator === 'Conselho' && 
             !processedRealTradesRef.current.has(op.id)
@@ -688,7 +688,7 @@ export function useRobotCouncilV2(
             
             if (regimeHistoryRef.current.length >= 20) {
               const countRegimeChanges = (history: MarketRegime[]) => {
-                return history.reduce((count, regime, i) => {
+                return history.reduce((count: number, regime: MarketRegime, i: number) => {
                   if (i > 0 && regime !== history[i - 1]) return count + 1;
                   return count;
                 }, 0);
@@ -733,7 +733,7 @@ export function useRobotCouncilV2(
             effectiveThreshold: calculatedEffectiveThreshold
         }));
         
-        const openCouncilTrade = operationsLog.find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
+        const openCouncilTrade = (operationsLog as Operation[]).find((op: Operation) => op.initiator === 'Conselho' && op.status === 'pending');
         if (openCouncilTrade) {
             councilExecutionRef.current.isExecuting = false;
             return;
@@ -801,7 +801,7 @@ export function useRobotCouncilV2(
                             id: logId,
                             contractId: tradeResult.contractId,
                             timestamp: new Date().toISOString(),
-                            asset: activeSymbol,
+                            asset: activeSymbol!,
                             timePeriod: timePeriod,
                             tradeParams: {
                                 direction: consensusDirection,
