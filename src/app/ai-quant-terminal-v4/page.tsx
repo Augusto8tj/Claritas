@@ -22,7 +22,7 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Brain, User, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
+    MessageSquare, Send, Gauge, Brain, User as UserIcon, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
     TestTube, HardDrive, Info, ShieldX
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
@@ -43,7 +43,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Asset, AssetGroup } from '@/lib/types';
+import { Asset } from '@/lib/types';
+
+type AssetGroup = { label: string; options: Asset[] };
 
 function CryptoLabContent() {
     const { 

@@ -180,7 +180,7 @@ function PageContent() {
                     <CardTitle className="flex items-center gap-2"><Zap className="h-5 w-5 text-yellow-500" />Gráfico de Mercado ({activeSymbol})</CardTitle>
                     <CardDescription>Análise em tempo real com overlays.</CardDescription>
                 </CardHeader>
-                <CardContent><MarketChart activeSymbol={activeSymbol || ''} chartData={rawChartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={operationsLog} indicators={fullIndicators} tradeAnnotations={tradeAnnotations} supplyDemandZones={supplyDemandZones}/></CardContent>
+                <CardContent><MarketChart activeSymbol={activeSymbol || ''} chartData={rawChartData} isChartLoading={isChartLoading} chartError={chartError} chartType={chartType} setChartType={setChartType} timePeriod={timePeriod} setTimePeriod={setTimePeriod} operations={operationsLog} indicators={fullIndicators} tradeAnnotations={tradeAnnotations} supplyDemandZones={(fullIndicators as any)?.supplyDemandZones}/></CardContent>
             </Card>
 
             <HFExecutionLog operations={hfOperations} clearActiveContracts={clearActiveContracts} />
@@ -216,7 +216,7 @@ function PageContent() {
 
             <HFStrategyTuningPanel 
                 params={strategyParams}
-                onParamChange={handleUpdateStrategyParams}
+                onParamChange={updateStrategyParams}
                 gbmConfidenceThreshold={gbmConfidenceThreshold}
                 calibrationMeta={calibrationResults ? Object.entries(calibrationResults).map(([key, res]) => res ? ({
                     strategy: key as StrategyType,
@@ -270,4 +270,3 @@ export default function HFStrikeZonePage() {
     </DerivApiProvider>
   );
 }
-

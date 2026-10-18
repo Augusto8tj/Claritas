@@ -1,4 +1,3 @@
-// /src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -8,7 +7,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
-import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
+import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
@@ -462,7 +461,7 @@ ${context}`;
                     let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
                     const params: Record<string, any> = {};
                     if (decision.recommendedContract === 'MULTIPLIERS') { finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; params.multiplier = 400; }
-                    const res = await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho_V4', `V5_${decision.executedVia}`, params);
+                    const res = await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho' as OperationInitiator, `V5_${decision.executedVia}`, params);
                     if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado.`, 'execution', undefined, symbol);
                 }
             }
@@ -472,7 +471,7 @@ ${context}`;
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
         const now = Date.now();
-        const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean)));
+        const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean) as string[]));
         const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
@@ -494,7 +493,9 @@ ${context}`;
 
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
+        setIsAutoMode,
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
+        setIsShadowMode,
         strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold,
         stakeValue, setStakeValue, multiplier, setMultiplier,

@@ -61,7 +61,9 @@ function TerminalV3Content() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         stakeValue, setStakeValue, dailyBalance, setDailyBalance, dailyTarget, setDailyTarget,
         sessionStats, councilStats, chatMessages, isChatLoading, sendMessage, telemetry, ollamaConfig,
-        updateOllamaConfig, backtest, runBacktest, buildBacktestReport, staleMinutes
+        updateOllamaConfig, fetchAvailableModels, setAccountType: setHookAccountType, availableModels,
+        toggleAutoMode, toggleShadowMode,
+        backtest, runBacktest, buildBacktestReport, staleMinutes
     } = v3;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -211,7 +213,7 @@ function TerminalV3Content() {
                                     <CommandInput placeholder="Filtrar ativos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group: any) => (
+                                        {assetGroups.map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
                                                 {group.options.map((asset: any) => (
                                                     <CommandItem
@@ -363,7 +365,7 @@ function TerminalV3Content() {
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas para validação</span>
                                 </Label>
-                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={(val: any) => setIsShadowMode(val)} />
+                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={(val) => setIsShadowMode(val)} />
                             </div>
 
                             <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
@@ -449,7 +451,7 @@ function TerminalV3Content() {
                                         <Layers className="h-3 w-3" /> Categorias Permitidas
                                     </Label>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {Object.keys(allowedContracts).map((contract: any) => (
+                                        {Object.keys(allowedContracts).map((contract) => (
                                             <div key={contract} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`contract-${contract}`} 
@@ -519,7 +521,7 @@ function TerminalV3Content() {
                                                 variant="ghost" 
                                                 size="icon" 
                                                 className="h-7 w-7 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
-                                                onClick={() => v3.fetchAvailableModels()}
+                                                onClick={() => fetchAvailableModels()}
                                                 title="Sincronizar"
                                             >
                                                 <RefreshCw className="h-3.5 w-3.5" />
@@ -711,7 +713,7 @@ function TerminalV3Content() {
                                         </div>
                                     ))}
                                     {isChatLoading && (
-                                        <div className="flex items-center gap-2 text-xs text-purple-600 animate-pulse p-3 font-mono">
+                                        <div className="flex items-center gap-2 text-purple-600 animate-pulse p-3 font-mono">
                                             <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
                                         </div>
                                     )}

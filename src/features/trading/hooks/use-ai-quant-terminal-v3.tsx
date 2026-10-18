@@ -1,4 +1,3 @@
-// /src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
@@ -184,9 +183,6 @@ export function useAIQuantTerminalV3(
       setMemoryBuffer({ wins: [], losses: [] });
       toast({ title: "Memória Limpa", description: "O buffer tático foi apagado." });
     }, [user, toast]);
-
-    const resetSessionRef = useRef(resetSession);
-    resetSessionRef.current = resetSession;
 
     // PERSISTÊNCIA DE CONFIGURAÇÕES
     useEffect(() => {
@@ -381,7 +377,7 @@ export function useAIQuantTerminalV3(
                     }
 
                     const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
-                    const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, 15, 's', 'Conselho_V3', `V3_${decision.executedVia}`);
+                    const res = await executeTradeRef.current(finalContractType, stake, symbol, tradeDirection, 15, 's', 'Conselho' as OperationInitiator, `V3_${decision.executedVia}`);
                     if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado. ID=${res.contractId}`, 'execution', undefined, symbol);
                     else addLog(`[EXEC-FALHA] ${symbol} ${finalContractType}: ${res.message}`, 'error', undefined, symbol);
                 }
@@ -401,7 +397,7 @@ export function useAIQuantTerminalV3(
         const startTime = Date.now();
         try {
             const currentActive = activeSymbolRef.current;
-            const symbols = Array.from(new Set([...watchedSymbolsRef.current, currentActive].filter(Boolean)));
+            const symbols = Array.from(new Set([...watchedSymbolsRef.current, currentActive].filter(Boolean) as string[]));
             
             const liveDue = symbols.filter(sym => (staleMinutes(sym) ?? 0) <= 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
             const staleDue = symbols.filter(sym => (staleMinutes(sym) ?? 999) > 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
@@ -425,7 +421,7 @@ export function useAIQuantTerminalV3(
                 const min = staleMinutes(symbol) ?? 999;
                 const now = Date.now();
                 if (now - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
-                    addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol);
+                    addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol ?? undefined);
                     lastMarketClosedLogRef.current[symbol] = now;
                 }
                 scheduleRef.current[symbol] = Date.now() + 60000;
@@ -455,7 +451,7 @@ export function useAIQuantTerminalV3(
         const REPORT = /(situa[cç][aã]o|status|auditoria|listagem|relat[oó]rio|resumo|quais ativos|que ativos|monitorando|oportunidades?|chances?|vantaj\w*|melhor(es)?|promissor\w*)/i;
         const BACKTEST_RE = /(backtest|retroteste|teste estat[ií]stic)/i;
 
-        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean)));
+        const symbols = Array.from(new Set([...watchedSymbolsRef.current, activeSymbolRef.current].filter(Boolean) as string[]));
 
         if (content.match(CONFIRM)) {
             if (pendingChatOrderRef.current && (Date.now() - pendingChatOrderRef.current.ts) < 60000 && !isShadowMode) {
@@ -556,7 +552,7 @@ export function useAIQuantTerminalV3(
 
     const sessionStatsLocal = useMemo(() => {
         const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
-            op.status !== 'pending' && op.initiator === 'Conselho_V3'
+            op.status !== 'pending' && (op.initiator as string) === 'Conselho'
         );
         const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
@@ -593,6 +589,8 @@ export function useAIQuantTerminalV3(
         watchedSymbols, setWatchedSymbols, resetSession, clearMemory, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        setAccountType, accountType, runBacktest: (p: any, t: any, e: any) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e), p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes
+        setAccountType, accountType, runBacktest: (p: any, t: any, e: any) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e) as string[], p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
+        toggleAutoMode: () => setIsAutoMode(prev => !prev),
+        toggleShadowMode: () => setIsShadowMode(prev => !prev),
     };
 }
