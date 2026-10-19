@@ -1,4 +1,3 @@
-
 // src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
@@ -105,6 +104,7 @@ export function useCryptoRadarV4(
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
+    const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     const [requireSentinelCandidate] = useState(true);
 
