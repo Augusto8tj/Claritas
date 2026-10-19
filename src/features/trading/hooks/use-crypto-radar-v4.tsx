@@ -104,6 +104,7 @@ export function useCryptoRadarV4(
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
+    const [backgroundIntervalSec, setBackgroundIntervalSec] = useState(60);
     const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     const [requireSentinelCandidate] = useState(true);
@@ -525,6 +526,7 @@ ${context}`;
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
         lastDecision, radarStatus, reasoningLog, telemetry, memoryBuffer,
         analysisInterval, setAnalysisInterval,
+        backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
         resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
