@@ -1,9 +1,11 @@
+
 // src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V5.4.1: Estabilização de Shadow Trading, Cooldown de 60s e Heartbeat de Liquidação.
+ * V11: Otimização de Ciclo e Gatilho Sentinel Imediato.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -16,7 +18,7 @@ import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3 } from '../types/council';
 import { computeSignalFeatures } from '../services/signal-engine';
-import { evaluateCryptoSignals, type CryptoSignalFeatures } from '../services/crypto-signal-engine';
+import { evaluateCryptoSignals, type CryptoSignalFeatures, SENTINEL_MIN_SCORE } from '../services/crypto-signal-engine';
 import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
 import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
@@ -103,7 +105,6 @@ export function useCryptoRadarV4(
     const [isAutoMode, setIsAutoMode] = useState(false);
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
-    const [strategicProfile, setStrategicProfile] = useState<StrategicProfile>('balanced');
     const [confidenceThreshold, setConfidenceThreshold] = useState(65);
     const [requireSentinelCandidate] = useState(true);
 
@@ -473,7 +474,24 @@ ${context}`;
         if (!isConnected || executionLockRef.current) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean) as string[]));
-        const dueSymbols = symbols.filter((sym: string) => (scheduleRef.current[sym] || 0) <= now);
+        const dueSymbols = symbols.filter((sym: string) => {
+            const nextRun = scheduleRef.current[sym] || 0;
+            const isFoco = sym === activeSymbol;
+            
+            // Etapa 11: Gatilho Sentinel Imediato
+            if (isFoco && isAutoMode) {
+                const candles = getCandlesFor(sym);
+                const feats = computeSignalFeatures(candles as any);
+                if (feats) {
+                  const cryptoFeats: CryptoSignalFeatures = { ...feats, gravity: null, vwapDist: feats.bbPos };
+                  const candidates = evaluateCryptoSignals(sym, cryptoFeats);
+                  const hasStrongSetup = candidates.some(c => c.score >= SENTINEL_MIN_SCORE && c.direction !== 'NONE');
+                  if (hasStrongSetup && (now - nextRun) > -15000) return true; // Antecipa se setup forte
+                }
+            }
+            
+            return nextRun <= now;
+        });
         
         if (dueSymbols.length > 0) {
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));
@@ -481,11 +499,13 @@ ${context}`;
                 const candles = getCandlesFor(sym);
                 if (candles.length >= 30) {
                     await runAnalysisForSymbol(sym, candles);
-                    scheduleRef.current[sym] = Date.now() + (sym === activeSymbol ? 15 : analysisInterval) * 1000;
+                    // Etapa 11: Foco usa analysisInterval, não mais 15s fixo
+                    const interval = sym === activeSymbol ? analysisInterval : backgroundIntervalSec;
+                    scheduleRef.current[sym] = Date.now() + interval * 1000;
                 }
             }
         }
-    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, getCandlesFor, runAnalysisForSymbol]);
+    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, backgroundIntervalSec, isAutoMode, getCandlesFor, runAnalysisForSymbol]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);

@@ -1,8 +1,10 @@
+
 // /src/features/trading/services/quant-council-engine.ts
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import { RuleReport } from './backtest';
 import type { OllamaConfig } from '@/lib/types';
+import { SENTINEL_MIN_SCORE } from './crypto-signal-engine';
 
 export const MIN_EXEC_CONFIDENCE = 65;
 const RISK_DAMPING = 250;
@@ -105,7 +107,7 @@ export async function runQuantCouncil(
     }
 
     const gravityContext = marketSnapshot.gravity ? 
-      `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zImpulse=${marketSnapshot.gravity.zImpulse?.toFixed(2)} | expectedCatchUp=${marketSnapshot.gravity.expectedCatchUp?.toFixed(4)}` : 
+      `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zBtc=${marketSnapshot.gravity.zBtc?.toFixed(2)} | zTarget=${marketSnapshot.gravity.zTarget?.toFixed(2)} | Corr=${marketSnapshot.gravity.correlation.toFixed(3)} | Slingshot=${marketSnapshot.gravity.slingshotDetected}` : 
       "\nBITCOIN GRAVITY: N/A";
 
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
@@ -209,13 +211,17 @@ async function fetchAgentAnalysis(
   signal: AbortSignal
 ): Promise<AgentOpinion> {
   const start = performance.now();
+  const isSling = snapshot.sentinel?.rule === 'LEADLAG_SLINGSHOT';
   
-  const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. Use Bitcoin Gravity para capturar lead-lag.`;
+  // Etapa 11: Prompt condicional por tipo de sinal
+  const strategyInstruction = isSling 
+    ? `MODO LEAD-LAG ATIVO: Siga o sentinel.direction. O Bitcoin está puxando o mercado. Ignore o RSI se houver arraste gravitacional.`
+    : `MODO REVERSÃO/MOMENTUM: RSI < 35 = COMPRA, RSI > 65 = VENDA.`;
 
   const systemPrompts = {
-    MOMENTUM: `VOCÊ É UNICAMENTE O ANALISTA 'QUANT MOMENTUM'. Identifique força de explosão nos extremos e arraste do BTC. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `VOCÊ É UNICAMENTE O ANALISTA 'RISK CRITIC'. Vete se o BTC estiver explodindo em direção oposta. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `VOCÊ É UNICAMENTE O ANALISTA 'PATTERN ARCHIVIST'. Compare o cenário com trades passados e BACKTEST. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `VOCÊ É O ANALISTA 'QUANT MOMENTUM'. ${strategyInstruction} Foque no zBtc e no Momentum do alvo. ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `VOCÊ É O ANALISTA 'RISK CRITIC'. ${strategyInstruction} Verifique se zTarget está começando a seguir zBtc. ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `VOCÊ É O ANALISTA 'PATTERN ARCHIVIST'. ${strategyInstruction} Compare com padrões de Lead-Lag passados. ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -349,20 +355,19 @@ function synthesizeChairmanDecision(
 }
 
 function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
-  const rsi = snapshot.rsi || 50;
-  const action = rsi > 75 ? 'PUT' : rsi < 25 ? 'CALL' : 'HOLD';
-
+  // Etapa 11: Fallback sempre retorna HOLD
   return {
-    finalAction: action,
+    finalAction: 'HOLD',
     recommendedContract: 'OPTIONS',
-    stakeRatio: action !== 'HOLD' ? 0.10 : 0,
-    consensusConfidence: 60,
+    stakeRatio: 0,
+    consensusConfidence: 0,
     opinions: [],
     executedVia: 'MATH_FALLBACK',
     executionMode: isShadowMode ? 'SHADOW' : 'REAL',
     t2tLatencyMs: latency,
     telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
-    zenThought: "IA Instável. Operando por motor estocástico de emergência.",
-    debugVotes: "MATH"
+    zenThought: "IA Instável. Protegendo capital até restabelecimento do gateway.",
+    debugVotes: "FALLBACK_HOLD",
+    holdReason: "FAILOVER_CONSERVATIVE: Fallback forçado para HOLD por política de risco."
   };
 }

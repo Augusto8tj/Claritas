@@ -6,6 +6,7 @@
  * Motor matemático institucional para detecção de correlação líder, 
  * beta dinâmico e Lead-Lag Arbitrage entre cryBTCUSD e o cluster de Altcoins.
  * V5.3: Alinhamento temporal por epoch e detecção de explosão por desvio relativo.
+ * V11: Hardening de Z-Score (ignora vela em formação).
  */
 
 // ============================================================================
@@ -129,7 +130,7 @@ export function calculateBitcoinGravity(
   const alignedBtc: number[] = [];
   const alignedTarget: number[] = [];
 
-  // Exclui última vela se estiver em formação
+  // Exclui última vela se estiver em formação para o alinhamento
   const targetEpochs = dropForming ? target.epochHistory.slice(0, -1) : target.epochHistory;
   const targetPrices = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
 
@@ -155,9 +156,12 @@ export function calculateBitcoinGravity(
   const correlation = calculatePearsonCorrelation(btcReturns, targetReturns);
   const beta = calculateBeta(targetReturns, btcReturns);
 
-  // 2. CÁLCULO DE Z-SCORES
-  const zBtc = calculateZScoreFromReturns(getReturns(btc.priceHistory));
-  const zTarget = calculateZScoreFromReturns(getReturns(target.priceHistory));
+  // 2. CÁLCULO DE Z-SCORES (Etapa 11: Ignora vela em formação se dropForming=true)
+  const btcZHistory = dropForming ? btc.priceHistory.slice(0, -1) : btc.priceHistory;
+  const targetZHistory = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
+  
+  const zBtc = calculateZScoreFromReturns(getReturns(btcZHistory));
+  const zTarget = calculateZScoreFromReturns(getReturns(targetZHistory));
 
   // 3. DETECÇÃO DE EXPLOSÃO (VALORES RELATIVOS)
   const isBtcExploding = btc.atrRatio > 1.5 || btc.bbw > 2.5;

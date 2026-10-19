@@ -1,3 +1,4 @@
+
 import { NextResponse } from 'next/server';
 
 const VALID_CONTRACTS = ['OPTIONS', 'ACCUMULATORS', 'MULTIPLIERS'];
@@ -48,26 +49,22 @@ export async function POST(req: Request) {
       DADOS DO MERCADO ATUAL:
       ${JSON.stringify(marketSnapshot, null, 2)}
       
-      Campos do snapshot: mom5/mom15 = variação em ATRs nos últimos 5/15 candles; bbPos = posição nas Bandas de Bollinger (0 inferior, 1 superior); bwPct = percentil da largura das bandas; atrRatio = volatilidade atual/mediana; er = eficiência (0 lateral, 1 tendência limpa); streak = candles seguidos (+alta/-baixa).
-
-      REGRAS DE RESPOSTA:
-      1. POLARIDADE RSI: RSI < 35 é SOBREVENDA (Possível CALL). RSI > 65 é SOBRECOMPRA (Possível PUT). Sugerir o oposto é ERRO CRÍTICO.
+      REGRAS DE RESPOSTA (Etapa 11):
+      1. Se rule for 'LEADLAG_SLINGSHOT', a regra do RSI é secundária; siga o Bitcoin.
+      2. Se for 'OPT_REV', a regra do RSI é ABSOLUTA: <35 COMPRA, >65 VENDA.
+      
+      Campos do snapshot: mom5/mom15 = variação em ATRs; bbPos = posição nas bandas (0-1); bwPct = percentil largura; er = eficiência; slingshot = arraste líder.
 
       Responda OBRIGATORIAMENTE apenas em JSON válido.
-      Não inclua markdown (como \`\`\`json) ou explicações fora do objeto.
-      Campos obrigatórios e seus valores EXATOS permitidos:
-      "action": EXATAMENTE um de "CALL", "PUT", "HOLD" (nunca outro valor).
-      "confidence": número inteiro de 0 a 100.
-      "recommendedContract": EXATAMENTE um de "OPTIONS", "ACCUMULATORS", "MULTIPLIERS"
-      (NUNCA o nome do ativo, NUNCA "CALL"/"PUT"/"HOLD" — este campo descreve o TIPO
-      de contrato, não a direção da operação).
-      "reasoning": string curta.
+      Não inclua markdown ou explicações fora do objeto.
+      Campos obrigatórios:
+      "action": "CALL", "PUT" ou "HOLD".
+      "confidence": número inteiro 0-100.
+      "recommendedContract": "OPTIONS", "ACCUMULATORS" ou "MULTIPLIERS".
+      "reasoning": justificativa técnica curta.
       "vetoTriggered": boolean.
-      Exemplo de resposta válida: {"action":"CALL","confidence":78,"recommendedContract":"MULTIPLIERS","reasoning":"RSI em sobrevenda com volume crescente.","vetoTriggered":false}
-      Seja ULTRA-CONCISO para economizar tokens.
     `;
 
-    console.log(`[Agent API] Tamanho do prompt: ${prompt.length} caracteres.`);
     console.log(`[Agent API] Iniciando requisição para: ${url} (Modelo: ${config.model})`);
 
     const response = await fetch(url, {
@@ -99,20 +96,13 @@ export async function POST(req: Request) {
     const data = await response.json();
     let content = data.response;
     
-    console.log(`[Agent API] RESPOSTA CRUA DO OLLAMA (${config.model}):`, content);
-
     content = content.replace(/```json|```/g, "").trim();
     
     let parsedOpinion: any = {};
     try {
         parsedOpinion = JSON.parse(content);
-        // SANITIZAÇÃO
         parsedOpinion = sanitizeOpinion(parsedOpinion, marketSnapshot.symbol);
-        console.log(`[Agent API] Sucesso no parse da opinião:`, parsedOpinion);
     } catch (parseError: any) {
-        console.error(`[Agent API] FALHA CRÍTICA NO PARSE DO JSON!`);
-        console.error(`Texto que falhou: "${content}"`);
-        console.error(`Erro técnico:`, parseError.message);
         return NextResponse.json({ 
             error: "Falha ao processar resposta estruturada da IA local.",
             rawResponse: content 
@@ -135,10 +125,8 @@ export async function POST(req: Request) {
 
   } catch (error: any) {
     if (error.name === 'TimeoutError' || error.name === 'AbortError') {
-        console.error('[Agent API] Timeout aguardando o Ollama (13s)');
         return NextResponse.json({ error: 'timeout' }, { status: 504 });
     }
-    console.error('[Agent API Error]:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
