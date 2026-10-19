@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-ai-quant-terminal-v3.tsx
 'use client';
 
 /**
@@ -62,9 +63,9 @@ const isOrphanOp = (op: Operation) => {
 
 const AGENT_PERSONAS = {
   CHAIRMAN: "o CHAIRMAN do conselho: sintetiza a visão técnica de forma executiva",
-  MOMENTUM: "o analista QUANT MOMENTUM: força do preço, momentum e velocidade",
-  RISK_CRITIC: "o RISK CRITIC: cético, aponta riscos e razões para NÃO operar",
-  ARCHIVIST: "o PATTERN ARCHIVIST: memória de trades e padrões passados"
+  MOMENTUM: "o analista QUANT MOMENTUM: focado exclusivamente em força do preço, momentum e velocidade",
+  RISK_CRITIC: "o RISK CRITIC: você é cético, aponta riscos e razões para NÃO operar",
+  ARCHIVIST: "o PATTERN ARCHIVIST: focado em memória de trades e padrões passados"
 };
 
 export function useAIQuantTerminalV3(
@@ -316,7 +317,7 @@ export function useAIQuantTerminalV3(
             };
 
             const initialPermissions: AssetExecutionPermission = {
-                symbol, enabled: true, maxStake: stakeValue * 2,
+                symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 2,
                 allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[],
                 allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[]
             };
@@ -399,8 +400,8 @@ export function useAIQuantTerminalV3(
             const currentActive = activeSymbolRef.current;
             const symbols = Array.from(new Set([...watchedSymbolsRef.current, currentActive].filter(Boolean) as string[]));
             
-            const liveDue = symbols.filter(sym => (staleMinutes(sym) ?? 0) <= 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
-            const staleDue = symbols.filter(sym => (staleMinutes(sym) ?? 999) > 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
+            const liveDue = symbols.filter((sym: string) => (staleMinutes(sym) ?? 0) <= 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
+            const staleDue = symbols.filter((sym: string) => (staleMinutes(sym) ?? 999) > 2.5 && (scheduleRef.current[sym] || 0) <= startTime);
 
             if (liveDue.length > 0) {
                 addLog(`[CICLO] due=[${liveDue.join(', ')}]`, 'info');
@@ -417,11 +418,11 @@ export function useAIQuantTerminalV3(
                 }
             }
 
-            staleDue.forEach(symbol => {
+            staleDue.forEach((symbol: string) => {
                 const min = staleMinutes(symbol) ?? 999;
                 const now = Date.now();
                 if (now - (lastMarketClosedLogRef.current[symbol] || 0) > 600000) {
-                    addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol ?? undefined);
+                    addLog(`[MERCADO-FECHADO] ${symbol}: último candle há ${Math.round(min)} min.`, 'warning', undefined, symbol);
                     lastMarketClosedLogRef.current[symbol] = now;
                 }
                 scheduleRef.current[symbol] = Date.now() + 60000;
@@ -478,7 +479,7 @@ export function useAIQuantTerminalV3(
 
         const cmdMatch = content.match(CMD);
         if (cmdMatch) {
-            const found = symbols.filter(s => s && content.toUpperCase().includes(s.toUpperCase()));
+            const found = symbols.filter((s: string) => s && content.toUpperCase().includes(s.toUpperCase()));
             if (found.length === 0) {
                 setChatMessages(prev => [...prev, { role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(), content: `Informe o ativo (ex.: compre 1HZ10V). Ativos monitorados: ${symbols.join(', ')}` }]);
             } else if (found.length > 1) {
@@ -500,7 +501,7 @@ export function useAIQuantTerminalV3(
             return;
         }
 
-        const hasSym = symbols.find(s => s && content.toUpperCase().includes(s.toUpperCase()));
+        const hasSym = symbols.find((s: string) => s && content.toUpperCase().includes(s.toUpperCase()));
         if (hasSym && content.match(WHY)) {
             setChatMessages(prev => [...prev, { 
                 role: 'assistant', agentName: 'SISTEMA', time: new Date().toLocaleTimeString(),
@@ -532,11 +533,11 @@ export function useAIQuantTerminalV3(
         try {
             const context = buildShortContext({ sentinel, lastDecisions: lastDecisionBySymbolRef.current, staleMinutes });
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.\n\n${context}\n\nREGRAS: use estes dados; cite números. Máximo 120 palavras.`;
+            const systemPrompt = `VOCÊ É UNICAMENTE ${persona.toUpperCase()}. RESPONDA EXCLUSIVAMENTE NESTE PAPEL. Responda em português do Brasil.\n\n${context}\n\nREGRAS: use estes dados; cite números. Máximo 120 palavras.`;
 
             const response = await getOllamaResponse(ollamaConfig, content, [
                 { role: 'system', content: systemPrompt }, 
-                ...chatMessages.slice(-8).map(m => ({ role: m.role, content: m.content }))
+                ...chatMessages.slice(-8).map((m: ChatMessage) => ({ role: m.role, content: m.content }))
             ]);
             
             if (response.success) {
@@ -552,7 +553,7 @@ export function useAIQuantTerminalV3(
 
     const sessionStatsLocal = useMemo(() => {
         const finishedTrades = (operationsLog as Operation[]).filter((op: Operation) => 
-            op.status !== 'pending' && (op.initiator as string) === 'Conselho'
+            op.status !== 'pending' && op.initiator === 'Conselho'
         );
         const wins = finishedTrades.filter((op: Operation) => op.status === 'won').length;
         const total = finishedTrades.length;
@@ -577,8 +578,8 @@ export function useAIQuantTerminalV3(
     }, []);
 
     return {
-        isAutoMode, setIsAutoMode,
-        isShadowMode, setIsShadowMode,
+        isAutoMode, toggleAutoMode: () => setIsAutoMode(prev => !prev),
+        isShadowMode, toggleShadowMode: () => setIsShadowMode(prev => !prev),
         lastDecision, timeToNextAnalysis, analysisInterval, setAnalysisInterval,
         backgroundIntervalSec, setBackgroundIntervalSec, sentinelIntervalSec, setSentinelIntervalSec,
         allowedActions, setAllowedActions,
@@ -589,8 +590,6 @@ export function useAIQuantTerminalV3(
         watchedSymbols, setWatchedSymbols, resetSession, clearMemory, chatMessages, isChatLoading, sendMessage,
         executeManualDecision: () => activeSymbolRef.current && runAnalysisForSymbol(activeSymbolRef.current, getCandlesFor(activeSymbolRef.current), true),
         telemetry, ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        setAccountType, accountType, runBacktest: (p: any, t: any, e: any) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e) as string[], p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
-        toggleAutoMode: () => setIsAutoMode(prev => !prev),
-        toggleShadowMode: () => setIsShadowMode(prev => !prev),
+        setAccountType, accountType, runBacktest: (p: any, t: any, e: any) => runBacktest([...watchedSymbolsRef.current, activeSymbolRef.current || ''].filter(Boolean).concat(e) as string[], p, t), backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes
     };
 }

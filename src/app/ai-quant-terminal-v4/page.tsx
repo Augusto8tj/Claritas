@@ -1,3 +1,4 @@
+// src/app/ai-quant-terminal-v4/page.tsx
 'use client';
 
 /**
@@ -22,8 +23,8 @@ import {
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
     Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
-    MessageSquare, Send, Gauge, Brain, User as UserIcon, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
-    TestTube, HardDrive, Info, ShieldX
+    MessageSquare, Send, Gauge, Brain, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
+    TestTube, HardDrive, Info, ShieldX, User as UserIcon
 } from "lucide-react";
 import { DerivApiProviderV2 as DerivApiProvider, useDerivApiV2 as useDerivApi, type AccountType } from "@/features/trading/hooks/use-deriv-api-v2";
 import { AssetSelectorV2 as AssetSelector } from "@/features/trading/components/deriv-trader/asset-selector-v2";
@@ -43,7 +44,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Asset } from '@/lib/types';
+import { Asset, Operation } from '@/lib/types';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -190,7 +191,7 @@ function CryptoLabContent() {
                                     <CommandInput placeholder="Filtrar criptos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group: AssetGroup) => (
+                                        {(assetGroups as any).map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
                                                 {group.options.map((asset: Asset) => (
                                                     <CommandItem
@@ -654,7 +655,7 @@ function CryptoLabContent() {
                                 <TestTube className="h-4 w-4" /> Backtest das regras (1m)
                             </CardTitle>
                             {Object.keys(backtest.merged).length > 0 && (
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(v4.backtest); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
                                     <Copy className="h-3.5 w-3.5" />
                                 </Button>
                             )}
@@ -716,7 +717,7 @@ function CryptoLabContent() {
                                 <span>| {(councilStats.avgLatencyMs/1000).toFixed(1)}s/ativo</span>
                              </div>
                              <div className="flex gap-2">
-                                {['all', 'decision', 'sentinel', 'execution', 'error'].map(f => (
+                                {['all', 'decision', 'sentinel', 'execution', 'error'].map((f: any) => (
                                     <Badge 
                                         key={f} 
                                         variant={logFilter === f ? 'default' : 'outline'} 
@@ -733,7 +734,7 @@ function CryptoLabContent() {
                                 {filteredLogs.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    filteredLogs.map((log: any, i: number) => (
+                                    (filteredLogs as any[]).map((log: any) => (
                                         <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
                                             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}

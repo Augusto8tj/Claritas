@@ -213,9 +213,9 @@ async function fetchAgentAnalysis(
   const commonRules = `REGRA RSI: <35=COMPRA, >65=VENDA. Use Bitcoin Gravity para capturar lead-lag.`;
 
   const systemPrompts = {
-    MOMENTUM: `Você é o analista 'Quant Momentum'. Identifique força de explosão nos extremos e arraste do BTC. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `Você é o analista 'Risk Critic'. Vete se o BTC estiver explodindo em direção oposta. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `Você é o analista 'Pattern Archivist'. Compare o cenário com trades passados e BACKTEST. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `VOCÊ É UNICAMENTE O ANALISTA 'QUANT MOMENTUM'. Identifique força de explosão nos extremos e arraste do BTC. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `VOCÊ É UNICAMENTE O ANALISTA 'RISK CRITIC'. Vete se o BTC estiver explodindo em direção oposta. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `VOCÊ É UNICAMENTE O ANALISTA 'PATTERN ARCHIVIST'. Compare o cenário com trades passados e BACKTEST. ${commonRules} ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {

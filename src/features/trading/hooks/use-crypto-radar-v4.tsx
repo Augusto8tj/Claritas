@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -54,9 +55,9 @@ export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
 const AGENT_PERSONAS = {
   CHAIRMAN: "o CHAIRMAN do conselho supremo: sua resposta deve ser executiva, fundamentada no DOSSIER DE TELEMETRIA fornecido. Você sintetiza a decisão final.",
-  MOMENTUM: "o analista QUANT MOMENTUM: sua função é calcular a força do preço usando RSI, ER e Mom5 do dossier. Ignore sentimentos, foque na velocidade.",
-  RISK_CRITIC: "o RISK CRITIC: você é cético. Use o Beta, a Correlação e o Piso Travado para alertar sobre perigos de divergência ou ganância.",
-  ARCHIVIST: "o PATTERN ARCHIVIST: você compara o snapshot atual com a MEMÓRIA DE APRENDIZADO injetada. Identifique se este setup já falhou antes."
+  MOMENTUM: "o analista QUANT MOMENTUM: sua função é calcular unicamente a força do preço usando RSI, ER e Mom5 do dossier. Ignore sentimentos, foque na velocidade.",
+  RISK_CRITIC: "o RISK CRITIC: você é unicamente cético. Use o Beta, a Correlação e o Piso Travado para alertar sobre perigos de divergência ou ganância.",
+  ARCHIVIST: "o PATTERN ARCHIVIST: você compara unicamente o snapshot atual com a MEMÓRIA DE APRENDIZADO injetada. Identifique se este setup já falhou antes."
 };
 
 const SETTINGS_KEY = 'cryptoLabV4Settings';
@@ -197,7 +198,7 @@ export function useCryptoRadarV4(
     }, [priceTicks, activeSymbol, resilience]);
 
     useEffect(() => {
-        Object.keys(multiAssetCandles).forEach(symbol => {
+        Object.keys(multiAssetCandles).forEach((symbol: string) => {
             if (watchedSymbols.includes(symbol)) resilience.recordPulse(symbol);
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
@@ -257,11 +258,11 @@ export function useCryptoRadarV4(
         
         const settleInterval = setInterval(() => {
             CryptoShadowEngine.settlePending(user.uid!, 
-                (sym) => {
+                (sym: string) => {
                     const c = getCandlesForRef.current(sym);
                     return c.length > 0 ? c[c.length - 1].close : null;
                 },
-                async (sym, win, pnl, trade) => {
+                async (sym: string, win: boolean, pnl: number, trade: any) => {
                     if (trade.lateSettle) {
                         addLog(`[SHADOW] ${sym}: liquidação tardia (${Math.round((trade.settleDelayMs || 0) / 1000)}s de atraso) excluída das estatísticas.`, 'warning', undefined, sym);
                         return;
@@ -296,8 +297,8 @@ export function useCryptoRadarV4(
         return {
             symbol: assetSym,
             currentPrice: assetCandles[assetCandles.length - 1].close,
-            priceHistory: assetCandles.map(c => c.close),
-            epochHistory: assetCandles.map(c => c.epoch),
+            priceHistory: assetCandles.map((c: CandleData) => c.close),
+            epochHistory: assetCandles.map((c: CandleData) => c.epoch),
             rsi: feats.rsi,
             adx: inds.adx || 30,
             atrNow: inds.atr || 0.001,
@@ -324,7 +325,7 @@ export function useCryptoRadarV4(
             });
 
             const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `Você é ${persona}. Responda em português do Brasil.
+            const systemPrompt = `VOCÊ É UNICAMENTE ${persona.toUpperCase()}. RESPONDA EXCLUSIVAMENTE NESTE PAPEL. Responda em português do Brasil.
 
 DIRETRIZES RÍGIDAS DE DADOS (V5.3):
 1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
@@ -472,7 +473,7 @@ ${context}`;
         if (!isConnected || executionLockRef.current) return;
         const now = Date.now();
         const symbols = Array.from(new Set([...watchedSymbols, activeSymbol].filter(Boolean) as string[]));
-        const dueSymbols = symbols.filter(sym => (scheduleRef.current[sym] || 0) <= now);
+        const dueSymbols = symbols.filter((sym: string) => (scheduleRef.current[sym] || 0) <= now);
         
         if (dueSymbols.length > 0) {
             dueSymbols.sort((a, b) => (a === activeSymbol ? -1 : (b === activeSymbol ? 1 : 0)));

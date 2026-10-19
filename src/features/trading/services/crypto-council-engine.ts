@@ -71,10 +71,16 @@ export async function runCryptoCouncil(
 }
 
 async function fetchCryptoAgent(name: string, snapshot: any, context: string, config: OllamaConfig): Promise<AgentOpinion> {
+    const systemPrompts = {
+        MOMENTUM: "VOCÊ É UNICAMENTE O ANALISTA 'QUANT MOMENTUM'. FOQUE EM FORÇA E VELOCIDADE.",
+        RISK_CRITIC: "VOCÊ É UNICAMENTE O ANALISTA 'RISK CRITIC'. FOQUE EM RISCOS E VETOS.",
+        ARCHIVIST: "VOCÊ É UNICAMENTE O ANALISTA 'PATTERN ARCHIVIST'. FOQUE EM MEMÓRIA TÁTICA."
+    };
+
     const res = await fetch('/api/ollama/crypto-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ systemPrompt: `Agente ${name} do Crypto Lab. ${context}`, marketSnapshot: snapshot, config })
+        body: JSON.stringify({ systemPrompt: `${(systemPrompts as any)[name]} ${context}`, marketSnapshot: snapshot, config })
     });
     if (!res.ok) throw new Error('Agent API Error');
     const data = await res.json();

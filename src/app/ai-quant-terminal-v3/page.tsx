@@ -105,7 +105,7 @@ function TerminalV3Content() {
             return;
         }
 
-        const text = filteredLogs.map(l => {
+        const text = filteredLogs.map((l: LogEntry) => {
             let s = `[${l.time}] ${l.message}`;
             if (l.details && l.details.length > 0) s += `\n  ` + l.details.join('\n  ');
             return s;
@@ -121,8 +121,8 @@ function TerminalV3Content() {
 
     const filteredLogs = useMemo(() => {
         if (logFilter === 'all') return reasoningLog;
-        if (logFilter === 'error') return (reasoningLog as any[]).filter((l: any) => l.type === 'error' || l.type === 'warning');
-        return (reasoningLog as any[]).filter((l: any) => l.type === logFilter);
+        if (logFilter === 'error') return (reasoningLog as LogEntry[]).filter((l: LogEntry) => l.type === 'error' || l.type === 'warning');
+        return (reasoningLog as LogEntry[]).filter((l: LogEntry) => l.type === logFilter);
     }, [reasoningLog, logFilter]);
 
     const scanEstimateSec = Math.round(watchedSymbols.length * (councilStats.avgLatencyMs || 4000) / 1000);
@@ -213,14 +213,14 @@ function TerminalV3Content() {
                                     <CommandInput placeholder="Filtrar ativos..." />
                                     <CommandList>
                                         <CommandEmpty>Nenhum ativo encontrado.</CommandEmpty>
-                                        {assetGroups.map((group: AssetGroup) => (
+                                        {(assetGroups as any).map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
-                                                {group.options.map((asset: any) => (
+                                                {group.options.map((asset: Asset) => (
                                                     <CommandItem
                                                         key={asset.value}
                                                         onSelect={() => {
                                                             const newSymbols = watchedSymbols.includes(asset.value)
-                                                                ? watchedSymbols.filter((s: any) => s !== asset.value)
+                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
                                                                 : [...watchedSymbols, asset.value];
                                                             setWatchedSymbols(newSymbols);
                                                         }}
@@ -242,7 +242,7 @@ function TerminalV3Content() {
                 </CardHeader>
                 <CardContent className="p-4">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {watchedSymbols.map((symbol: any) => {
+                        {watchedSymbols.map((symbol: string) => {
                             const status = radarStatus[symbol];
                             const sent = sentinel[symbol];
                             const min = staleMinutes(symbol);
@@ -330,16 +330,6 @@ function TerminalV3Content() {
                     </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-4">
-                    <ToggleGroup 
-                        type="single" 
-                        value={accountType} 
-                        onValueChange={(v: any) => v && setAccountType(v)} 
-                        className="bg-muted p-1 rounded-lg border border-border"
-                        disabled={isAutoMode}
-                    >
-                        <ToggleGroupItem value="demo" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm font-bold uppercase">Demo</ToggleGroupItem>
-                        <ToggleGroupItem value="real" className="text-[10px] h-7 px-3 data-[state=on]:bg-background data-[state=on]:shadow-sm font-bold uppercase">Real</ToggleGroupItem>
-                    </ToggleGroup>
                     <AssetSelector 
                         selectedAsset={activeSymbol || ''} 
                         onAssetChange={setActiveSymbol} 
@@ -365,7 +355,7 @@ function TerminalV3Content() {
                                     <span className="text-xs font-bold uppercase">Shadow Trading</span>
                                     <span className="text-[10px] text-muted-foreground">Execuções teóricas para validação</span>
                                 </Label>
-                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={(val) => setIsShadowMode(val)} />
+                                <Switch id="shadow-mode" checked={isShadowMode} onCheckedChange={handleShadowModeToggle} />
                             </div>
 
                             <div className="space-y-4 p-3 rounded-lg border border-purple-200 bg-card/50">
@@ -428,7 +418,7 @@ function TerminalV3Content() {
                                         <TrendingUp className="h-3 w-3" /> Ações Permitidas
                                     </Label>
                                     <div className="grid grid-cols-2 gap-2">
-                                        {Object.keys(allowedActions).map((action: any) => (
+                                        {Object.keys(allowedActions).map((action: string) => (
                                             <div key={action} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`action-${action}`} 
@@ -451,7 +441,7 @@ function TerminalV3Content() {
                                         <Layers className="h-3 w-3" /> Categorias Permitidas
                                     </Label>
                                     <div className="grid grid-cols-1 gap-2">
-                                        {Object.keys(allowedContracts).map((contract) => (
+                                        {Object.keys(allowedContracts).map((contract: string) => (
                                             <div key={contract} className="flex items-center space-x-2">
                                                 <Checkbox 
                                                     id={`contract-${contract}`} 
@@ -505,7 +495,7 @@ function TerminalV3Content() {
                                                     {availableModels && availableModels.length > 0 ? (
                                                         availableModels
                                                             .filter((model: any, index: number, self: any[]) => 
-                                                                index === self.findIndex((m) => m.name === model.name)
+                                                                index === self.findIndex((m: any) => m.name === model.name)
                                                             )
                                                             .map((m: any) => (
                                                                 <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
@@ -790,7 +780,7 @@ function TerminalV3Content() {
                                     size="icon" 
                                     className="h-6 w-6 text-purple-600 hover:text-purple-700 hover:bg-purple-100"
                                     onClick={() => {
-                                        const report = buildBacktestReport();
+                                        const report = buildBacktestReport(v3.backtest);
                                         navigator.clipboard.writeText(report).then(() => {
                                             toast({ title: "Relatório Copiado", description: "O sumário estatístico foi enviado para a área de transferência." });
                                         });
@@ -1080,7 +1070,7 @@ function TerminalV3Content() {
                                 <span>| {(councilStats.avgLatencyMs/1000).toFixed(1)}s/ativo</span>
                              </div>
                              <div className="flex gap-2">
-                                {['all', 'decision', 'sentinel', 'execution', 'error'].map(f => (
+                                {['all', 'decision', 'sentinel', 'execution', 'error'].map((f: any) => (
                                     <Badge 
                                         key={f} 
                                         variant={logFilter === f ? 'default' : 'outline'} 
@@ -1097,7 +1087,7 @@ function TerminalV3Content() {
                                 {filteredLogs.length === 0 ? (
                                     <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
                                 ) : (
-                                    (filteredLogs as any[]).map((log: any) => (
+                                    (filteredLogs as LogEntry[]).map((log: LogEntry) => (
                                         <div key={log.ts} className="mb-1.5 border-l-2 border-purple-500/30 pl-2">
                                             <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
                                                 <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
