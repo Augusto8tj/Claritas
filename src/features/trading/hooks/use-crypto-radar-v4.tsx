@@ -2,7 +2,7 @@
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V12: Integrado motor de Calibração Walk-Forward e Replay Histórico.
+ * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails e Payout Filter.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -22,6 +22,8 @@ import { useBacktestRunner } from './use-backtest-runner';
 import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
 import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 import { buildAssetFeatures } from '../services/asset-features';
+import { checkGuardrails, DEFAULT_GUARDRAILS } from '../services/pilot-guardrails';
+import { logLiveTrade, type LiveTradeEntry } from '../services/live-trade-log';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -74,7 +76,7 @@ export function useCryptoRadarV4(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData, getHistoricalData 
+        botCandleData, getHistoricalData, getContractsFor, getProposal
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -102,6 +104,7 @@ export function useCryptoRadarV4(
     }, []);
 
     const [isAutoMode, setIsAutoMode] = useState(false);
+    const [pilotMode, setPilotMode] = useState<'SHADOW' | 'DEMO_LIVE'>('SHADOW');
     const [isShadowMode, setIsShadowMode] = useState(true);
     const [analysisInterval, setAnalysisInterval] = useState(DEFAULT_ANALYSIS_INTERVAL); 
     const [backgroundIntervalSec, setBackgroundIntervalSec] = useState(60);
@@ -176,10 +179,10 @@ export function useCryptoRadarV4(
             const snap = await getDoc(calRef);
             if (snap.exists()) {
                 const data = snap.data();
-                const isFresh = (Date.now() - new Date(data.lastRun.seconds * 1000).getTime()) < 14 * 24 * 3600 * 1000;
+                const isFresh = (Date.now() - new Date(data.date).getTime()) < 14 * 24 * 3600 * 1000;
                 if (isFresh && data.model === ollamaConfig.model) {
-                    setConfidenceThreshold(data.threshold);
-                    addLog(`[V12] Limiar calibrado carregado: ${data.threshold}% (modelo: ${data.model})`, 'info');
+                    setConfidenceThreshold(data.limiar);
+                    addLog(`[V12] Limiar calibrado carregado: ${data.limiar}% (modelo: ${data.model})`, 'info');
                 }
             }
         };
@@ -189,6 +192,7 @@ export function useCryptoRadarV4(
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
         setIsShadowMode(true);
+        setPilotMode('SHADOW');
         clearActiveContracts();
         setRadarStatus({});
         setReasoningLog([]);
@@ -418,9 +422,10 @@ ${context}`;
             setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, features: cryptoFeats, gravity, timestamp: Date.now(), isQualified: shouldExecute, indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } } }));
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                if (isShadowMode) {
+                if (pilotMode === 'SHADOW') {
                     if (symbol === 'cryBTCUSD') {
                         addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol);
+                        executionLockRef.current = false;
                         return;
                     }
 
@@ -431,11 +436,13 @@ ${context}`;
 
                     if (hasSamePending) {
                         addLog(`[SHADOW-BLOCK] ${symbol}: Ordem ${decision.finalAction} bloqueada (já existe pendente).`, 'radar', undefined, symbol);
+                        executionLockRef.current = false;
                         return;
                     }
 
                     if (now - lastExec < SHADOW_COOLDOWN_SEC * 1000) {
                         addLog(`[SHADOW-BLOCK] ${symbol}: Cooldown sombra ativo.`, 'radar', undefined, symbol);
+                        executionLockRef.current = false;
                         return;
                     }
 
@@ -458,16 +465,104 @@ ${context}`;
                         rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
                         correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
                     });
-                } else {
-                    let finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
-                    const params: Record<string, any> = {};
-                    if (decision.recommendedContract === 'MULTIPLIERS') { finalContractType = decision.finalAction === 'CALL' ? 'MULTUP' : 'MULTDOWN'; params.multiplier = 400; }
-                    const res = await executeTrade(finalContractType, stakeValue, symbol, decision.finalAction.toLowerCase() as any, 15, 's', 'Conselho' as OperationInitiator, `V5_${decision.executedVia}`, params);
-                    if (res.success) addLog(`[EXEC] ${symbol} ${decision.finalAction} enviado.`, 'execution', undefined, symbol);
+                } else if (pilotMode === 'DEMO_LIVE') {
+                    // Etapa 13: Execução DEMO_LIVE com Guardrails
+                    const guard = checkGuardrails(symbol, accountType, stakeValue, operationsLog, staleMinutes(symbol));
+                    if (!guard.allowed) {
+                        addLog(`[GUARDRAIL-BLOCK] ${symbol}: ${guard.reason}`, 'warning', undefined, symbol);
+                        executionLockRef.current = false;
+                        return;
+                    }
+
+                    addLog(`[DEMO_LIVE] Protocolo de compra iniciado p/ ${symbol}...`, 'execution', undefined, symbol);
+                    
+                    try {
+                        const contractsRes = await getContractsFor(symbol);
+                        const available = contractsRes.contracts_for?.available || [];
+                        const rf = available.find((c: any) => c.contract_category === 'callput');
+                        const minDur = rf?.min_contract_duration ? parseInt(rf.min_contract_duration) : 15;
+                        const finalDur = Math.max(minDur, 15);
+
+                        const propRes = await getProposal({
+                            contract_type: decision.finalAction === 'CALL' ? 'CALL' : 'PUT',
+                            currency: 'USD',
+                            symbol,
+                            amount: stakeValue,
+                            basis: 'stake',
+                            duration: finalDur,
+                            duration_unit: 's'
+                        });
+
+                        if (propRes.error) throw new Error(propRes.error.message);
+                        
+                        const actualPayout = (propRes.proposal.payout - propRes.proposal.ask_price) / propRes.proposal.ask_price;
+                        if (actualPayout < 0.8) {
+                            addLog(`[EXEC-ABORT] ${symbol}: Payout insuficiente (${(actualPayout*100).toFixed(1)}% < 80%)`, 'warning', undefined, symbol);
+                            executionLockRef.current = false;
+                            return;
+                        }
+
+                        const purchaseTs = Date.now();
+                        const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                        const finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
+
+                        const res = await executeTrade(
+                            finalContractType, 
+                            stakeValue, 
+                            symbol, 
+                            tradeDirection, 
+                            finalDur, 
+                            's', 
+                            'Conselho' as OperationInitiator, 
+                            `V13_DEMO_${decision.executedVia}`
+                        );
+
+                        if (res.success) {
+                            addLog(`[EXEC-DEMO] ${symbol} ${decision.finalAction} enviado via API.`, 'execution', undefined, symbol);
+                            
+                            // Log Forense Etapa 13
+                            const purchaseTsFinal = Date.now();
+                            const entryPrice = res.entryPrice || propRes.proposal.spot;
+                            
+                            await logLiveTrade(user.uid!, {
+                                symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                                stake: stakeValue, payout: actualPayout, duration: finalDur, durationUnit: 's',
+                                spotAtDecision: candles[candles.length - 1].close,
+                                spotAtPurchase: entryPrice,
+                                slippagePips: entryPrice - propRes.proposal.spot,
+                                decisionLatencyMs: Math.round(analysisStartTs - decision.t2tLatencyMs),
+                                executionLatencyMs: Math.round(purchaseTsFinal - purchaseTs),
+                                totalLatencyMs: Math.round(purchaseTsFinal - analysisStartTs),
+                                rule: bestCandidate?.rule || 'V13_DISCRETION',
+                                gravityState: gravity?.btcVector || 'CHOP',
+                                confidence: decision.consensusConfidence,
+                                sentinelScore: bestCandidate?.score || 0,
+                                entropy: decision.telemetry.consensusEntropy,
+                                signalTs: analysisStartTs, decisionTs: analysisStartTs, purchaseTs: purchaseTsFinal,
+                                status: 'pending', accountType
+                            });
+
+                            // Parallel Shadow Trade para comparação (Etapa 13.4)
+                            shadowExecutionTimestampsRef.current[symbol] = purchaseTsFinal;
+                            await CryptoShadowEngine.logTrade(user.uid!, {
+                                symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                                entryPrice, rule: bestCandidate?.rule || 'V13_PARALLEL',
+                                score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
+                                confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
+                                duration: finalDur, durationUnit: 's', ev: 0, stake: stakeValue,
+                                timestamp: new Date(purchaseTsFinal).toISOString(),
+                                decisionTs: analysisStartTs, entryTs: purchaseTsFinal, llmLatencyMs: decision.t2tLatencyMs,
+                                rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
+                                correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
+                            });
+                        }
+                    } catch (e: any) {
+                        addLog(`Falha no protocolo DEMO_LIVE (${symbol}): ${e.message}`, 'error', undefined, symbol);
+                    }
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct, pilotMode, accountType, getContractsFor, getProposal]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -513,6 +608,7 @@ ${context}`;
     return {
         isAutoMode, toggleAutoMode: () => setIsAutoMode(!isAutoMode),
         setIsAutoMode,
+        pilotMode, setPilotMode,
         isShadowMode, toggleShadowMode: () => setIsShadowMode(!isShadowMode),
         setIsShadowMode,
         strategicProfile, setStrategicProfile,
