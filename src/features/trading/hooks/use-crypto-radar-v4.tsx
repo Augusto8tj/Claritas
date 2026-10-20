@@ -1,20 +1,17 @@
-// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
- * V5.4.1: Estabilização de Shadow Trading, Cooldown de 60s e Heartbeat de Liquidação.
- * V11: Otimização de Ciclo e Gatilho Sentinel Imediato.
+ * V12: Integrado motor de Calibração Walk-Forward e Replay Histórico.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
-import { calculateAllIndicators } from '../services/indicator-service';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
-import { runQuantCouncil, MIN_EXEC_CONFIDENCE } from '../services/quant-council-engine';
+import { runCryptoCouncil } from '../services/crypto-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3 } from '../types/council';
 import { computeSignalFeatures } from '../services/signal-engine';
 import { evaluateCryptoSignals, type CryptoSignalFeatures, SENTINEL_MIN_SCORE } from '../services/crypto-signal-engine';
@@ -24,6 +21,9 @@ import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
 import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
 import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
+import { buildAssetFeatures } from '../services/asset-features';
+import { db } from '@/lib/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -54,16 +54,16 @@ export interface CouncilStats {
 
 export type StrategicProfile = 'conservative' | 'balanced' | 'aggressive';
 
+const SETTINGS_KEY = 'cryptoLabV4Settings';
+const DEFAULT_ANALYSIS_INTERVAL = 120;
+const SHADOW_COOLDOWN_SEC = 60;
+
 const AGENT_PERSONAS = {
   CHAIRMAN: "o CHAIRMAN do conselho supremo: sua resposta deve ser executiva, fundamentada no DOSSIER DE TELEMETRIA fornecido. Você sintetiza a decisão final.",
   MOMENTUM: "o analista QUANT MOMENTUM: sua função é calcular unicamente a força do preço usando RSI, ER e Mom5 do dossier. Ignore sentimentos, foque na velocidade.",
   RISK_CRITIC: "o RISK CRITIC: você é unicamente cético. Use o Beta, a Correlação e o Piso Travado para alertar sobre perigos de divergência ou ganância.",
   ARCHIVIST: "o PATTERN ARCHIVIST: você compara unicamente o snapshot atual com a MEMÓRIA DE APRENDIZADO injetada. Identifique se este setup já falhou antes."
 };
-
-const SETTINGS_KEY = 'cryptoLabV4Settings';
-const DEFAULT_ANALYSIS_INTERVAL = 120;
-const SHADOW_COOLDOWN_SEC = 60;
 
 export function useCryptoRadarV4(
     activeSymbol: string | null,
@@ -166,6 +166,25 @@ export function useCryptoRadarV4(
             }
         } catch (e) {}
     }, [ollamaConfig]);
+
+    // V12: Carrega limiar calibrado do Firestore
+    useEffect(() => {
+        if (!user || !ollamaConfig.model) return;
+        
+        const loadCalibration = async () => {
+            const calRef = doc(db, 'users', user.uid, 'crypto_calibration', 'llm');
+            const snap = await getDoc(calRef);
+            if (snap.exists()) {
+                const data = snap.data();
+                const isFresh = (Date.now() - new Date(data.lastRun.seconds * 1000).getTime()) < 14 * 24 * 3600 * 1000;
+                if (isFresh && data.model === ollamaConfig.model) {
+                    setConfidenceThreshold(data.threshold);
+                    addLog(`[V12] Limiar calibrado carregado: ${data.threshold}% (modelo: ${data.model})`, 'info');
+                }
+            }
+        };
+        loadCalibration();
+    }, [user, ollamaConfig.model, addLog]);
 
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
@@ -292,26 +311,6 @@ export function useCryptoRadarV4(
         return () => clearInterval(settleInterval);
     }, [user, isShadowMode, addLog]);
 
-    const buildAssetFeatures = (assetSym: string, assetCandles: CandleData[]) => {
-        const inds = calculateAllIndicators(assetCandles, [], '1m', { duration: 15, unit: 's' });
-        const feats = computeSignalFeatures(assetCandles as any);
-        if (!inds || !feats) return null;
-        return {
-            symbol: assetSym,
-            currentPrice: assetCandles[assetCandles.length - 1].close,
-            priceHistory: assetCandles.map((c: CandleData) => c.close),
-            epochHistory: assetCandles.map((c: CandleData) => c.epoch),
-            rsi: feats.rsi,
-            adx: inds.adx || 30,
-            atrNow: inds.atr || 0.001,
-            bbw: inds.bbw || 1.0,
-            volatilityRatio: feats.atrRatio || 1,
-            momentumShort: feats.mom5,
-            momentumMedium: feats.mom15,
-            atrRatio: feats.atrRatio || 1
-        };
-    };
-
     const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
         if (!content.trim() || !ollamaConfig) return;
         const time = new Date().toLocaleTimeString();
@@ -362,7 +361,7 @@ ${context}`;
             const indicators = calculateAllIndicators(candles, [], '1m', { duration: 15, unit: 's' });
             if (!indicators) return;
 
-            const baseFeats = computeSignalFeatures(candles as any);
+            const baseFeats = buildAssetFeatures(symbol, candles);
             if (!baseFeats) return;
 
             let gravity: BitcoinGravity | null = null;
@@ -370,8 +369,7 @@ ${context}`;
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
-                    const targetFeats = buildAssetFeatures(symbol, candles);
-                    if (btcFeats && targetFeats) gravity = calculateBitcoinGravity(btcFeats as any, targetFeats as any);
+                    if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, baseFeats as any);
                 }
             }
 
@@ -379,7 +377,7 @@ ${context}`;
                 addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
             }
 
-            const cryptoFeats: CryptoSignalFeatures = { ...baseFeats, gravity, vwapDist: baseFeats.bbPos };
+            const cryptoFeats: CryptoSignalFeatures = { ...baseFeats as any, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             const bestCandidate = candidates.filter((c: any) => c.direction !== 'NONE').sort((a: any, b: any) => b.score - a.score)[0];
 
@@ -401,7 +399,7 @@ ${context}`;
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
-            const decision = await runQuantCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbol, permissions, portfolio);
+            const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, permissions, portfolio);
             
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 decision.finalAction = 'HOLD';
@@ -479,15 +477,15 @@ ${context}`;
             const nextRun = scheduleRef.current[sym] || 0;
             const isFoco = sym === activeSymbol;
             
-            // Etapa 11: Gatilho Sentinel Imediato
+            // Gatilho Sentinel Imediato
             if (isFoco && isAutoMode) {
                 const candles = getCandlesFor(sym);
-                const feats = computeSignalFeatures(candles as any);
+                const feats = buildAssetFeatures(sym, candles);
                 if (feats) {
-                  const cryptoFeats: CryptoSignalFeatures = { ...feats, gravity: null, vwapDist: feats.bbPos };
+                  const cryptoFeats: CryptoSignalFeatures = { ...feats as any, gravity: null, vwapDist: feats.bbPos };
                   const candidates = evaluateCryptoSignals(sym, cryptoFeats);
                   const hasStrongSetup = candidates.some(c => c.score >= SENTINEL_MIN_SCORE && c.direction !== 'NONE');
-                  if (hasStrongSetup && (now - nextRun) > -15000) return true; // Antecipa se setup forte
+                  if (hasStrongSetup && (now - nextRun) > -15000) return true;
                 }
             }
             
@@ -500,7 +498,6 @@ ${context}`;
                 const candles = getCandlesFor(sym);
                 if (candles.length >= 30) {
                     await runAnalysisForSymbol(sym, candles);
-                    // Etapa 11: Foco usa analysisInterval, não mais 15s fixo
                     const interval = sym === activeSymbol ? analysisInterval : backgroundIntervalSec;
                     scheduleRef.current[sym] = Date.now() + interval * 1000;
                 }

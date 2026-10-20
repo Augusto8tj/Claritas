@@ -1,146 +1,232 @@
-// /src/features/trading/services/crypto-council-engine.ts
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
+import { RuleReport } from './backtest';
 import type { OllamaConfig } from '@/lib/types';
 
-/**
- * MOTOR DE DECISÃO CRYPTO V4.2 (SUPREME)
- * Isolado para operar com Gravidade de BTC e Entropia de Consenso.
- */
+export const MIN_EXEC_CONFIDENCE = 65;
+const RISK_DAMPING = 250;
+const AGENT_TIMEOUT_MS = 15000; 
 
-const AGENT_TIMEOUT_MS = 15000;
-const ENTROPY_THRESHOLD = 0.7; // > 0.7 indica caos/divergência no conselho
+const CONTRACT_SELECTION_GUIDE = `Contrato: BBW baixo ou BTC Compression→ACCUMULATORS | ADX>30 ou BTC Impulse→MULTIPLIERS | padrão→OPTIONS.`;
 
-function calculateShannonEntropy(opinions: AgentOpinion[]): number {
-  if (opinions.length < 2) return 0.5;
+function calculateConsensusEntropy(opinions: AgentOpinion[]): number {
+  if (opinions.length < 2) return 0.2; 
   const counts = { CALL: 0, PUT: 0, HOLD: 0 };
-  opinions.forEach(o => counts[o.action as keyof typeof counts]++);
+  opinions.forEach(o => {
+      const action = o.action as 'CALL' | 'PUT' | 'HOLD';
+      counts[action]++;
+  });
   
   const probs = Object.values(counts).map(c => c / opinions.length);
   return -probs.reduce((sum, p) => p > 0 ? sum + p * Math.log2(p) : sum, 0) / 1.58; 
 }
 
+function selectBestContract(opinions: AgentOpinion[], winningAction: string): 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS' {
+    const contractScores: Record<string, number> = { OPTIONS: 0, ACCUMULATORS: 0, MULTIPLIERS: 0 };
+    opinions
+        .filter(o => o.action === winningAction)
+        .forEach(o => {
+            const weight = o.agentName === 'ARCHIVIST' ? 1.2 : 1.0; 
+            contractScores[o.recommendedContract] = (contractScores[o.recommendedContract] || 0) + (o.confidence * weight);
+        });
+    const best = Object.entries(contractScores).sort((a, b) => b[1] - a[1])[0];
+    return (best && best[1] > 0 ? best[0] : 'OPTIONS') as any;
+}
+
 export async function runCryptoCouncil(
   marketSnapshot: any,
+  memoryBuffer: TradeMemoryBuffer,
   config: OllamaConfig,
   isShadowMode: boolean,
-  permissions: AssetExecutionPermission,
-  portfolio: PortfolioRiskState
+  isFocused: boolean,
+  permissions?: AssetExecutionPermission,
+  portfolio?: PortfolioRiskState,
+  backtestReports?: RuleReport[]
 ): Promise<CouncilDecision> {
   const startTime = performance.now();
   const symbol = marketSnapshot.symbol;
   const trace: string[] = [];
 
   try {
-    // 1. VERIFICAÇÃO DE COOLDOWN POR PADRÃO PERDEDOR (ITEM 5)
-    // FIX: Handling potential undefined in permissions (TS2345)
-    const userId = permissions?.userId || 'anonymous';
-    const memory = await TradeMemoryManager.getBuffer(userId, symbol);
+    const memoryContext = TradeMemoryManager.formatBufferForPrompt(memoryBuffer);
     
-    // TODO: CryptoMemoryManager checkPatternCooldown will be integrated in V5.0
-    // For now using TradeMemoryManager context injection
-
-    // 2. CONTEXTO DE MEMÓRIA E GRAVIDADE
-    const memoryContext = TradeMemoryManager.formatBufferForPrompt(memory);
-
-    // 3. INFERÊNCIA PARALELA (ITEM 3)
-    const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
-    const agentPromises = agents.map(name => fetchCryptoAgent(name, marketSnapshot, memoryContext, config));
-    
-    const results = await Promise.allSettled(agentPromises);
-    const opinions: AgentOpinion[] = results
-        .filter((r): r is PromiseFulfilledResult<AgentOpinion> => r.status === 'fulfilled' && !!r.value)
-        .map(r => r.value);
-
-    if (opinions.length < 2) throw new Error('FAILOVER_REQUIRED');
-
-    // 4. ANÁLISE DE ENTROPIA (ITEM 3)
-    const entropy = calculateShannonEntropy(opinions);
-    if (entropy > ENTROPY_THRESHOLD) {
-        return createHoldDecision(startTime, 'HIGH_ENTROPY', `Divergência excessiva no conselho (E=${entropy.toFixed(2)}).`, opinions, entropy);
+    let backtestContext = "";
+    if (backtestReports && backtestReports.length > 0) {
+        backtestContext = "\n### VALIDAÇÃO ESTATÍSTICA (BACKTEST RECENTE):\n";
+        backtestReports.forEach(r => {
+            backtestContext += `- Regra ${r.rule}: acerto ${ (r.stat.rate * 100).toFixed(1) }% (n=${r.stat.n}) → ${r.verdict.toUpperCase()}\n`;
+        });
     }
 
-    // 5. SÍNTESE DO CHAIRMAN
-    return synthesizeDecision(opinions, marketSnapshot, isShadowMode, startTime, entropy, trace);
+    const gravityContext = marketSnapshot.gravity ? 
+      `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zBtc=${marketSnapshot.gravity.zBtc?.toFixed(2)} | zTarget=${marketSnapshot.gravity.zTarget?.toFixed(2)} | Corr=${marketSnapshot.gravity.correlation.toFixed(3)} | Slingshot=${marketSnapshot.gravity.slingshotDetected}` : 
+      "\nBITCOIN GRAVITY: N/A";
+
+    const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
+
+    const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext + backtestContext + gravityContext, config));
+    const results = await Promise.allSettled(agentPromises);
+    
+    const opinions: AgentOpinion[] = [];
+    results.forEach((res, i) => {
+        const agentName = agents[i];
+        if (res.status === 'fulfilled' && res.value) {
+            const op = res.value;
+            trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'}`);
+            opinions.push(op);
+        }
+    });
+
+    if (opinions.length < 1) throw new Error('NETWORK_FAILURE_ALL_AGENTS');
+
+    return synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, backtestReports, trace);
 
   } catch (error: any) {
-    // FAILOVER MATEMÁTICO DE RIGOR (ITEM 3)
-    const lat = Math.round(performance.now() - startTime);
-    return executeHighRigorFallback(marketSnapshot, isShadowMode, lat);
+    const endTime = performance.now();
+    return executeHighRigorFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
   }
 }
 
-async function fetchCryptoAgent(name: string, snapshot: any, context: string, config: OllamaConfig): Promise<AgentOpinion> {
-    const systemPrompts = {
-        MOMENTUM: "VOCÊ É UNICAMENTE O ANALISTA 'QUANT MOMENTUM'. FOQUE EM FORÇA E VELOCIDADE.",
-        RISK_CRITIC: "VOCÊ É UNICAMENTE O ANALISTA 'RISK CRITIC'. FOQUE EM RISCOS E VETOS.",
-        ARCHIVIST: "VOCÊ É UNICAMENTE O ANALISTA 'PATTERN ARCHIVIST'. FOQUE EM MEMÓRIA TÁTICA."
-    };
+async function fetchAgentWithTimeout(
+    agentName: AgentOpinion['agentName'],
+    snapshot: any,
+    context: string,
+    config: OllamaConfig
+): Promise<AgentOpinion | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), AGENT_TIMEOUT_MS);
 
-    const res = await fetch('/api/ollama/crypto-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ systemPrompt: `${(systemPrompts as any)[name]} ${context}`, marketSnapshot: snapshot, config })
-    });
-    if (!res.ok) throw new Error('Agent API Error');
-    const data = await res.json();
-    return data.opinion;
+    try {
+        const opinion = await fetchAgentAnalysis(agentName, snapshot, context, config, controller.signal);
+        clearTimeout(timeoutId);
+        return opinion;
+    } catch (e) {
+        return null;
+    }
 }
 
-function synthesizeDecision(opinions: AgentOpinion[], snapshot: any, isShadow: boolean, start: number, entropy: number, trace: string[]): CouncilDecision {
+async function fetchAgentAnalysis(
+  agentName: AgentOpinion['agentName'],
+  snapshot: any,
+  context: string,
+  config: OllamaConfig,
+  signal: AbortSignal
+): Promise<AgentOpinion> {
+  const start = performance.now();
+  const isSling = snapshot.sentinel?.rule === 'LEADLAG_SLINGSHOT';
+  
+  const strategyInstruction = isSling 
+    ? `MODO LEAD-LAG ATIVO: Siga o sentinel.direction. O Bitcoin está puxando o mercado. Ignore o RSI se houver arraste gravitacional.`
+    : `MODO REVERSÃO/MOMENTUM: RSI < 35 = COMPRA, RSI > 65 = VENDA.`;
+
+  const systemPrompts = {
+    MOMENTUM: `VOCÊ É O ANALISTA 'QUANT MOMENTUM'. ${strategyInstruction} Foque no zBtc e no Momentum do alvo. ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `VOCÊ É O ANALISTA 'RISK CRITIC'. ${strategyInstruction} Verifique se zTarget está começando a seguir zBtc. ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `VOCÊ É O ANALISTA 'PATTERN ARCHIVIST'. ${strategyInstruction} Compare com padrões de Lead-Lag passados. ${CONTRACT_SELECTION_GUIDE}`
+  };
+
+  try {
+    const response = await fetch('/api/ollama/agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal,
+      body: JSON.stringify({
+        systemPrompt: `${systemPrompts[agentName]}\n${context}`,
+        marketSnapshot: snapshot,
+        config: config
+      })
+    });
+
+    if (!response.ok) throw new Error(`Agent API Error: ${response.status}`);
+    
+    const data = await response.json();
+    const end = performance.now();
+    const opinion = data.opinion || {};
+
+    return { 
+      agentName,
+      action: (opinion.action || 'HOLD').toUpperCase() as any,
+      recommendedContract: (opinion.recommendedContract || 'OPTIONS').toUpperCase() as any,
+      confidence: Number(opinion.confidence) || 0,
+      reasoning: opinion.reasoning || 'Sem justificativa.',
+      vetoTriggered: !!opinion.vetoTriggered,
+      latencyMs: Math.round(end - start),
+      tokensPerSec: data.metrics?.tokensPerSecond || 0,
+      totalTokens: data.metrics?.totalTokens || 0
+    };
+  } catch (err: any) {
+    if (err.name === 'AbortError') throw new Error('TIMEOUT');
+    throw err;
+  }
+}
+
+function generateTelemetry(opinions: AgentOpinion[], start: number, end: number): CouncilTelemetry {
+  const validOps = opinions.filter(o => o.tokensPerSec !== undefined && o.tokensPerSec > 0);
+  const totalTokens = opinions.reduce((sum, o) => sum + (o.totalTokens || 0), 0);
+  
+  return {
+    avgTokensPerSec: validOps.length ? validOps.reduce((a, b) => a + (b.tokensPerSec || 0), 0) / validOps.length : 0,
+    totalTokens,
+    consensusEntropy: calculateConsensusEntropy(opinions),
+    jitterMs: opinions.length > 1 ? Math.max(...opinions.map(o => o.latencyMs || 0)) - Math.min(...opinions.map(o => o.latencyMs || 0)) : 0,
+    inferenceHealth: Math.round((opinions.length / 3) * 100)
+  };
+}
+
+function synthesizeChairmanDecision(opinions: AgentOpinion[], snapshot: any, isShadow: boolean, start: number, backtestReports: RuleReport[] | undefined, trace: string[]): CouncilDecision {
+    const entropy = calculateConsensusEntropy(opinions);
+    
     const callScore = opinions.filter(o => o.action === 'CALL').reduce((s, o) => s + o.confidence, 0);
     const putScore = opinions.filter(o => o.action === 'PUT').reduce((s, o) => s + o.confidence, 0);
     
     const side = callScore > putScore ? 'CALL' : (putScore > callScore ? 'PUT' : 'HOLD');
-    const confidence = side === 'HOLD' ? 0 : Math.max(callScore, putScore) / opinions.length;
+    const winningAction = side;
     
-    const finalAction = (confidence >= 70 && entropy < 0.5) ? side : 'HOLD';
+    const avgConfidence = winningAction === 'HOLD' ? 0 : (winningAction === 'CALL' ? callScore : putScore) / (opinions.filter(o => o.action === winningAction).length || 1);
+
+    let finalAction = winningAction;
+    let holdReason = undefined;
+
+    if (entropy > 0.7) {
+        finalAction = 'HOLD';
+        holdReason = `CONSELHO DIVIDIDO: Entropia de ${entropy.toFixed(2)} excede limite de 0.70.`;
+    }
+
+    if (finalAction !== 'HOLD' && avgConfidence < MIN_EXEC_CONFIDENCE) {
+        finalAction = 'HOLD';
+        holdReason = `CONFIANÇA BAIXA: Média de ${avgConfidence.toFixed(0)}% < ${MIN_EXEC_CONFIDENCE}%.`;
+    }
+
+    const endTime = performance.now();
+    const recommendedContract = selectBestContract(opinions, winningAction);
 
     return {
         finalAction,
-        recommendedContract: opinions.find(o => o.action === side)?.recommendedContract || 'OPTIONS',
-        stakeRatio: finalAction === 'HOLD' ? 0 : (1 - entropy),
-        consensusConfidence: Math.round(confidence),
+        recommendedContract,
+        stakeRatio: finalAction === 'HOLD' ? 0 : (1 - (entropy * 0.5)),
+        consensusConfidence: Math.round(avgConfidence),
         opinions,
         executedVia: 'COUNCIL_LLM',
         executionMode: isShadow ? 'SHADOW' : 'REAL',
-        t2tLatencyMs: Math.round(performance.now() - start),
-        telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: entropy, jitterMs: 0, inferenceHealth: 100 },
-        trace,
-        zenThought: finalAction === 'HOLD' ? "Aguardando alinhamento dos ventos gravitacionais." : "Veredito confirmado pelo conselho supremo."
+        t2tLatencyMs: Math.round(endTime - start),
+        telemetry: generateTelemetry(opinions, start, endTime),
+        holdReason,
+        debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+        trace
     };
 }
 
 function executeHighRigorFallback(snapshot: any, isShadow: boolean, lat: number): CouncilDecision {
-    // Failover exige 10% mais de confiança (Item 3)
-    const rsi = snapshot.rsi || 50;
-    const action = rsi < 20 ? 'CALL' : (rsi > 80 ? 'PUT' : 'HOLD');
-    
-    return {
-        finalAction: action,
-        recommendedContract: 'OPTIONS',
-        stakeRatio: 0.1,
-        consensusConfidence: 65,
-        opinions: [],
-        executedVia: 'MATH_FALLBACK',
-        executionMode: isShadow ? 'SHADOW' : 'REAL',
-        t2tLatencyMs: lat,
-        telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-        holdReason: action === 'HOLD' ? 'FAILOVER: Sem zona de exaustão extrema detectada.' : undefined
-    };
-}
-
-function createHoldDecision(start: number, via: string, reason: string, opinions: AgentOpinion[] = [], entropy: number = 1): CouncilDecision {
     return {
         finalAction: 'HOLD',
         recommendedContract: 'OPTIONS',
         stakeRatio: 0,
         consensusConfidence: 0,
-        opinions,
-        executedVia: via as any,
-        executionMode: 'SHADOW',
-        t2tLatencyMs: Math.round(performance.now() - start),
-        telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: entropy, jitterMs: 0, inferenceHealth: 100 },
-        holdReason: reason
+        opinions: [],
+        executedVia: 'MATH_FALLBACK',
+        executionMode: isShadow ? 'SHADOW' : 'REAL',
+        t2tLatencyMs: lat,
+        telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
+        holdReason: 'FAILOVER: Motor estocástico forçado para HOLD por segurança.'
     };
 }
