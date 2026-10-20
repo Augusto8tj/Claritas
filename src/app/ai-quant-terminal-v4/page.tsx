@@ -21,7 +21,7 @@ import {
     Timer, LineChart, PlayCircle, PauseCircle, Cpu, RefreshCw,
     Database, Activity, History, ArrowUpCircle, ArrowDownCircle,
     Radar, TrendingUp, TrendingDown, 
-    Minus, Check, ChevronsUpDown, Wallet, Target, Layers,
+    Minus, Plus, Check, ChevronsUpDown, Wallet, Target, Layers,
     MessageSquare, Send, Gauge, Brain, AlertCircle, ShieldAlert, Lock, SlidersHorizontal, ChevronRight, Copy, FilePieChart, Loader2, X,
     TestTube, HardDrive, Info, ShieldX, User as UserIcon, Shield
 } from "lucide-react";
@@ -504,56 +504,121 @@ function CryptoLabContent() {
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <SlidersHorizontal className="h-4 w-4 text-orange-600" /> Risco & Sessão (V5)
+                                <ShieldAlert className="h-4 w-4 text-orange-600" /> Governança de Risco & Sessão
                             </CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Daily Balance</Label>
-                                    <Input 
-                                        type="number" 
-                                        min="10" 
-                                        value={dailyBalance} 
-                                        onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 10)} 
-                                        className="h-8 font-mono text-xs" 
-                                        disabled={isAutoMode} 
-                                    />
+                        <CardContent className="space-y-6">
+                            {/* Alvos e Limites com Controle Incremental */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-black text-muted-foreground flex items-center gap-1">
+                                        <Target className="h-3 w-3" /> Banca do Dia (USD)
+                                    </Label>
+                                    <div className="flex items-center gap-1">
+                                        <Button 
+                                            variant="outline" size="icon" className="h-8 w-8" 
+                                            onClick={() => setDailyBalance(Math.max(10, dailyBalance - 10))}
+                                            disabled={isAutoMode}
+                                        >
+                                            <Minus className="h-3 w-3" />
+                                        </Button>
+                                        <Input 
+                                            type="number" 
+                                            value={dailyBalance} 
+                                            onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 10)} 
+                                            className="h-8 font-mono text-xs text-center" 
+                                            disabled={isAutoMode} 
+                                        />
+                                        <Button 
+                                            variant="outline" size="icon" className="h-8 w-8" 
+                                            onClick={() => setDailyBalance(dailyBalance + 10)}
+                                            disabled={isAutoMode}
+                                        >
+                                            <Plus className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </div>
-                                <div className="space-y-1.5">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Daily Target</Label>
-                                    <Input 
-                                        type="number" 
-                                        min="5" 
-                                        value={dailyTarget} 
-                                        onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 5)} 
-                                        className="h-8 font-mono text-xs" 
-                                        disabled={isAutoMode} 
-                                    />
+                                <div className="space-y-2">
+                                    <Label className="text-[10px] uppercase font-black text-muted-foreground flex items-center gap-1">
+                                        <TrendingUp className="h-3 w-3" /> Meta de Lucro (USD)
+                                    </Label>
+                                    <div className="flex items-center gap-1">
+                                        <Button 
+                                            variant="outline" size="icon" className="h-8 w-8" 
+                                            onClick={() => setDailyTarget(Math.max(5, dailyTarget - 5))}
+                                            disabled={isAutoMode}
+                                        >
+                                            <Minus className="h-3 w-3" />
+                                        </Button>
+                                        <Input 
+                                            type="number" 
+                                            value={dailyTarget} 
+                                            onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 5)} 
+                                            className="h-8 font-mono text-xs text-center" 
+                                            disabled={isAutoMode} 
+                                        />
+                                        <Button 
+                                            variant="outline" size="icon" className="h-8 w-8" 
+                                            onClick={() => setDailyTarget(dailyTarget + 5)}
+                                            disabled={isAutoMode}
+                                        >
+                                            <Plus className="h-3 w-3" />
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
 
-                            <Separator />
+                            <Separator className="opacity-50" />
 
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-bold">WR Session</p>
-                                    <p className="text-lg font-bold">
-                                      {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
-                                    </p>
+                            {/* Progressão de Metas */}
+                            <div className="space-y-3">
+                                <div className="space-y-1.5">
+                                    <div className="flex justify-between text-[10px] uppercase font-bold">
+                                        <span className="text-muted-foreground">Progresso da Meta</span>
+                                        <span className="text-green-600">{Math.max(0, (sessionStats.pnl / dailyTarget) * 100).toFixed(1)}%</span>
+                                    </div>
+                                    <Progress value={Math.max(0, (sessionStats.pnl / dailyTarget) * 100)} className="h-1.5 bg-muted" indicatorClassName="bg-green-500" />
                                 </div>
-                                <div className="p-3 rounded-lg bg-muted/20 border border-border text-center flex items-center justify-center">
+                                <div className="space-y-1.5">
+                                    <div className="flex justify-between text-[10px] uppercase font-bold">
+                                        <span className="text-muted-foreground">Drawdown do Dia</span>
+                                        <span className="text-red-600">{Math.min(100, Math.max(0, (Math.abs(Math.min(0, sessionStats.pnl)) / dailyBalance) * 100)).toFixed(1)}%</span>
+                                    </div>
+                                    <Progress value={Math.min(100, (Math.abs(Math.min(0, sessionStats.pnl)) / dailyBalance) * 100)} className="h-1.5 bg-muted" indicatorClassName="bg-red-500" />
+                                </div>
+                            </div>
+
+                            {/* Estatísticas e Reset */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 flex flex-col items-center justify-center">
+                                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-tighter mb-1">Win Rate</p>
+                                    <div className="flex items-baseline gap-1">
+                                        <span className={cn("text-xl font-black", (sessionStats.winRate ?? 0) >= 50 ? "text-green-600" : "text-red-600")}>
+                                            {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
+                                        </span>
+                                    </div>
+                                    <p className="text-[9px] opacity-60 font-mono">{sessionStats.total} trades total</p>
+                                </div>
+                                <div className="flex flex-col gap-2">
                                     <Button 
                                         variant="outline" 
-                                        size="sm"
-                                        className="h-8 gap-2 text-[10px] font-bold border-destructive/20 text-destructive hover:bg-destructive/10"
+                                        className="flex-1 h-full flex flex-col gap-1 py-2 border-destructive/20 text-destructive hover:bg-destructive/10 transition-all rounded-xl"
                                         onClick={resetSession}
                                     >
-                                        <RefreshCw className="h-3 w-3" />
-                                        RESET LAB
+                                        <RefreshCw className="h-4 w-4" />
+                                        <span className="text-[10px] font-black uppercase">Reset Lab</span>
                                     </Button>
                                 </div>
                             </div>
+                            
+                            {lockedProfitFloor > 0 && (
+                                <Alert className="bg-green-600/10 border-green-600/20 py-2">
+                                    <Lock className="h-3 w-3 text-green-600" />
+                                    <AlertDescription className="text-[10px] font-bold text-green-700 uppercase">
+                                        Lucro Protegido: {formatCurrency(lockedProfitFloor)} (Piso Ativo)
+                                    </AlertDescription>
+                                </Alert>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
