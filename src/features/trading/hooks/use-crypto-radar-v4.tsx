@@ -625,7 +625,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport(), staleMinutes,
+        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };
