@@ -1,3 +1,4 @@
+// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -11,7 +12,7 @@ import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
-import { runCryptoCouncil } from '../services/crypto-council-engine';
+import { runCryptoCouncil, MIN_EXEC_CONFIDENCE } from '../services/crypto-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3 } from '../types/council';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
@@ -564,7 +565,7 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct, pilotMode, accountType, getContractsFor, getProposal, addTradeAnnotation, updateTradeAnnotation]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct, pilotMode, accountType, getContractsFor, getProposal]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -624,7 +625,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport({ ts: backtest.ts, payoutPct: backtest.payoutPct, assetMeta: backtest.assetMeta, merged: backtest.merged, perAsset: backtest.perAsset }), staleMinutes,
+        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport(), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };

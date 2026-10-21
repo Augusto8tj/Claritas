@@ -194,18 +194,20 @@ function CryptoLabContent() {
                                         {(assetGroups as any).map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
                                                 {group.options.map((asset: Asset) => (
-                                                    <CommandItem
-                                                        key={asset.value}
-                                                        onSelect={() => {
-                                                            const newSymbols = watchedSymbols.includes(asset.value)
-                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
-                                                                : [...watchedSymbols, asset.value];
-                                                            setWatchedSymbols(newSymbols);
-                                                        }}
-                                                    >
-                                                        <Check className={cn("mr-2 h-4 w-4", watchedSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
-                                                        {asset.label}
-                                                    </CommandItem>
+                                                    <CommandGroup key={asset.value}>
+                                                        <CommandItem
+                                                            key={asset.value}
+                                                            onSelect={() => {
+                                                                const newSymbols = watchedSymbols.includes(asset.value)
+                                                                    ? watchedSymbols.filter((s: string) => s !== asset.value)
+                                                                    : [...watchedSymbols, asset.value];
+                                                                setWatchedSymbols(newSymbols);
+                                                            }}
+                                                        >
+                                                            <Check className={cn("mr-2 h-4 w-4", watchedSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
+                                                            {asset.label}
+                                                        </CommandItem>
+                                                    </CommandGroup>
                                                 ))}
                                             </CommandGroup>
                                         ))}
@@ -720,7 +722,7 @@ function CryptoLabContent() {
                 <div className="lg:col-span-3 space-y-6">
                     <Card className="border-orange-600/30 shadow-md">
                         <CardHeader className="bg-orange-600/5 border-b py-3">
-                            <CardTitle className="text-sm flex items-center gap-2 text-orange-600">
+                            <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
                                 <ShieldCheck className="h-4 w-4 text-orange-600" /> Chairman Veredict
                             </CardTitle>
                         </CardHeader>
@@ -759,7 +761,7 @@ function CryptoLabContent() {
                                 <TestTube className="h-4 w-4" /> Backtest das regras (1m)
                             </CardTitle>
                             {Object.keys(backtest.merged).length > 0 && (
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(v4.backtest as any); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
                                     <Copy className="h-3.5 w-3.5" />
                                 </Button>
                             )}
