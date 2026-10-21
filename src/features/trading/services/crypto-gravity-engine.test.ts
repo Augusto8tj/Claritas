@@ -12,16 +12,34 @@ const createMock = (prices: number[], epochs: number[]): any => ({
 
 describe('Crypto Gravity Engine V13 (Hardening)', () => {
   it('detecta slingshotDetected = true quando zBtc > 1.8 e zTarget está em lag positivo', () => {
-    // BTC subindo forte - Fornecemos 25 velas para superar travas de histórico
-    const btcPrices = Array(20).fill(10).concat([10.1, 10.3, 10.6, 11.2, 12.0]);
-    const btcEpochs = Array(25).fill(0).map((_, i) => i);
+    // BTC e Alt subindo em correlação base para estabilizar desvio padrão
+    // 25 velas no total
+    const btcPrices = [];
+    const altPrices = [];
+    let btcPrice = 100;
+    let altPrice = 50;
+    for (let i = 0; i < 22; i++) {
+        const step = (i % 2 === 0 ? 0.05 : -0.02);
+        btcPrice += step;
+        altPrice += step / 2;
+        btcPrices.push(btcPrice);
+        altPrices.push(altPrice);
+    }
+    
+    // Vela 23: Salto explosivo BTC
+    btcPrices.push(btcPrice + 8); // 100 -> 108 approx
+    altPrices.push(altPrice + 0.15); // Lag suave
+    
+    // Vela 24 (formando, será descartada se dropForming=true)
+    btcPrices.push(btcPrice + 8.1);
+    altPrices.push(altPrice + 0.16);
+
+    const btcEpochs = Array(25).fill(0).map((_, i) => i * 60);
+    const altEpochs = Array(25).fill(0).map((_, i) => i * 60);
+    
     const btc = createMock(btcPrices, btcEpochs);
-    // Injetamos momentum para simular validação de direção
     btc.momentumMedium = 1.0; 
     
-    // Altcoin estável (Lag) - Em leve alta suave
-    const altPrices = Array(20).fill(5).concat([5.01, 5.02, 5.03, 5.04, 5.05]);
-    const altEpochs = Array(25).fill(0).map((_, i) => i);
     const alt = createMock(altPrices, altEpochs);
 
     const result = calculateBitcoinGravity(btc, alt, 60, true);

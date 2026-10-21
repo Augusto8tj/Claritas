@@ -149,9 +149,11 @@ export function calculateBitcoinGravity(
       const lastTargetTs = target.epochHistory[target.epochHistory.length - 1];
       
       if (Math.abs(lastBtcTs - lastTargetTs) <= 120 && btc.priceHistory.length >= 15 && target.priceHistory.length >= 15) {
-          const n = Math.min(btc.priceHistory.length, target.priceHistory.length);
-          alignedBtc.push(...btc.priceHistory.slice(-n));
-          alignedTarget.push(...target.priceHistory.slice(-n));
+          const btcSource = dropForming ? btc.priceHistory.slice(0, -1) : btc.priceHistory;
+          const targetSource = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
+          const n = Math.min(btcSource.length, targetSource.length);
+          alignedBtc.push(...btcSource.slice(-n));
+          alignedTarget.push(...targetSource.slice(-n));
       } else {
           return { btcVector: 'CHOP', correlation: 0, beta: 1.0, isBtcExploding: false, gravityScore: 0, slingshotDetected: false, vetoReason: 'DESALINHAMENTO_TEMPORAL' };
       }
