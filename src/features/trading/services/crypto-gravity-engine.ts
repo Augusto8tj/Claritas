@@ -1,12 +1,10 @@
-
 // /src/features/trading/services/crypto-gravity-engine.ts
 
 /**
  * @fileOverview CRYPTO GRAVITY ENGINE V5.3 (SUPREME)
  * Motor matemático institucional para detecção de correlação líder, 
  * beta dinâmico e Lead-Lag Arbitrage entre cryBTCUSD e o cluster de Altcoins.
- * V5.3: Alinhamento temporal por epoch e detecção de explosão por desvio relativo.
- * V11: Hardening de Z-Score (ignora vela em formação).
+ * V13: Hardening numérico e refino de Lag no Slingshot.
  */
 
 // ============================================================================
@@ -17,7 +15,7 @@ export interface CryptoAssetFeatures {
   symbol: string;
   currentPrice: number;
   priceHistory: number[]; 
-  epochHistory: number[]; // Novo campo para alinhamento
+  epochHistory: number[]; 
   rsi: number;
   adx: number;
   atrNow: number;
@@ -25,7 +23,7 @@ export interface CryptoAssetFeatures {
   volatilityRatio: number; 
   momentumShort: number;   
   momentumMedium: number;  
-  atrRatio: number; // Novo: para explosão relativa
+  atrRatio: number; 
 }
 
 export interface BitcoinGravityResult {
@@ -52,7 +50,7 @@ export const Z_THRESHOLD_TARGET = 1.0;
 
 export function calculatePearsonCorrelation(x: number[], y: number[]): number {
   const n = Math.min(x.length, y.length);
-  if (n < 2) return 0;
+  if (n < 10) return 0;
 
   const muX = x.reduce((a, b) => a + b, 0) / n;
   const muY = y.reduce((a, b) => a + b, 0) / n;
@@ -75,7 +73,7 @@ export function calculatePearsonCorrelation(x: number[], y: number[]): number {
 
 export function calculateBeta(targetReturns: number[], btcReturns: number[]): number {
   const n = Math.min(targetReturns.length, btcReturns.length);
-  if (n < 2) return 1.0;
+  if (n < 10) return 1.0;
 
   const muBtc = btcReturns.reduce((a, b) => a + b, 0) / n;
   const muTarget = targetReturns.reduce((a, b) => a + b, 0) / n;
@@ -102,10 +100,10 @@ export function getReturns(history: number[]): number[] {
 }
 
 function calculateZScoreFromReturns(returns: number[]): number {
-  if (returns.length < 2) return 0;
+  if (returns.length < 10) return 0;
   const lastReturn = returns[returns.length - 1];
   const slice = returns.slice(-31, -1);
-  if (slice.length === 0) return 0;
+  if (slice.length < 5) return 0;
   const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
   const variance = slice.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / slice.length;
   const stdDev = Math.sqrt(variance);
@@ -123,14 +121,18 @@ export function calculateBitcoinGravity(
   dropForming = true
 ): BitcoinGravityResult {
   
-  // 1. ALINHAMENTO TEMPORAL POR EPOCH (INTERSEÇÃO)
+  // 1. Hardening: Proteção contra histórico insuficiente (V13)
+  if (!btc.priceHistory || !target.priceHistory || btc.priceHistory.length < 10 || target.priceHistory.length < 10) {
+      return { btcVector: 'CHOP', correlation: 0, beta: 1.0, isBtcExploding: false, gravityScore: 0, slingshotDetected: false, vetoReason: 'HISTÓRICO_INSUFICIENTE (<10 velas)' };
+  }
+
+  // ALINHAMENTO TEMPORAL POR EPOCH
   const btcData = new Map<number, number>();
   btc.epochHistory.forEach((epoch, i) => btcData.set(epoch, btc.priceHistory[i]));
 
   const alignedBtc: number[] = [];
   const alignedTarget: number[] = [];
 
-  // Exclui última vela se estiver em formação para o alinhamento
   const targetEpochs = dropForming ? target.epochHistory.slice(0, -1) : target.epochHistory;
   const targetPrices = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
 
@@ -141,13 +143,8 @@ export function calculateBitcoinGravity(
     }
   });
 
-  // Fallback: alinhamento pelo fim se interseção for pequena
   if (alignedBtc.length < 10) {
-    const n = Math.min(btc.priceHistory.length, target.priceHistory.length) - (dropForming ? 1 : 0);
-    alignedBtc.length = 0;
-    alignedTarget.length = 0;
-    alignedBtc.push(...btc.priceHistory.slice(-n - (dropForming ? 1 : 0), dropForming ? -1 : undefined));
-    alignedTarget.push(...target.priceHistory.slice(-n - (dropForming ? 1 : 0), dropForming ? -1 : undefined));
+      return { btcVector: 'CHOP', correlation: 0, beta: 1.0, isBtcExploding: false, gravityScore: 0, slingshotDetected: false, vetoReason: 'DESALINHAMENTO_TEMPORAL' };
   }
 
   const btcReturns = getReturns(alignedBtc).slice(-windowSize);
@@ -156,14 +153,14 @@ export function calculateBitcoinGravity(
   const correlation = calculatePearsonCorrelation(btcReturns, targetReturns);
   const beta = calculateBeta(targetReturns, btcReturns);
 
-  // 2. CÁLCULO DE Z-SCORES (Etapa 11: Ignora vela em formação se dropForming=true)
+  // 2. CÁLCULO DE Z-SCORES
   const btcZHistory = dropForming ? btc.priceHistory.slice(0, -1) : btc.priceHistory;
   const targetZHistory = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
   
   const zBtc = calculateZScoreFromReturns(getReturns(btcZHistory));
   const zTarget = calculateZScoreFromReturns(getReturns(targetZHistory));
 
-  // 3. DETECÇÃO DE EXPLOSÃO (VALORES RELATIVOS)
+  // 3. DETECÇÃO DE EXPLOSÃO
   const isBtcExploding = btc.atrRatio > 1.5 || btc.bbw > 2.5;
   
   // 4. VETOR DO LÍDER (BTC)
@@ -173,12 +170,13 @@ export function calculateBitcoinGravity(
     else btcVector = btc.momentumMedium > 0 ? 'BULL_DRAG' : 'BEAR_DRAG';
   }
 
-  // 5. SLINGSHOT (Lead-Lag Arbitrage)
+  // 5. SLINGSHOT (Lead-Lag Arbitrage) - V13: Refino de alinhamento
   const slingshotDetected = 
     correlation > 0.7 && 
     Math.abs(zBtc) > Z_THRESHOLD_BTC && 
     Math.abs(zTarget) < Z_THRESHOLD_TARGET && 
-    Math.sign(zBtc) === Math.sign(btc.momentumMedium);
+    Math.sign(zBtc) === Math.sign(btc.momentumMedium) &&
+    (Math.sign(zTarget) === Math.sign(zBtc) || Math.abs(zTarget) < 0.35);
 
   // 6. DIVERGENT STATE
   if (correlation > 0.7 && Math.abs(zBtc) > 0.2 && Math.abs(zTarget) > 0.2) {

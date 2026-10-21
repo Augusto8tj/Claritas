@@ -64,12 +64,19 @@ export async function runCryptoCouncil(
 
     const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
 
-    const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext + backtestContext + gravityContext, config));
-    const results = await Promise.allSettled(agentPromises);
+    // V5.3: Execução escalonada (Prioridade Momentum/Risk para análise de choque)
+    const priorityAgents = ['MOMENTUM', 'RISK_CRITIC'] as const;
+    const priorityPromises = priorityAgents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext + backtestContext + gravityContext, config));
+    
+    // Delay estratégico para o Archivist (reduz concorrência na VRAM local)
+    await new Promise(r => setTimeout(r, 250));
+    const archivistPromise = fetchAgentWithTimeout('ARCHIVIST', marketSnapshot, memoryContext + backtestContext + gravityContext, config);
+
+    const results = await Promise.allSettled([...priorityPromises, archivistPromise]);
     
     const opinions: AgentOpinion[] = [];
     results.forEach((res, i) => {
-        const agentName = agents[i];
+        const agentName = i < 2 ? priorityAgents[i] : 'ARCHIVIST';
         if (res.status === 'fulfilled' && res.value) {
             const op = res.value;
             trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'}`);
@@ -79,7 +86,7 @@ export async function runCryptoCouncil(
 
     if (opinions.length < 1) throw new Error('NETWORK_FAILURE_ALL_AGENTS');
 
-    return synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, backtestReports, trace);
+    return synthesizeChairmanDecision(opinions, marketSnapshot, isShadowMode, startTime, backtestReports, trace, permissions);
 
   } catch (error: any) {
     const endTime = performance.now();
@@ -126,16 +133,24 @@ async function fetchAgentAnalysis(
   };
 
   try {
-    const response = await fetch('/api/ollama/agent', {
+    // V13: Fallback transparente de endpoint
+    let endpoint = '/api/ollama/crypto-agent';
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
-      body: JSON.stringify({
-        systemPrompt: `${systemPrompts[agentName]}\n${context}`,
-        marketSnapshot: snapshot,
-        config: config
-      })
+      body: JSON.stringify({ systemPrompt: `${systemPrompts[agentName]}\n${context}`, marketSnapshot: snapshot, config: config })
     });
+
+    if (response.status === 404) {
+      endpoint = '/api/ollama/agent';
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({ systemPrompt: `${systemPrompts[agentName]}\n${context}`, marketSnapshot: snapshot, config: config })
+      });
+    }
 
     if (!response.ok) throw new Error(`Agent API Error: ${response.status}`);
     
@@ -164,32 +179,71 @@ function generateTelemetry(opinions: AgentOpinion[], start: number, end: number)
   const validOps = opinions.filter(o => o.tokensPerSec !== undefined && o.tokensPerSec > 0);
   const totalTokens = opinions.reduce((sum, o) => sum + (o.totalTokens || 0), 0);
   
+  // V13: Jitter desconta o tempo de fila/staggering para medir eficiência do hardware
+  const latencies = opinions.map(o => o.latencyMs || 0);
+  const jitterMs = latencies.length > 1 ? Math.max(...latencies) - Math.min(...latencies) : 0;
+
   return {
     avgTokensPerSec: validOps.length ? validOps.reduce((a, b) => a + (b.tokensPerSec || 0), 0) / validOps.length : 0,
     totalTokens,
     consensusEntropy: calculateConsensusEntropy(opinions),
-    jitterMs: opinions.length > 1 ? Math.max(...opinions.map(o => o.latencyMs || 0)) - Math.min(...opinions.map(o => o.latencyMs || 0)) : 0,
+    jitterMs,
     inferenceHealth: Math.round((opinions.length / 3) * 100)
   };
 }
 
-function synthesizeChairmanDecision(opinions: AgentOpinion[], snapshot: any, isShadow: boolean, start: number, backtestReports: RuleReport[] | undefined, trace: string[]): CouncilDecision {
+function synthesizeChairmanDecision(
+  opinions: AgentOpinion[], 
+  snapshot: any, 
+  isShadow: boolean, 
+  start: number, 
+  backtestReports: RuleReport[] | undefined, 
+  trace: string[],
+  permissions?: AssetExecutionPermission
+): CouncilDecision {
     const entropy = calculateConsensusEntropy(opinions);
     
+    // 1. Implementação Real do COUNCIL_VETO (Spec V5.3)
+    const criticalVeto = opinions.find(o => (o.agentName === 'RISK_CRITIC' || o.agentName === 'ARCHIVIST') && o.vetoTriggered && o.confidence >= 70);
+    if (criticalVeto) {
+        return {
+            finalAction: 'HOLD',
+            recommendedContract: 'OPTIONS',
+            stakeRatio: 0,
+            consensusConfidence: criticalVeto.confidence,
+            opinions,
+            executedVia: 'COUNCIL_VETO',
+            executionMode: isShadow ? 'SHADOW' : 'REAL',
+            t2tLatencyMs: Math.round(performance.now() - start),
+            telemetry: generateTelemetry(opinions, start, performance.now()),
+            holdReason: `VETO DO CONSELHO: ${criticalVeto.agentName} (${criticalVeto.reasoning})`,
+            debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+            trace,
+            zenThought: `Sinal vetado por salvaguarda institucional: ${criticalVeto.agentName}.`
+        };
+    }
+
     const callScore = opinions.filter(o => o.action === 'CALL').reduce((s, o) => s + o.confidence, 0);
     const putScore = opinions.filter(o => o.action === 'PUT').reduce((s, o) => s + o.confidence, 0);
     
     const side = callScore > putScore ? 'CALL' : (putScore > callScore ? 'PUT' : 'HOLD');
-    const winningAction = side;
-    
-    const avgConfidence = winningAction === 'HOLD' ? 0 : (winningAction === 'CALL' ? callScore : putScore) / (opinions.filter(o => o.action === winningAction).length || 1);
-
-    let finalAction = winningAction;
+    let finalAction = side;
     let holdReason = undefined;
 
-    if (entropy > 0.7) {
+    // 2. Validação de Permissões
+    if (permissions && finalAction !== 'HOLD') {
+        if (!permissions.allowedActions.includes(finalAction as any)) {
+            finalAction = 'HOLD';
+            holdReason = `VETO_PERMISSÃO: Direção ${finalAction} não autorizada para este ativo.`;
+        }
+    }
+    
+    const winningOpinions = opinions.filter(o => o.action === side);
+    const avgConfidence = finalAction === 'HOLD' ? 0 : (winningOpinions.reduce((s, o) => s + o.confidence, 0)) / (winningOpinions.length || 1);
+
+    if (entropy > 0.7 && finalAction !== 'HOLD') {
         finalAction = 'HOLD';
-        holdReason = `CONSELHO DIVIDIDO: Entropia de ${entropy.toFixed(2)} excede limite de 0.70.`;
+        holdReason = `HIGH_ENTROPY: Conselho excessivamente dividido (${entropy.toFixed(2)}).`;
     }
 
     if (finalAction !== 'HOLD' && avgConfidence < MIN_EXEC_CONFIDENCE) {
@@ -197,8 +251,10 @@ function synthesizeChairmanDecision(opinions: AgentOpinion[], snapshot: any, isS
         holdReason = `CONFIANÇA BAIXA: Média de ${avgConfidence.toFixed(0)}% < ${MIN_EXEC_CONFIDENCE}%.`;
     }
 
-    const endTime = performance.now();
-    const recommendedContract = selectBestContract(opinions, winningAction);
+    let recommendedContract = selectBestContract(opinions, side as string);
+    if (permissions && !permissions.allowedContracts.includes(recommendedContract)) {
+        recommendedContract = permissions.allowedContracts[0] || 'OPTIONS';
+    }
 
     return {
         finalAction: finalAction as 'CALL' | 'PUT' | 'HOLD',
@@ -208,15 +264,39 @@ function synthesizeChairmanDecision(opinions: AgentOpinion[], snapshot: any, isS
         opinions,
         executedVia: 'COUNCIL_LLM',
         executionMode: isShadow ? 'SHADOW' : 'REAL',
-        t2tLatencyMs: Math.round(endTime - start),
-        telemetry: generateTelemetry(opinions, start, endTime),
+        t2tLatencyMs: Math.round(performance.now() - start),
+        telemetry: generateTelemetry(opinions, start, performance.now()),
         holdReason,
         debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
         trace
     };
 }
 
-function executeHighRigorFallback(snapshot: any, isShadow: boolean, lat: number): CouncilDecision {
+function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, lat: number): CouncilDecision {
+    const sentinel = marketSnapshot.sentinel;
+    const gravity = marketSnapshot.gravity;
+
+    // V13: Failover Inteligente com critério de altíssimo rigor heurístico
+    const score = sentinel?.score || 0;
+    const correlation = gravity?.correlation || 0;
+    const hasGravityVeto = !!gravity?.vetoReason;
+
+    if (sentinel && score >= 85 && !hasGravityVeto && correlation >= 0.75) {
+        return {
+            finalAction: sentinel.direction as any,
+            recommendedContract: gravity?.slingshotDetected ? 'MULTIPLIERS' : 'OPTIONS',
+            stakeRatio: 0.5, 
+            consensusConfidence: MIN_EXEC_CONFIDENCE,
+            opinions: [],
+            executedVia: 'MATH_FALLBACK',
+            executionMode: isShadowMode ? 'SHADOW' : 'REAL',
+            t2tLatencyMs: lat,
+            telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 0.1, jitterMs: 0, inferenceHealth: 50 },
+            zenThought: "Failover Ativado: Sentinel de altíssimo rigor detectado. Executando via heurística matemática.",
+            trace: ["FAILOVER_INTELLIGENT_SUCCESS"]
+        };
+    }
+
     return {
         finalAction: 'HOLD',
         recommendedContract: 'OPTIONS',
@@ -224,9 +304,11 @@ function executeHighRigorFallback(snapshot: any, isShadow: boolean, lat: number)
         consensusConfidence: 0,
         opinions: [],
         executedVia: 'MATH_FALLBACK',
-        executionMode: isShadow ? 'SHADOW' : 'REAL',
+        executionMode: isShadowMode ? 'SHADOW' : 'REAL',
         t2tLatencyMs: lat,
         telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-        holdReason: 'FAILOVER: Motor estocástico forçado para HOLD por segurança.'
+        holdReason: 'FAILOVER_CONSERVATIVE: Heurística matemática não atingiu limiar de segurança (Score < 85).',
+        debugVotes: "FALLBACK_HOLD",
+        trace: ["FAILOVER_REJECTED"]
     };
 }
