@@ -1,10 +1,11 @@
-// /src/features/trading/services/crypto-gravity-engine.ts
+// src/features/trading/services/crypto-gravity-engine.ts
 
 /**
  * @fileOverview CRYPTO GRAVITY ENGINE V5.3 (SUPREME)
  * Motor matemático institucional para detecção de correlação líder, 
  * beta dinâmico e Lead-Lag Arbitrage entre cryBTCUSD e o cluster de Altcoins.
  * V13: Hardening numérico e refino de Lag no Slingshot.
+ * V5.7: Garantia de alinhamento dropForming no fallback.
  */
 
 // ============================================================================
@@ -143,7 +144,7 @@ export function calculateBitcoinGravity(
     }
   });
 
-  // 2. Fallback de Alinhamento por Índice (V5.5)
+  // 2. Fallback de Alinhamento por Índice (V5.7: dropForming alignment fix)
   if (alignedBtc.length < 10) {
       const lastBtcTs = btc.epochHistory[btc.epochHistory.length - 1];
       const lastTargetTs = target.epochHistory[target.epochHistory.length - 1];
@@ -182,7 +183,7 @@ export function calculateBitcoinGravity(
     else btcVector = btc.momentumMedium > 0 ? 'BULL_DRAG' : 'BEAR_DRAG';
   }
 
-  // 6. SLINGSHOT (Lead-Lag Arbitrage) - V13: Refino de alinhamento
+  // 6. SLINGSHOT (Lead-Lag Arbitrage) - V5.7: Lag alinhamento fix
   const slingshotDetected = 
     correlation > 0.7 && 
     Math.abs(zBtc) > Z_THRESHOLD_BTC && 

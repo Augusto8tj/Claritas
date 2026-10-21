@@ -4,7 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails, Payout Filter e HWM.
- * V5.6: Implementado Alpha Decay Guard e Cálculo Real de EV (Veredito Institucional).
+ * V5.6/V5.7: Alpha Decay Guard, Cálculo Real de EV (Veredito Institucional) e Resiliência Adaptativa.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -96,7 +96,7 @@ export function useCryptoRadarV4(
         isConnected, executeTrade, operationsLog, accountBalance, 
         watchedSymbols, setWatchedSymbols, multiAssetCandles, 
         clearActiveContracts, accountType, setAccountType,
-        botCandleData, getHistoricalData, getContractsFor, getProposal
+        botCandleData, getHistoricalData, getContractsFor, getProposal 
     } = useDerivApi();
     const { user } = useAuth();
     const { toast } = useToast();
@@ -423,7 +423,6 @@ ${context}`;
                 }
             }
 
-            // [V5.6] Restaurar Bloqueio Pré-LLM de Gravidade
             if (gravity) {
                 addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
                 if (symbol !== 'cryBTCUSD' && gravity.vetoReason) {
@@ -473,8 +472,19 @@ ${context}`;
 
             setCouncilStats(prev => ({ total: prev.total + 1, call: prev.call + (decision.finalAction === 'CALL' ? 1 : 0), put: prev.put + (decision.finalAction === 'PUT' ? 1 : 0), hold: prev.hold + (decision.finalAction === 'HOLD' ? 1 : 0), vetoes: prev.vetoes + (decision.executedVia === 'COUNCIL_VETO' ? 1 : 0), fallbacks: prev.fallbacks + (decision.executedVia === 'MATH_FALLBACK' ? 1 : 0), avgLatencyMs: (prev.avgLatencyMs * 0.8) + (decision.t2tLatencyMs * 0.2) }));
 
+            // --- PROTOCOLO DE RESILIÊNCIA V5.7 ---
+            const currentRigor = resilience.thresholds[symbol] || (confidenceThreshold / 100);
+            const isStable = resilience.checkStability(symbol);
+            const effectiveThreshold = Math.max(confidenceThreshold, currentRigor * 100);
             const hwmCheckTriggered = lockedProfitFloor > 0 && sessionStats.pnl <= lockedProfitFloor;
-            const shouldExecute = isManual || (isAutoMode && !hwmCheckTriggered && decision.finalAction !== 'HOLD' && decision.consensusConfidence >= confidenceThreshold);
+
+            const shouldExecute = isManual || (
+                isAutoMode &&
+                !hwmCheckTriggered &&
+                decision.finalAction !== 'HOLD' &&
+                decision.consensusConfidence >= effectiveThreshold &&
+                isStable
+            );
 
             setRadarStatus(prev => ({ ...prev, [symbol]: { ...decision, features: cryptoFeats, gravity, timestamp: Date.now(), isQualified: shouldExecute, indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } } }));
 
@@ -489,17 +499,15 @@ ${context}`;
             if (shouldExecute && decision.finalAction !== 'HOLD') {
                 const finalStake = calculateDynamicStake(stakeValue, symbol, decision);
                 
-                // [V5.6] Alpha Decay Guard & Fresh Price
                 const freshCandles = getCandlesFor(symbol);
                 const currentSpot = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
 
+                // Alpha Decay Guard (Etapa 5.6)
                 if (!isManual && decision.t2tLatencyMs > 4000) {
                     addLog(`[ALPHA-DECAY] ${symbol}: Latência LLM excessiva (${decision.t2tLatencyMs}ms) para contrato de 15s. Abortando execução.`, 'warning', undefined, symbol);
                     executionLockRef.current = false;
                     return;
                 }
-
-                const ev = calculateTradeEV(decision.consensusConfidence, buffer, (backtest.payoutPct || 85) / 100);
 
                 if (pilotMode === 'SHADOW') {
                     if (symbol === 'cryBTCUSD') { addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol); executionLockRef.current = false; return; }
@@ -518,8 +526,10 @@ ${context}`;
                     }
 
                     const entryTs = Date.now();
+                    const ev = calculateTradeEV(decision.consensusConfidence, buffer, (backtest.payoutPct || 85) / 100);
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado com stake adaptativo $${finalStake} (EV: ${ev}).`, 'radar', undefined, symbol);
                     shadowExecutionTimestampsRef.current[symbol] = entryTs;
+                    
                     await CryptoShadowEngine.logTrade(user.uid!, {
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                         entryPrice: currentSpot, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
@@ -546,6 +556,14 @@ ${context}`;
                         
                         if (actualPayout < 0.8) { addLog(`[EXEC-ABORT] ${symbol}: Payout ${(actualPayout*100).toFixed(1)}% < 80%`, 'warning', undefined, symbol); executionLockRef.current = false; return; }
 
+                        // EV Gate (V5.7)
+                        const realEv = calculateTradeEV(decision.consensusConfidence, buffer, actualPayout);
+                        if (!isManual && realEv <= 0) {
+                            addLog(`[EV-ABORT] ${symbol}: Expectativa matemática negativa/nula (EV=${realEv}). Operação abortada.`, 'warning', undefined, symbol);
+                            executionLockRef.current = false;
+                            return;
+                        }
+
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         const finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
 
@@ -557,8 +575,9 @@ ${context}`;
                             await logLiveTrade(user.uid!, {
                                 symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
                                 stake: finalStake, payout: actualPayout, duration: finalDur, durationUnit: 's',
-                                spotAtDecision: currentSpot, spotAtPurchase: executionPrice,
-                                slippagePips: executionPrice - currentSpot,
+                                spotAtDecision: candles[candles.length - 1].close,
+                                spotAtPurchase: executionPrice,
+                                slippagePips: executionPrice - (propRes.proposal.spot || currentSpot),
                                 decisionLatencyMs: Math.round(decision.t2tLatencyMs),
                                 executionLatencyMs: Math.round(Date.now() - analysisStartTs - decision.t2tLatencyMs),
                                 totalLatencyMs: Math.round(Date.now() - analysisStartTs),
@@ -574,7 +593,7 @@ ${context}`;
                                 entryPrice: executionPrice, rule: bestCandidate?.rule || 'V13_PARALLEL',
                                 score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
                                 confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
-                                duration: finalDur, durationUnit: 's', ev, stake: finalStake,
+                                duration: finalDur, durationUnit: 's', ev: realEv, stake: finalStake,
                                 timestamp: new Date().toISOString(),
                                 decisionTs: analysisStartTs, entryTs: Date.now(), llmLatencyMs: decision.t2tLatencyMs,
                                 rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,

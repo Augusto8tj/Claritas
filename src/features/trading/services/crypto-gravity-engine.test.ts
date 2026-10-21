@@ -28,11 +28,11 @@ describe('Crypto Gravity Engine V13 (Hardening)', () => {
     
     // Vela 23: Salto explosivo BTC
     btcPrices.push(btcPrice + 8); // 100 -> 108 approx
-    altPrices.push(altPrice + 0.15); // Lag suave
+    altPrices.push(altPrice + 0.012); // Lag suave e controlado para zTarget < 1.0
     
     // Vela 24 (formando, será descartada se dropForming=true)
     btcPrices.push(btcPrice + 8.1);
-    altPrices.push(altPrice + 0.16);
+    altPrices.push(altPrice + 0.02);
 
     const btcEpochs = Array(25).fill(0).map((_, i) => i * 60);
     const altEpochs = Array(25).fill(0).map((_, i) => i * 60);
