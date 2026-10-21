@@ -63,20 +63,51 @@ export async function runCryptoCouncil(
       `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zBtc=${marketSnapshot.gravity.zBtc?.toFixed(2)} | zTarget=${marketSnapshot.gravity.zTarget?.toFixed(2)} | Corr=${marketSnapshot.gravity.correlation.toFixed(3)} | Slingshot=${marketSnapshot.gravity.slingshotDetected}` : 
       "\nBITCOIN GRAVITY: N/A";
 
-    const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
+    const fullContext = memoryContext + backtestContext + gravityContext;
 
-    const agentPromises = agents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext + backtestContext + gravityContext, config));
-    const results = await Promise.allSettled(agentPromises);
+    // V5.3: Execução escalonada (Prioridade Momentum/Risk para análise de choque)
+    const priorityAgents = ['MOMENTUM', 'RISK_CRITIC'] as const;
+    const priorityPromises = priorityAgents.map(name => fetchAgentWithTimeout(name, marketSnapshot, fullContext, config));
     
+    const results = await Promise.allSettled(priorityPromises);
     const opinions: AgentOpinion[] = [];
+    
     results.forEach((res, i) => {
-        const agentName = agents[i];
+        const agentName = priorityAgents[i];
         if (res.status === 'fulfilled' && res.value) {
             const op = res.value;
             trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'}`);
             opinions.push(op);
         }
     });
+
+    // 1. Veto Soberano do RISK_CRITIC com Abort Antecipado
+    const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
+    if (critic?.vetoTriggered && critic.confidence >= 70) {
+        const endTime = performance.now();
+        return {
+            finalAction: 'HOLD',
+            recommendedContract: 'OPTIONS',
+            stakeRatio: 0,
+            consensusConfidence: critic.confidence,
+            opinions,
+            executedVia: 'COUNCIL_VETO',
+            executionMode: isShadowMode ? 'SHADOW' : 'REAL',
+            t2tLatencyMs: Math.round(endTime - startTime),
+            telemetry: generateTelemetry(opinions, startTime, endTime),
+            zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
+            holdReason: `VETO_RISK: ${critic.reasoning}`,
+            debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+            trace
+        };
+    }
+
+    // 2. Chamar ARCHIVIST apenas se não houver veto crítico
+    const archivistOp = await fetchAgentWithTimeout('ARCHIVIST', marketSnapshot, fullContext, config);
+    if (archivistOp) {
+        trace.push(`ARCHIVIST: ${archivistOp.action} ${archivistOp.confidence}% ${archivistOp.recommendedContract}`);
+        opinions.push(archivistOp);
+    }
 
     if (opinions.length < 1) throw new Error('NETWORK_FAILURE_ALL_AGENTS');
 
@@ -127,12 +158,24 @@ async function fetchAgentAnalysis(
   };
 
   try {
-    const response = await fetch('/api/ollama/crypto-agent', {
+    // V13: Fallback transparente de endpoint
+    let endpoint = '/api/ollama/crypto-agent';
+    let response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal,
       body: JSON.stringify({ systemPrompt: `${systemPrompts[agentName]}\n${context}`, marketSnapshot: snapshot, config: config })
     });
+
+    if (response.status === 404) {
+      endpoint = '/api/ollama/agent';
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal,
+        body: JSON.stringify({ systemPrompt: `${systemPrompts[agentName]}\n${context}`, marketSnapshot: snapshot, config: config })
+      });
+    }
 
     if (!response.ok) throw new Error(`Agent API Error: ${response.status}`);
     
@@ -160,6 +203,8 @@ async function fetchAgentAnalysis(
 function generateTelemetry(opinions: AgentOpinion[], start: number, end: number): CouncilTelemetry {
   const validOps = opinions.filter(o => o.tokensPerSec !== undefined && o.tokensPerSec > 0);
   const totalTokens = opinions.reduce((sum, o) => sum + (o.totalTokens || 0), 0);
+  
+  // V13: Jitter desconta o tempo de fila/staggering para medir eficiência do hardware
   const latencies = opinions.map(o => o.latencyMs || 0);
   const jitterMs = latencies.length > 1 ? Math.max(...latencies) - Math.min(...latencies) : 0;
 
@@ -183,6 +228,7 @@ function synthesizeChairmanDecision(
 ): CouncilDecision {
     const entropy = calculateConsensusEntropy(opinions);
     
+    // 1. Implementação Real do COUNCIL_VETO (Spec V5.3)
     const criticalVeto = opinions.find(o => (o.agentName === 'RISK_CRITIC' || o.agentName === 'ARCHIVIST') && o.vetoTriggered && o.confidence >= 70);
     if (criticalVeto) {
         return {
@@ -209,9 +255,10 @@ function synthesizeChairmanDecision(
     let finalAction = side;
     let holdReason = undefined;
 
+    // 2. Validação de Permissões
     if (permissions && finalAction !== 'HOLD') {
         if (!permissions.allowedActions.includes(finalAction as any)) {
-            holdReason = 'VETO_PERMISSÃO: Direção ' + finalAction + ' não autorizada para este ativo.';
+            holdReason = `VETO_PERMISSÃO: Direção ${finalAction} não autorizada para este ativo.`;
             finalAction = 'HOLD';
         }
     }
@@ -254,6 +301,7 @@ function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, la
     const sentinel = marketSnapshot.sentinel;
     const gravity = marketSnapshot.gravity;
 
+    // V13: Failover Inteligente com critério de altíssimo rigor heurístico
     const score = sentinel?.score || 0;
     const correlation = gravity?.correlation || 0;
     const hasGravityVeto = !!gravity?.vetoReason;
