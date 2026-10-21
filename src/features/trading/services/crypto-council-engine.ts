@@ -1,3 +1,4 @@
+// src/features/trading/services/crypto-council-engine.ts
 import { TradeMemoryBuffer, AgentOpinion, CouncilDecision, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState } from '../types/council';
 import { TradeMemoryManager } from './trade-memory-service';
 import { RuleReport } from './backtest';

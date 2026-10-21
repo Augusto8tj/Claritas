@@ -1,4 +1,4 @@
-
+// src/features/trading/services/report-builders.ts
 import { SignalCandidate, SignalFeatures } from './signal-engine';
 import { CouncilDecision, CouncilStats } from '../types/council';
 import { RuleReport } from './backtest';

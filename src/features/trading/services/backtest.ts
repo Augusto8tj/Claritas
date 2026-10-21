@@ -1,3 +1,4 @@
+// src/features/trading/services/backtest.ts
 import { computeSignalFeatures, evaluateSignals, type SignalCandle } from './signal-engine';
 
 export interface BacktestOptions {

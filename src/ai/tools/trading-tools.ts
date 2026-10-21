@@ -1,4 +1,4 @@
-// src/features/trading/ai/tools/trading-tools.ts
+// src/ai/tools/trading-tools.ts
 'use server';
 
 /**

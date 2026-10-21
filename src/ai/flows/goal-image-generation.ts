@@ -1,4 +1,4 @@
-// src/features/financials/ai/goal-image-generation.ts
+// src/ai/flows/goal-image-generation.ts
 'use server';
 
 /**

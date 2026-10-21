@@ -1,3 +1,4 @@
+// src/features/trading/services/signal-engine.ts
 export interface SignalCandle { epoch: number; open: number; high: number; low: number; close: number; }
 
 export type ContractCategory = 'OPTIONS' | 'ACCUMULATORS' | 'MULTIPLIERS';
