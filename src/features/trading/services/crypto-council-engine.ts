@@ -63,27 +63,51 @@ export async function runCryptoCouncil(
       `\n### BITCOIN GRAVITY (CORRELAÇÃO LÍDER):\nEstado=${marketSnapshot.gravity.btcVector} | zBtc=${marketSnapshot.gravity.zBtc?.toFixed(2)} | zTarget=${marketSnapshot.gravity.zTarget?.toFixed(2)} | Corr=${marketSnapshot.gravity.correlation.toFixed(3)} | Slingshot=${marketSnapshot.gravity.slingshotDetected}` : 
       "\nBITCOIN GRAVITY: N/A";
 
-    const agents: Array<AgentOpinion['agentName']> = ['MOMENTUM', 'RISK_CRITIC', 'ARCHIVIST'];
+    const fullContext = memoryContext + backtestContext + gravityContext;
 
     // V5.3: Execução escalonada (Prioridade Momentum/Risk para análise de choque)
     const priorityAgents = ['MOMENTUM', 'RISK_CRITIC'] as const;
-    const priorityPromises = priorityAgents.map(name => fetchAgentWithTimeout(name, marketSnapshot, memoryContext + backtestContext + gravityContext, config));
+    const priorityPromises = priorityAgents.map(name => fetchAgentWithTimeout(name, marketSnapshot, fullContext, config));
     
-    // Delay estratégico para o Archivist (reduz concorrência na VRAM local)
-    await new Promise(r => setTimeout(r, 250));
-    const archivistPromise = fetchAgentWithTimeout('ARCHIVIST', marketSnapshot, memoryContext + backtestContext + gravityContext, config);
-
-    const results = await Promise.allSettled([...priorityPromises, archivistPromise]);
-    
+    const results = await Promise.allSettled(priorityPromises);
     const opinions: AgentOpinion[] = [];
+    
     results.forEach((res, i) => {
-        const agentName = i < 2 ? priorityAgents[i] : 'ARCHIVIST';
+        const agentName = priorityAgents[i];
         if (res.status === 'fulfilled' && res.value) {
             const op = res.value;
             trace.push(`${agentName}: ${op.action} ${op.confidence}% ${op.recommendedContract} veto=${op.vetoTriggered ? 'sim' : 'nao'}`);
             opinions.push(op);
         }
     });
+
+    // 1. Veto Soberano do RISK_CRITIC com Abort Antecipado
+    const critic = opinions.find(o => o.agentName === 'RISK_CRITIC');
+    if (critic?.vetoTriggered && critic.confidence >= 70) {
+        const endTime = performance.now();
+        return {
+            finalAction: 'HOLD',
+            recommendedContract: 'OPTIONS',
+            stakeRatio: 0,
+            consensusConfidence: critic.confidence,
+            opinions,
+            executedVia: 'COUNCIL_VETO',
+            executionMode: isShadowMode ? 'SHADOW' : 'REAL',
+            t2tLatencyMs: Math.round(endTime - startTime),
+            telemetry: generateTelemetry(opinions, startTime, endTime),
+            zenThought: `Veto Soberano do Risco: ${critic.reasoning}`,
+            holdReason: `VETO_RISK: ${critic.reasoning}`,
+            debugVotes: opinions.map(o => `${o.agentName.charAt(0)}:${o.action}/${o.confidence}`).join(' '),
+            trace
+        };
+    }
+
+    // 2. Chamar ARCHIVIST apenas se não houver veto crítico
+    const archivistOp = await fetchAgentWithTimeout('ARCHIVIST', marketSnapshot, fullContext, config);
+    if (archivistOp) {
+        trace.push(`ARCHIVIST: ${archivistOp.action} ${archivistOp.confidence}% ${archivistOp.recommendedContract}`);
+        opinions.push(archivistOp);
+    }
 
     if (opinions.length < 1) throw new Error('NETWORK_FAILURE_ALL_AGENTS');
 
@@ -273,7 +297,7 @@ function synthesizeChairmanDecision(
     };
 }
 
-function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, lat: number): CouncilDecision {
+function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
     const sentinel = marketSnapshot.sentinel;
     const gravity = marketSnapshot.gravity;
 
@@ -291,7 +315,7 @@ function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, la
             opinions: [],
             executedVia: 'MATH_FALLBACK',
             executionMode: isShadowMode ? 'SHADOW' : 'REAL',
-            t2tLatencyMs: lat,
+            t2tLatencyMs: latency,
             telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 0.1, jitterMs: 0, inferenceHealth: 50 },
             zenThought: "Failover Ativado: Sentinel de altíssimo rigor detectado. Executando via heurística matemática.",
             trace: ["FAILOVER_INTELLIGENT_SUCCESS"]
@@ -306,7 +330,7 @@ function executeHighRigorFallback(marketSnapshot: any, isShadowMode: boolean, la
         opinions: [],
         executedVia: 'MATH_FALLBACK',
         executionMode: isShadowMode ? 'SHADOW' : 'REAL',
-        t2tLatencyMs: lat,
+        t2tLatencyMs: latency,
         telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
         holdReason: 'FAILOVER_CONSERVATIVE: Heurística matemática não atingiu limiar de segurança (Score < 85).',
         debugVotes: "FALLBACK_HOLD",

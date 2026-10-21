@@ -4,6 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails, Payout Filter e HWM.
+ * V5.5: Corrigido Parallel Shadow, Cooldown e Forensics de Preço.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -150,6 +151,9 @@ export function useCryptoRadarV4(
     const lastDecisionBySymbolRef = useRef<Record<string, { ts: number, decision: CouncilDecision }>>({});
     const shadowExecutionTimestampsRef = useRef<Record<string, number>>({});
 
+    const operationsLogRef = useRef(operationsLog);
+    useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
+
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         setOllamaConfig(prev => {
             const next = { ...prev, ...updates };
@@ -172,12 +176,14 @@ export function useCryptoRadarV4(
         } catch (e) {}
     }, [ollamaConfig]);
 
-    // V13: Função auxiliar Smart Stake (Spec V5.3)
-    const calculateDynamicStake = useCallback((baseStake: number, symbol: string, entropy: number): number => {
+    const calculateDynamicStake = useCallback((baseStake: number, symbol: string, decision: CouncilDecision): number => {
         let finalStake = baseStake;
         
-        // 1. Verificação de último trade finalizado (Penalty por perda)
-        const symbolTrades = operationsLog.filter(op => op.asset === symbol && op.status !== 'pending');
+        // 1. Verificação de último trade finalizado (Punha por perda) - ORDENAÇÃO EXPLÍCITA
+        const symbolTrades = [...operationsLogRef.current]
+            .filter(op => op.asset === symbol && op.status !== 'pending')
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
         if (symbolTrades.length > 0) {
             const lastTrade = symbolTrades[0]; 
             if (lastTrade.status === 'lost') {
@@ -186,13 +192,18 @@ export function useCryptoRadarV4(
         }
         
         // 2. Bônus Setup A+ (Entropia < 0.2) se não vier de derrota imediata
-        if (entropy < 0.2 && finalStake === baseStake) {
+        if (decision.telemetry.consensusEntropy < 0.2 && finalStake === baseStake) {
             finalStake *= 1.15;
         }
+
+        // 3. Respeito ao stakeRatio do Failover (meia-mão)
+        if (decision.executedVia === 'MATH_FALLBACK') {
+            finalStake *= (decision.stakeRatio || 0.5);
+        }
         
-        // 3. Piso mínimo regulatório
+        // 4. Piso mínimo regulatório
         return Math.max(0.35, Number(finalStake.toFixed(2)));
-    }, [operationsLog]);
+    }, []);
 
     useEffect(() => {
         if (!user || !ollamaConfig.model) return;
@@ -400,23 +411,6 @@ ${context}`;
                 }
             }
 
-            // V13: Bloqueio Liderança Gravitacional antes do LLM (Economia)
-            if (symbol !== 'cryBTCUSD' && gravity?.vetoReason) {
-                addLog(`[GRAVITY-VETO] ${symbol}: ${gravity.vetoReason}`, 'warning', undefined, symbol);
-                setRadarStatus(prev => ({
-                    ...prev,
-                    [symbol]: {
-                        symbol,
-                        finalAction: 'HOLD',
-                        confidence: 0,
-                        timestamp: Date.now(),
-                        holdReason: gravity.vetoReason,
-                        indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw }
-                    }
-                }));
-                return;
-            }
-
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats as any, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             const bestCandidate = candidates.filter((c: any) => c.direction !== 'NONE').sort((a: any, b: any) => b.score - a.score)[0];
@@ -435,9 +429,8 @@ ${context}`;
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
-            const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, isManual || symbol === activeSymbolRef.current, permissions, portfolio);
+            const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, symbol === activeSymbolRef.current, permissions, portfolio);
             
-            // V13: Correção do Bug de Mutação Precoce
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 const originalCouncilAction = decision.finalAction;
                 decision.finalAction = 'HOLD';
@@ -451,7 +444,6 @@ ${context}`;
 
             setCouncilStats(prev => ({ total: prev.total + 1, call: prev.call + (decision.finalAction === 'CALL' ? 1 : 0), put: prev.put + (decision.finalAction === 'PUT' ? 1 : 0), hold: prev.hold + (decision.finalAction === 'HOLD' ? 1 : 0), vetoes: prev.vetoes + (decision.executedVia === 'COUNCIL_VETO' ? 1 : 0), fallbacks: prev.fallbacks + (decision.executedVia === 'MATH_FALLBACK' ? 1 : 0), avgLatencyMs: (prev.avgLatencyMs * 0.8) + (decision.t2tLatencyMs * 0.2) }));
 
-            // V13: Integração Efetiva de Resiliência e HWM no Gate
             const currentRigor = resilience.thresholds[symbol] || (confidenceThreshold / 100);
             const isStable = resilience.checkStability(symbol);
             const effectiveThreshold = Math.max(confidenceThreshold, currentRigor * 100);
@@ -476,22 +468,41 @@ ${context}`;
             }
 
             if (shouldExecute && decision.finalAction !== 'HOLD') {
-                const finalStake = calculateDynamicStake(stakeValue, symbol, decision.telemetry.consensusEntropy);
+                const finalStake = calculateDynamicStake(stakeValue, symbol, decision);
                 
                 if (pilotMode === 'SHADOW') {
                     if (symbol === 'cryBTCUSD') { addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol); executionLockRef.current = false; return; }
+                    
                     const pending = CryptoShadowEngine.getPendingFromCache().filter((t: any) => t.symbol === symbol);
-                    if (pending.some((t: any) => t.direction === decision.finalAction)) { executionLockRef.current = false; return; }
+                    const hasSamePending = pending.some((t: any) => t.direction === decision.finalAction);
+                    const now = Date.now();
+                    const lastExec = shadowExecutionTimestampsRef.current[symbol] || 0;
+
+                    if (hasSamePending) {
+                        executionLockRef.current = false;
+                        return;
+                    }
+
+                    if (now - lastExec < SHADOW_COOLDOWN_SEC * 1000) {
+                        addLog(`[SHADOW-BLOCK] ${symbol}: Cooldown sombra ativo (${Math.ceil((SHADOW_COOLDOWN_SEC * 1000 - (now - lastExec)) / 1000)}s restantes).`, 'radar', undefined, symbol);
+                        executionLockRef.current = false;
+                        return;
+                    }
+
+                    const freshCandles = getCandlesFor(symbol);
+                    const entryPrice = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
+                    const entryTs = Date.now();
 
                     addLog(`[SHADOW] ${symbol}: ${decision.finalAction} simulado com stake adaptativo $${finalStake}.`, 'radar', undefined, symbol);
-                    shadowExecutionTimestampsRef.current[symbol] = Date.now();
+                    shadowExecutionTimestampsRef.current[symbol] = entryTs;
                     await CryptoShadowEngine.logTrade(user.uid!, {
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
-                        entryPrice: candles[candles.length-1].close, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
+                        entryPrice, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
-                        confidence: decision.consensusConfidence, payoutRatio: 85,
+                        confidence: decision.consensusConfidence, payoutRatio: backtest.payoutPct || 85,
                         duration: 15, durationUnit: 's', ev: 0, stake: finalStake,
-                        timestamp: new Date().toISOString(), entryTs: Date.now(), llmLatencyMs: decision.t2tLatencyMs,
+                        timestamp: new Date(entryTs).toISOString(),
+                        decisionTs: analysisStartTs, entryTs, llmLatencyMs: decision.t2tLatencyMs,
                         rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
                         correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
                     });
@@ -510,10 +521,15 @@ ${context}`;
                         
                         if (actualPayout < 0.8) { addLog(`[EXEC-ABORT] ${symbol}: Payout ${(actualPayout*100).toFixed(1)}% < 80%`, 'warning', undefined, symbol); executionLockRef.current = false; return; }
 
-                        const res = await executeTrade(decision.finalAction === 'CALL' ? 'CALL' : 'PUT', finalStake, symbol, decision.finalAction.toLowerCase() as any, finalDur, 's', 'Conselho' as OperationInitiator, `V13_DEMO_${decision.executedVia}`);
+                        const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
+                        const finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
+
+                        const res = await executeTrade(finalContractType, finalStake, symbol, tradeDirection, finalDur, 's', 'Conselho' as OperationInitiator, `V13_DEMO_${decision.executedVia}`);
                         if (res.success) {
                             addLog(`[EXEC-DEMO] ${symbol} ${decision.finalAction} enviado via API. Stake: $${finalStake}`, 'execution', undefined, symbol);
-                            // V13: Correção do cálculo forense de latência
+                            const freshCandles = getCandlesFor(symbol);
+                            const entryPrice = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
+                            
                             await logLiveTrade(user.uid!, {
                                 symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
                                 stake: finalStake, payout: actualPayout, duration: finalDur, durationUnit: 's',
@@ -527,12 +543,25 @@ ${context}`;
                                 entropy: decision.telemetry.consensusEntropy, signalTs: analysisStartTs, decisionTs: analysisStartTs, purchaseTs: Date.now(),
                                 status: 'pending', accountType
                             });
+
+                            // Parallel Shadow Trade (Etapa 13.4)
+                            await CryptoShadowEngine.logTrade(user.uid!, {
+                                symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                                entryPrice, rule: bestCandidate?.rule || 'V13_PARALLEL',
+                                score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
+                                confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
+                                duration: finalDur, durationUnit: 's', ev: 0, stake: finalStake,
+                                timestamp: new Date().toISOString(),
+                                decisionTs: analysisStartTs, entryTs: Date.now(), llmLatencyMs: decision.t2tLatencyMs,
+                                rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
+                                correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
+                            });
                         }
                     } catch (e: any) { addLog(`Falha DEMO_LIVE (${symbol}): ${e.message}`, 'error', undefined, symbol); }
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast, backtest.payoutPct]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;

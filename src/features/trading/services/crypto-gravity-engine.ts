@@ -143,8 +143,18 @@ export function calculateBitcoinGravity(
     }
   });
 
+  // 2. Fallback de Alinhamento por Índice (V5.5)
   if (alignedBtc.length < 10) {
-      return { btcVector: 'CHOP', correlation: 0, beta: 1.0, isBtcExploding: false, gravityScore: 0, slingshotDetected: false, vetoReason: 'DESALINHAMENTO_TEMPORAL' };
+      const lastBtcTs = btc.epochHistory[btc.epochHistory.length - 1];
+      const lastTargetTs = target.epochHistory[target.epochHistory.length - 1];
+      
+      if (Math.abs(lastBtcTs - lastTargetTs) <= 120 && btc.priceHistory.length >= 15 && target.priceHistory.length >= 15) {
+          const n = Math.min(btc.priceHistory.length, target.priceHistory.length);
+          alignedBtc.push(...btc.priceHistory.slice(-n));
+          alignedTarget.push(...target.priceHistory.slice(-n));
+      } else {
+          return { btcVector: 'CHOP', correlation: 0, beta: 1.0, isBtcExploding: false, gravityScore: 0, slingshotDetected: false, vetoReason: 'DESALINHAMENTO_TEMPORAL' };
+      }
   }
 
   const btcReturns = getReturns(alignedBtc).slice(-windowSize);
@@ -153,24 +163,24 @@ export function calculateBitcoinGravity(
   const correlation = calculatePearsonCorrelation(btcReturns, targetReturns);
   const beta = calculateBeta(targetReturns, btcReturns);
 
-  // 2. CÁLCULO DE Z-SCORES
+  // 3. CÁLCULO DE Z-SCORES
   const btcZHistory = dropForming ? btc.priceHistory.slice(0, -1) : btc.priceHistory;
   const targetZHistory = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
   
   const zBtc = calculateZScoreFromReturns(getReturns(btcZHistory));
   const zTarget = calculateZScoreFromReturns(getReturns(targetZHistory));
 
-  // 3. DETECÇÃO DE EXPLOSÃO
+  // 4. DETECÇÃO DE EXPLOSÃO
   const isBtcExploding = btc.atrRatio > 1.5 || btc.bbw > 2.5;
   
-  // 4. VETOR DO LÍDER (BTC)
+  // 5. VETOR DO LÍDER (BTC)
   let btcVector: BitcoinGravityResult['btcVector'] = 'CHOP';
   if (btc.adx > 20) {
     if (Math.abs(btc.momentumMedium) < 0.2) btcVector = 'COMPRESSION';
     else btcVector = btc.momentumMedium > 0 ? 'BULL_DRAG' : 'BEAR_DRAG';
   }
 
-  // 5. SLINGSHOT (Lead-Lag Arbitrage) - V13: Refino de alinhamento
+  // 6. SLINGSHOT (Lead-Lag Arbitrage) - V13: Refino de alinhamento
   const slingshotDetected = 
     correlation > 0.7 && 
     Math.abs(zBtc) > Z_THRESHOLD_BTC && 
@@ -178,7 +188,7 @@ export function calculateBitcoinGravity(
     Math.sign(zBtc) === Math.sign(btc.momentumMedium) &&
     (Math.sign(zTarget) === Math.sign(zBtc) || Math.abs(zTarget) < 0.35);
 
-  // 6. DIVERGENT STATE
+  // 7. DIVERGENT STATE
   if (correlation > 0.7 && Math.abs(zBtc) > 0.2 && Math.abs(zTarget) > 0.2) {
     if (Math.sign(zBtc) !== Math.sign(zTarget)) btcVector = 'DIVERGENT';
   }

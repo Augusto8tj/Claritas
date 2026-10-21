@@ -12,21 +12,22 @@ const createMock = (prices: number[], epochs: number[]): any => ({
 
 describe('Crypto Gravity Engine V13 (Hardening)', () => {
   it('detecta slingshotDetected = true quando zBtc > 1.8 e zTarget está em lag positivo', () => {
-    // BTC subindo forte
-    const btcPrices = [10, 10, 10, 10, 10, 10.5, 11.2, 12.0];
-    const btcEpochs = [1, 2, 3, 4, 5, 6, 7, 8];
+    // BTC subindo forte - Fornecemos 25 velas para superar travas de histórico
+    const btcPrices = Array(20).fill(10).concat([10.1, 10.3, 10.6, 11.2, 12.0]);
+    const btcEpochs = Array(25).fill(0).map((_, i) => i);
     const btc = createMock(btcPrices, btcEpochs);
+    // Injetamos momentum para simular validação de direção
+    btc.momentumMedium = 1.0; 
     
-    // Altcoin estável (Lag)
-    const altPrices = [5, 5, 5, 5, 5, 5.01, 5.02, 5.01];
-    const altEpochs = [1, 2, 3, 4, 5, 6, 7, 8];
+    // Altcoin estável (Lag) - Em leve alta suave
+    const altPrices = Array(20).fill(5).concat([5.01, 5.02, 5.03, 5.04, 5.05]);
+    const altEpochs = Array(25).fill(0).map((_, i) => i);
     const alt = createMock(altPrices, altEpochs);
 
-    const result = calculateBitcoinGravity(btc, alt, 60, false);
+    const result = calculateBitcoinGravity(btc, alt, 60, true);
     
-    // Como os preços são fictícios e a função getReturns/ZScore é complexa, 
-    // validamos que a lógica de interseção e proteção contra insuficiente funciona
-    expect(result.correlation).toBeDefined();
+    expect(result.correlation).toBeGreaterThan(0.7);
+    expect(result.slingshotDetected).toBe(true);
   });
 
   it('retorna HISTÓRICO_INSUFICIENTE quando as séries têm menos de 10 velas alinhadas', () => {
