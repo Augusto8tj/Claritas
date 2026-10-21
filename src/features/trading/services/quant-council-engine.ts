@@ -162,24 +162,8 @@ export async function runQuantCouncil(
 
   } catch (error: any) {
     const endTime = performance.now();
-    if (isFocused) {
-      const fallback = executeHighRigorFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
-      return { ...fallback, trace };
-    }
-    return {
-      finalAction: 'HOLD',
-      recommendedContract: 'OPTIONS',
-      stakeRatio: 0,
-      consensusConfidence: 0,
-      opinions: [],
-      executedVia: 'MATH_FALLBACK',
-      executionMode: 'SHADOW',
-      t2tLatencyMs: Math.round(endTime - startTime),
-      telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-      holdReason: "Failover bloqueado.",
-      debugVotes: "FAIL",
-      trace
-    };
+    const fallback = executeMathFallback(marketSnapshot, isShadowMode, Math.round(endTime - startTime));
+    return { ...fallback, trace };
   }
 }
 
@@ -345,20 +329,20 @@ function synthesizeChairmanDecision(
   };
 }
 
-function executeHighRigorFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
-    const rsi = snapshot.rsi || 50;
-    const action = rsi < 20 ? 'CALL' : (rsi > 80 ? 'PUT' : 'HOLD');
-    
-    return {
-        finalAction: action,
-        recommendedContract: 'OPTIONS',
-        stakeRatio: 0.1,
-        consensusConfidence: 65,
-        opinions: [],
-        executedVia: 'MATH_FALLBACK',
-        executionMode: isShadowMode ? 'SHADOW' : 'REAL',
-        t2tLatencyMs: lat,
-        telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1, jitterMs: 0, inferenceHealth: 0 },
-        holdReason: action === 'HOLD' ? 'FAILOVER: Sem zona de exaustão extrema detectada.' : undefined
-    };
+function executeMathFallback(snapshot: any, isShadowMode: boolean, latency: number): CouncilDecision {
+  // Etapa 11: Fallback sempre retorna HOLD
+  return {
+    finalAction: 'HOLD',
+    recommendedContract: 'OPTIONS',
+    stakeRatio: 0,
+    consensusConfidence: 0,
+    opinions: [],
+    executedVia: 'MATH_FALLBACK',
+    executionMode: isShadowMode ? 'SHADOW' : 'REAL',
+    t2tLatencyMs: latency,
+    telemetry: { avgTokensPerSec: 0, totalTokens: 0, consensusEntropy: 1.0, jitterMs: 0, inferenceHealth: 0 },
+    zenThought: "IA Instável. Protegendo capital até restabelecimento do gateway.",
+    debugVotes: "FALLBACK_HOLD",
+    holdReason: "FAILOVER_CONSERVATIVE: Fallback forçado para HOLD por política de risco."
+  };
 }

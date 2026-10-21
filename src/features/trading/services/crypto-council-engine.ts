@@ -120,9 +120,9 @@ async function fetchAgentAnalysis(
     : `MODO REVERSÃO/MOMENTUM: RSI < 35 = COMPRA, RSI > 65 = VENDA.`;
 
   const systemPrompts = {
-    MOMENTUM: `VOCÊ É O ANALISTA 'QUANT MOMENTUM'. ${strategyInstruction} Foque no zBtc e no Momentum do alvo. ${CONTRACT_SELECTION_GUIDE}`,
-    RISK_CRITIC: `VOCÊ É O ANALISTA 'RISK CRITIC'. ${strategyInstruction} Verifique se zTarget está começando a seguir zBtc. ${CONTRACT_SELECTION_GUIDE}`,
-    ARCHIVIST: `VOCÊ É O ANALISTA 'PATTERN ARCHIVIST'. ${strategyInstruction} Compare com padrões de Lead-Lag passados. ${CONTRACT_SELECTION_GUIDE}`
+    MOMENTUM: `VOCÊ É UNICAMENTE O ANALISTA 'QUANT MOMENTUM'. ${strategyInstruction} Foque no zBtc e no Momentum do alvo. ${CONTRACT_SELECTION_GUIDE}`,
+    RISK_CRITIC: `VOCÊ É UNICAMENTE O ANALISTA 'RISK CRITIC'. ${strategyInstruction} Verifique se zTarget está começando a seguir zBtc. ${CONTRACT_SELECTION_GUIDE}`,
+    ARCHIVIST: `VOCÊ É UNICAMENTE O ANALISTA 'PATTERN ARCHIVIST'. ${strategyInstruction} Compare com padrões de Lead-Lag passados. ${CONTRACT_SELECTION_GUIDE}`
   };
 
   try {
@@ -201,7 +201,7 @@ function synthesizeChairmanDecision(opinions: AgentOpinion[], snapshot: any, isS
     const recommendedContract = selectBestContract(opinions, winningAction);
 
     return {
-        finalAction,
+        finalAction: finalAction as 'CALL' | 'PUT' | 'HOLD',
         recommendedContract,
         stakeRatio: finalAction === 'HOLD' ? 0 : (1 - (entropy * 0.5)),
         consensusConfidence: Math.round(avgConfidence),

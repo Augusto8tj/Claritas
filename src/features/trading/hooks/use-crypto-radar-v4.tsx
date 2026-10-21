@@ -13,6 +13,8 @@ import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runCryptoCouncil } from '../services/crypto-council-engine';
 import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3 } from '../types/council';
+import { calculateAllIndicators } from '../services/indicator-service';
+import { initialCouncilStrategies } from '../services/council-strategies';
 import { computeSignalFeatures } from '../services/signal-engine';
 import { evaluateCryptoSignals, type CryptoSignalFeatures, SENTINEL_MIN_SCORE } from '../services/crypto-signal-engine';
 import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
@@ -403,7 +405,7 @@ ${context}`;
             const permissions: AssetExecutionPermission = { symbol, enabled: true, userId: user.uid, maxStake: stakeValue * 5, allowedContracts: Object.keys(allowedContracts).filter(k => allowedContracts[k as keyof typeof allowedContracts]) as any[], allowedActions: Object.keys(allowedActions).filter(k => allowedActions[k as keyof typeof allowedActions]) as any[] };
 
             executionLockRef.current = true;
-            const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, permissions, portfolio);
+            const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, isManual || symbol === activeSymbolRef.current, permissions, portfolio);
             
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 decision.finalAction = 'HOLD';
@@ -525,7 +527,7 @@ ${context}`;
                             const entryPrice = res.entryPrice || propRes.proposal.spot;
                             
                             await logLiveTrade(user.uid!, {
-                                symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                                symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
                                 stake: stakeValue, payout: actualPayout, duration: finalDur, durationUnit: 's',
                                 spotAtDecision: candles[candles.length - 1].close,
                                 spotAtPurchase: entryPrice,
@@ -545,7 +547,7 @@ ${context}`;
                             // Parallel Shadow Trade para comparação (Etapa 13.4)
                             shadowExecutionTimestampsRef.current[symbol] = purchaseTsFinal;
                             await CryptoShadowEngine.logTrade(user.uid!, {
-                                symbol, direction: decision.finalAction, contract: decision.recommendedContract,
+                                symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
                                 entryPrice, rule: bestCandidate?.rule || 'V13_PARALLEL',
                                 score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
                                 confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
@@ -562,7 +564,7 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct, pilotMode, accountType, getContractsFor, getProposal]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, backtest.payoutPct, pilotMode, accountType, getContractsFor, getProposal, addTradeAnnotation, updateTradeAnnotation]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
