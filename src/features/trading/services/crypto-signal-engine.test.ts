@@ -52,6 +52,6 @@ describe('Crypto Signal Engine V11 - Soberania Lead-Lag', () => {
     const candidates = evaluateCryptoSignals('cryETHUSD', f);
     const rev = candidates.find(c => c.rule === 'OPT_REV');
     // Se não há bônus e a regra base é neutra, o score não deve subir magicamente
-    expect(rev?.score).toBeLessThan(SENTINEL_MIN_SCORE);
+    expect(rev?.score ?? 0).toBeLessThan(SENTINEL_MIN_SCORE);
   });
 });

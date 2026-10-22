@@ -1,4 +1,3 @@
-
 // /src/features/trading/services/crypto-shadow-engine.ts
 'use client';
 
@@ -15,6 +14,7 @@ import { CryptoShadowTrade } from '../types/council';
 let pendingCache: CryptoShadowTrade[] = [];
 let lastCacheFetch = 0;
 let cacheUserId: string | null = null;
+let settling = false; // trava de reentrada: evita liquidar o mesmo trade duas vezes
 const CACHE_TTL = 10000; // 10s
 
 export const CryptoShadowEngine = {
@@ -73,12 +73,14 @@ export const CryptoShadowEngine = {
     getPrice: (symbol: string) => number | null,
     onResult: (symbol: string, win: boolean, pnl: number, trade: CryptoShadowTrade) => void
   ) => {
-    if (!userId) return;
+    if (!userId || settling) return;
+    settling = true;
+    try {
     const now = Date.now();
 
     if (cacheUserId !== userId) { pendingCache = []; lastCacheFetch = 0; cacheUserId = userId; }
 
-    // Sincroniza cache somente quando o TTL expira
+    // Sincroniza cache somente quando o TTL expira (evita ler o Firestore a cada 2s com cache vazio)
     if (now - lastCacheFetch > CACHE_TTL) {
       const tradesRef = collection(db, 'users', userId, 'crypto_shadow_trades');
       const q = query(tradesRef, where('status', '==', 'pending'));
@@ -87,6 +89,7 @@ export const CryptoShadowEngine = {
         pendingCache = snap.docs.map(d => ({ id: d.id, ...d.data() } as CryptoShadowTrade));
         lastCacheFetch = now;
       } catch (e) {
+        lastCacheFetch = now; // evita repetir a consulta falha a cada 2s
         console.warn("[ShadowEngine] Erro ao sincronizar cache de shadow trades.");
       }
     }
@@ -128,11 +131,14 @@ export const CryptoShadowEngine = {
         // 2. Limpar Cache local
         pendingCache = pendingCache.filter(t => t.id !== trade.id);
         
-        // 3. Notificar sistema de resiliência e memória
+        // 3. Notificar sistema de resiliência e memória (ignora draws para estatísticas de win/loss)
         if (result !== 'draw') {
           onResult(trade.symbol, win, pnl, { ...trade, result, pnl, exitPrice, exitTs, settleDelayMs, lateSettle });
         }
       }
+    }
+    } finally {
+      settling = false;
     }
   }
 };
