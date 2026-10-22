@@ -69,7 +69,10 @@ export function calculatePearsonCorrelation(x: number[], y: number[]): number {
   }
 
   const denominator = Math.sqrt(sumSqX * sumSqY);
-  return denominator === 0 ? 0 : numerator / denominator;
+  if (!Number.isFinite(denominator) || denominator === 0) return 0;
+  
+  const result = numerator / denominator;
+  return Number.isFinite(result) ? result : 0;
 }
 
 export function calculateBeta(targetReturns: number[], btcReturns: number[]): number {
@@ -87,7 +90,10 @@ export function calculateBeta(targetReturns: number[], btcReturns: number[]): nu
     varianceBtc += Math.pow(btcReturns[i] - muBtc, 2);
   }
 
-  return varianceBtc === 0 ? 1.0 : covariance / varianceBtc;
+  if (!Number.isFinite(varianceBtc) || varianceBtc === 0) return 1.0;
+  
+  const result = covariance / varianceBtc;
+  return Number.isFinite(result) ? result : 1.0;
 }
 
 export function getReturns(history: number[]): number[] {
@@ -108,7 +114,11 @@ function calculateZScoreFromReturns(returns: number[]): number {
   const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
   const variance = slice.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / slice.length;
   const stdDev = Math.sqrt(variance);
-  return stdDev === 0 ? 0 : (lastReturn - mean) / stdDev;
+  
+  if (!Number.isFinite(stdDev) || stdDev === 0) return 0;
+  
+  const result = (lastReturn - mean) / stdDev;
+  return Number.isFinite(result) ? result : 0;
 }
 
 // ============================================================================
@@ -205,15 +215,29 @@ export function calculateBitcoinGravity(
   let vetoReason: string | undefined;
   if (correlation < 0.65) vetoReason = "DESACOPLAMENTO: Correlação < 0.65";
 
-  return {
+  // Hardening Numérico (Etapa 14)
+  const finalCorrelation = Number.isFinite(correlation) ? correlation : 0;
+  const finalBeta = Number.isFinite(beta) ? beta : 1.0;
+  const finalZbtc = Number.isFinite(zBtc) ? zBtc : 0;
+  const finalZtarget = Number.isFinite(zTarget) ? zTarget : 0;
+  const finalGravityScore = Number.isFinite(gravityScore) ? Math.max(0, Math.min(100, gravityScore)) : 0;
+
+  const result: BitcoinGravityResult = {
     btcVector,
-    correlation,
-    beta,
+    correlation: finalCorrelation,
+    beta: finalBeta,
     isBtcExploding,
-    gravityScore: Math.max(0, Math.min(100, gravityScore)),
-    slingshotDetected,
-    vetoReason,
-    zBtc,
-    zTarget
+    gravityScore: finalGravityScore,
+    slingshotDetected: slingshotDetected && Number.isFinite(zBtc) && Number.isFinite(zTarget),
+    zBtc: finalZbtc,
+    zTarget: finalZtarget,
+    vetoReason
   };
+
+  if (!Number.isFinite(correlation) || !Number.isFinite(beta)) {
+      result.vetoReason = 'NUMERIC_INVALID';
+      result.slingshotDetected = false;
+  }
+
+  return result;
 }

@@ -1,3 +1,4 @@
+// src/features/trading/services/live-trade-log.ts
 'use client';
 
 /**
@@ -6,7 +7,7 @@
  */
 
 import { db } from '@/lib/firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { sanitizeForFirestore } from '@/services/utils/sanitize-for-firestore';
 
 export interface LiveTradeEntry {
@@ -57,5 +58,26 @@ export async function logLiveTrade(userId: string, trade: LiveTradeEntry) {
     } catch (e) {
         console.error("[LiveLog] Falha ao registrar trade institucional:", e);
         return null;
+    }
+}
+
+/**
+ * Atualiza o desfecho de um trade real após o fechamento. (Etapa 14)
+ */
+export async function updateLiveTradeResult(
+    userId: string, 
+    docId: string, 
+    result: { status: 'won' | 'lost'; profit: number; exitSpot: number; closedTs: number }
+) {
+    if (!userId || !docId) return;
+    
+    try {
+        const docRef = doc(db, 'users', userId, 'crypto_live_trades', docId);
+        await updateDoc(docRef, {
+            ...result,
+            closedAt: serverTimestamp()
+        });
+    } catch (e) {
+        console.error("[LiveLog] Falha ao atualizar resultado do trade:", e);
     }
 }

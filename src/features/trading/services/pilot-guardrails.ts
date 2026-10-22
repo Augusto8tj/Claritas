@@ -90,3 +90,24 @@ export function checkGuardrails(
 
     return { allowed: true };
 }
+
+/**
+ * Converte strings de duração da Deriv (ex: "15s", "1m") para segundos. (Etapa 14)
+ */
+export function parseDurationToSeconds(durationStr: string): number | null {
+    if (!durationStr) return null;
+    const match = durationStr.match(/^(\d+)([tsmhd])$/);
+    if (!match) return null;
+    
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    
+    switch (unit) {
+        case 't': return value * 1; // Para sintéticos crypto, ticks costumam ser de 1s
+        case 's': return value;
+        case 'm': return value * 60;
+        case 'h': return value * 3600;
+        case 'd': return value * 86400;
+        default: return null;
+    }
+}

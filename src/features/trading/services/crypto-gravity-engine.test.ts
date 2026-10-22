@@ -56,6 +56,16 @@ describe('Crypto Gravity Engine V13 (Hardening)', () => {
     expect(result.vetoReason).toBe('HISTÓRICO_INSUFICIENTE (<10 velas)');
   });
 
+  it('nunca retorna NaN com séries degeneradas (constantes)', () => {
+    const btc = createMock(Array(20).fill(100), Array(20).fill(0).map((_, i) => i * 60));
+    const alt = createMock(Array(20).fill(50), Array(20).fill(0).map((_, i) => i * 60));
+    
+    const result = calculateBitcoinGravity(btc, alt, 60, false);
+    expect(Number.isFinite(result.correlation)).toBe(true);
+    expect(Number.isFinite(result.beta)).toBe(true);
+    expect(result.vetoReason).toBe('NUMERIC_INVALID');
+  });
+
   it('detecta Slingshot refinado com alinhamento de direção', () => {
     const btc = createMock(Array(20).fill(10), Array(20).fill(0).map((_, i) => i));
     const alt = createMock(Array(20).fill(10), Array(20).fill(0).map((_, i) => i));

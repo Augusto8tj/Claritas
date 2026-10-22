@@ -5,6 +5,7 @@
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails, Payout Filter e HWM.
  * V5.6/V5.7: Alpha Decay Guard, Cálculo Real de EV (Veredito Institucional) e Resiliência Adaptativa.
+ * V14: Hardening de Duração, Payout Dinâmico e Registro de Fechamento Automático.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -25,8 +26,8 @@ import { useBacktestRunner } from './use-backtest-runner';
 import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
 import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 import { buildAssetFeatures } from '../services/asset-features';
-import { checkGuardrails, DEFAULT_GUARDRAILS } from '../services/pilot-guardrails';
-import { logLiveTrade } from '../services/live-trade-log';
+import { checkGuardrails, DEFAULT_GUARDRAILS, parseDurationToSeconds } from '../services/pilot-guardrails';
+import { logLiveTrade, updateLiveTradeResult } from '../services/live-trade-log';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 
@@ -115,6 +116,9 @@ export function useCryptoRadarV4(
         inferenceHealth: 100 
     });
 
+    // ETAPA 14: Registro de Trades Reais para atualização de resultados
+    const [liveTradeRegistry, setLiveTradeRegistry] = useState<Record<number, string>>({});
+
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
         setReasoningLog(prev => [{
             ts: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, 
@@ -170,6 +174,34 @@ export function useCryptoRadarV4(
 
     const operationsLogRef = useRef(operationsLog);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
+
+    // ETAPA 14: Monitoramento de Fechamento de Trades Reais
+    useEffect(() => {
+        if (!user || !operationsLog.length || !Object.keys(liveTradeRegistry).length) return;
+        
+        const finishedTrades = operationsLog.filter(op => 
+            op.status !== 'pending' && 
+            op.id in liveTradeRegistry
+        );
+
+        finishedTrades.forEach(async (op) => {
+            const docId = liveTradeRegistry[op.id];
+            if (docId) {
+                await updateLiveTradeResult(user.uid, docId, {
+                    status: op.status === 'won' ? 'won' : 'lost',
+                    profit: op.result || 0,
+                    exitSpot: op.exitPrice || 0,
+                    closedTs: Date.now()
+                });
+                setLiveTradeRegistry(prev => {
+                    const next = { ...prev };
+                    delete next[op.id];
+                    return next;
+                });
+                addLog(`[V14-SYNC] Trade #${op.id} finalizado. Log atualizado no Firestore.`, 'info', undefined, op.asset);
+            }
+        });
+    }, [operationsLog, user, liveTradeRegistry, addLog]);
 
     const updateOllamaConfig = useCallback((updates: Partial<OllamaConfig>) => {
         setOllamaConfig(prev => {
@@ -441,13 +473,17 @@ ${context}`;
 
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats as any, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
-            const bestCandidate = candidates.filter((c: any) => c.direction !== 'NONE').sort((a: any, b: any) => b.score - a.score)[0];
+            
+            // ETAPA 14: Todas as regras (incluindo Slingshot) devem respeitar SENTINEL_MIN_SCORE
+            const bestCandidate = candidates
+                .filter((c: any) => c.direction !== 'NONE' && c.score >= SENTINEL_MIN_SCORE)
+                .sort((a: any, b: any) => b.score - a.score)[0];
 
             if (!bestCandidate && requireSentinelCandidate) {
-                addLog(`[SENTINEL] ${symbol}: Sem candidato técnico qualificado. Abortando conselho.`, 'sentinel', undefined, symbol);
+                addLog(`[SENTINEL] ${symbol}: Sem candidato qualificado (min: ${SENTINEL_MIN_SCORE}).`, 'sentinel', undefined, symbol);
                 setRadarStatus(prev => ({
                     ...prev,
-                    [symbol]: { symbol, finalAction: 'HOLD', lastAction: 'HOLD', consensusConfidence: 0, confidence: 0, timestamp: Date.now(), holdReason: 'SENTINEL_EMPTY', indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } }
+                    [symbol]: { symbol, finalAction: 'HOLD', lastAction: 'HOLD', consensusConfidence: 0, confidence: 0, timestamp: Date.now(), holdReason: 'SENTINEL_LOW_SCORE', indicators: { rsi: baseFeats.rsi, adx: indicators.adx, bbw: indicators.bbw } }
                 }));
                 return;
             }
@@ -458,6 +494,7 @@ ${context}`;
 
             executionLockRef.current = true;
             const decision = await runCryptoCouncil({ ...cryptoFeats, symbol, price: candles[candles.length - 1].close, strategicProfile, sentinel: bestCandidate } as any, buffer, ollamaConfig, isShadowMode, isManual || symbol === activeSymbolRef.current, permissions, portfolio);
+            const analysisEndTs = Date.now();
             
             if (bestCandidate && decision.finalAction !== 'HOLD' && decision.finalAction !== bestCandidate.direction) {
                 const originalCouncilAction = decision.finalAction;
@@ -472,7 +509,6 @@ ${context}`;
 
             setCouncilStats(prev => ({ total: prev.total + 1, call: prev.call + (decision.finalAction === 'CALL' ? 1 : 0), put: prev.put + (decision.finalAction === 'PUT' ? 1 : 0), hold: prev.hold + (decision.finalAction === 'HOLD' ? 1 : 0), vetoes: prev.vetoes + (decision.executedVia === 'COUNCIL_VETO' ? 1 : 0), fallbacks: prev.fallbacks + (decision.executedVia === 'MATH_FALLBACK' ? 1 : 0), avgLatencyMs: (prev.avgLatencyMs * 0.8) + (decision.t2tLatencyMs * 0.2) }));
 
-            // --- PROTOCOLO DE RESILIÊNCIA V5.7 ---
             const currentRigor = resilience.thresholds[symbol] || (confidenceThreshold / 100);
             const isStable = resilience.checkStability(symbol);
             const effectiveThreshold = Math.max(confidenceThreshold, currentRigor * 100);
@@ -547,16 +583,54 @@ ${context}`;
 
                     try {
                         const contractsRes = await getContractsFor(symbol);
-                        const rf = (contractsRes.contracts_for?.available || []).find((c: any) => c.contract_category === 'callput');
-                        const finalDur = Math.max(rf?.min_contract_duration ? parseInt(rf.min_contract_duration) : 15, 15);
+                        const available = contractsRes.contracts_for?.available || [];
+                        const callPuts = available.filter((c: any) => c.contract_category === 'callput');
                         
-                        const propRes = await getProposal({ contract_type: decision.finalAction === 'CALL' ? 'CALL' : 'PUT', currency: 'USD', symbol, amount: finalStake, basis: 'stake', duration: finalDur, duration_unit: 's' });
+                        // ETAPA 14: Escolha de duração unit-aware
+                        let finalDurVal: number | null = null;
+                        let finalDurUnit: DurationUnit | null = null;
+                        let minFoundSec = Infinity;
+
+                        for (const c of callPuts) {
+                            const durSec = parseDurationToSeconds(c.min_contract_duration);
+                            if (durSec !== null && durSec >= 15) {
+                                if (durSec < minFoundSec) {
+                                    minFoundSec = durSec;
+                                    const match = c.min_contract_duration.match(/^(\d+)([tsmhd])$/);
+                                    if (match) {
+                                        finalDurVal = parseInt(match[1], 10);
+                                        finalDurUnit = match[2] as DurationUnit;
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!finalDurVal || !finalDurUnit) {
+                            addLog(`[EXEC-ABORT] ${symbol}: Nenhuma duração temporal >= 15s disponível (apenas ticks?).`, 'warning', undefined, symbol);
+                            executionLockRef.current = false;
+                            return;
+                        }
+
+                        const propRes = await getProposal({ 
+                            contract_type: decision.finalAction === 'CALL' ? 'CALL' : 'PUT', 
+                            currency: 'USD', 
+                            symbol, 
+                            amount: finalStake, 
+                            basis: 'stake', 
+                            duration: finalDurVal, 
+                            duration_unit: finalDurUnit 
+                        });
+                        
                         if (propRes.error) throw new Error(propRes.error.message);
                         const actualPayout = (propRes.proposal.payout - propRes.proposal.ask_price) / propRes.proposal.ask_price;
                         
-                        if (actualPayout < 0.8) { addLog(`[EXEC-ABORT] ${symbol}: Payout ${(actualPayout*100).toFixed(1)}% < 80%`, 'warning', undefined, symbol); executionLockRef.current = false; return; }
+                        // ETAPA 14: Uso do minPayout do Guardrails
+                        if (actualPayout < DEFAULT_GUARDRAILS.minPayout) { 
+                            addLog(`[EXEC-ABORT] ${symbol}: Payout ${(actualPayout*100).toFixed(1)}% < ${DEFAULT_GUARDRAILS.minPayout * 100}%`, 'warning', undefined, symbol); 
+                            executionLockRef.current = false; 
+                            return; 
+                        }
 
-                        // EV Gate (V5.7)
                         const realEv = calculateTradeEV(decision.consensusConfidence, buffer, actualPayout);
                         if (!isManual && realEv <= 0) {
                             addLog(`[EV-ABORT] ${symbol}: Expectativa matemática negativa/nula (EV=${realEv}). Operação abortada.`, 'warning', undefined, symbol);
@@ -567,35 +641,45 @@ ${context}`;
                         const tradeDirection: 'rise' | 'fall' = decision.finalAction === 'CALL' ? 'rise' : 'fall';
                         const finalContractType = decision.finalAction === 'CALL' ? 'CALL' : 'PUT';
 
-                        const res = await executeTrade(finalContractType, finalStake, symbol, tradeDirection, finalDur, 's', 'Conselho' as OperationInitiator, `V13_DEMO_${decision.executedVia}`);
+                        const res = await executeTrade(finalContractType, finalStake, symbol, tradeDirection, finalDurVal, finalDurUnit, 'Conselho' as OperationInitiator, `V14_DEMO_${decision.executedVia}`);
+                        const purchaseTs = Date.now();
+                        const signalTs = (freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].epoch : candles[candles.length - 1].epoch) * 1000;
+
                         if (res.success) {
                             addLog(`[EXEC-DEMO] ${symbol} ${decision.finalAction} enviado via API. Stake: $${finalStake}`, 'execution', undefined, symbol);
                             const executionPrice = res.entryPrice || propRes.proposal.spot || currentSpot;
                             
-                            await logLiveTrade(user.uid!, {
+                            const docId = await logLiveTrade(user.uid!, {
                                 symbol, direction: decision.finalAction as any, contract: decision.recommendedContract,
-                                stake: finalStake, payout: actualPayout, duration: finalDur, durationUnit: 's',
+                                stake: finalStake, payout: actualPayout, duration: finalDurVal, durationUnit: finalDurUnit,
                                 spotAtDecision: candles[candles.length - 1].close,
                                 spotAtPurchase: executionPrice,
                                 slippagePips: executionPrice - (propRes.proposal.spot || currentSpot),
                                 decisionLatencyMs: Math.round(decision.t2tLatencyMs),
-                                executionLatencyMs: Math.round(Date.now() - analysisStartTs - decision.t2tLatencyMs),
-                                totalLatencyMs: Math.round(Date.now() - analysisStartTs),
-                                rule: bestCandidate?.rule || 'V13_DISCRETION', gravityState: gravity?.btcVector || 'CHOP',
+                                executionLatencyMs: Math.round(purchaseTs - analysisEndTs),
+                                totalLatencyMs: Math.round(purchaseTs - analysisStartTs),
+                                rule: bestCandidate?.rule || 'V14_DISCRETION', gravityState: gravity?.btcVector || 'CHOP',
                                 confidence: decision.consensusConfidence, sentinelScore: bestCandidate?.score || 0,
-                                entropy: decision.telemetry.consensusEntropy, signalTs: analysisStartTs, decisionTs: analysisStartTs, purchaseTs: Date.now(),
+                                entropy: decision.telemetry.consensusEntropy, 
+                                signalTs, 
+                                decisionTs: analysisEndTs, 
+                                purchaseTs,
                                 status: 'pending', accountType
                             });
 
-                            // Parallel Shadow Trade (Etapa 13.4) com EV real
+                            if (docId && res.contractId) {
+                                setLiveTradeRegistry(prev => ({ ...prev, [res.contractId!]: docId }));
+                            }
+
+                            // Parallel Shadow Trade (Etapa 13.4) com EV real e Preço Pareado
                             await CryptoShadowEngine.logTrade(user.uid!, {
                                 symbol, direction: decision.finalAction, contract: decision.recommendedContract,
-                                entryPrice: executionPrice, rule: bestCandidate?.rule || 'V13_PARALLEL',
+                                entryPrice: executionPrice, rule: bestCandidate?.rule || 'V14_PARALLEL',
                                 score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
                                 confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
-                                duration: finalDur, durationUnit: 's', ev: realEv, stake: finalStake,
-                                timestamp: new Date().toISOString(),
-                                decisionTs: analysisStartTs, entryTs: Date.now(), llmLatencyMs: decision.t2tLatencyMs,
+                                duration: finalDurVal, durationUnit: finalDurUnit, ev: realEv, stake: finalStake,
+                                timestamp: new Date(purchaseTs).toISOString(),
+                                decisionTs: analysisStartTs, entryTs: purchaseTs, llmLatencyMs: decision.t2tLatencyMs,
                                 rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
                                 correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
                             });
@@ -604,7 +688,7 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast, backtest.payoutPct]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast, backtest.payoutPct, liveTradeRegistry]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
