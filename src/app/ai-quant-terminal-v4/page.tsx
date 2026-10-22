@@ -62,9 +62,9 @@ function CryptoLabContent() {
     const v4 = useCryptoRadarV4(activeSymbol, priceTicks, chartData as any);
     
     const { 
-        lastDecision, reasoningLog, isAutoMode, toggleAutoMode, 
+        lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
         pilotMode, setPilotMode,
-        radarStatus, telemetry, sendMessage, 
+        isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
         resilience, stakeValue, setStakeValue,
@@ -72,18 +72,21 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, backtest, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
+    const [isBacktestSelectorOpen, setIsBacktestSelectorOpen] = useState(false);
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
 
+    const [payoutInput, setPayoutInput] = useState(85);
     const [targetCount, setTargetCount] = useState(40000);
+    const [extraBacktestSymbols, setExtraBacktestSymbols] = useState<string[]>([]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -111,6 +114,21 @@ function CryptoLabContent() {
             setChatInput('');
         }
     };
+
+    const handleRunBacktest = useCallback(async () => {
+        const uniqueSymbols = Array.from(new Set([...watchedSymbols, ...extraBacktestSymbols])).filter(s => !!s);
+        
+        if (uniqueSymbols.length === 0) {
+            toast({
+                title: "Ativos necessários",
+                description: "Selecione pelo menos um ativo para rodar o backtest.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        await runBacktest(uniqueSymbols, payoutInput, targetCount);
+    }, [runBacktest, watchedSymbols, extraBacktestSymbols, payoutInput, targetCount, toast]);
 
     const copyLogs = () => {
         const text = (filteredLogs as any[]).map((l: any) => `[${l.time}] ${l.message}`).join('\n');
@@ -640,3 +658,4 @@ export default function CryptoLabV4Page() {
         </DerivApiProvider>
     );
 }
+

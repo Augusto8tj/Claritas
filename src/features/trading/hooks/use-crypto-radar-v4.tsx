@@ -376,6 +376,9 @@ export function useCryptoRadarV4(
                     }
                     resilienceRef.current.processResult(sym, win);
                     
+                    // V5.8: Atualizar Edge Stats na sombra
+                    await updateRuleEdgeStats(user.uid, sym, trade.rule, trade.gravityState, win, pnl);
+
                     await TradeMemoryManager.addTrade(user.uid, sym, {
                         id: `shadow_${trade.id}`,
                         timestamp: trade.entryTs || Date.now(),
@@ -396,6 +399,46 @@ export function useCryptoRadarV4(
 
         return () => clearInterval(settleInterval);
     }, [user, isShadowMode, addLog]);
+
+    const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
+        if (!content.trim() || !ollamaConfig) return;
+        const time = new Date().toLocaleTimeString();
+        setChatMessages(prev => [...prev, { role: 'user', content, time }]);
+        setIsChatLoading(true);
+
+        try {
+            const context = buildShortContext({ 
+                sentinel: radarStatus, 
+                lastDecisions: lastDecisionBySymbolRef.current, 
+                staleMinutes,
+                financialState: { pnl: sessionStats.pnl, floor: lockedProfitFloor, balance: accountBalance.balance || 0 }
+            });
+
+            const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
+            const systemPrompt = `VOCÊ É UNICAMENTE ${persona.toUpperCase()}. RESPONDA EXCLUSIVAMENTE NESTE PAPEL. Responda em português do Brasil.
+
+DIRETRIZES RÍGIDAS DE DADOS (V5.3):
+1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
+2. PROIBIDO ALUCINAR: Nunca invente ativos (como 'Ativo A') ou preços (como '$100').
+3. Se um valor não estiver no dossier, diga "Dados Não Disponíveis no Snapshot".
+4. Baseie seu rigor de risco no P&L de $${sessionStats.pnl.toFixed(2)} e no Piso de $${lockedProfitFloor.toFixed(2)}.
+
+${context}`;
+
+            const response = await getOllamaResponse(ollamaConfig, content, [
+                { role: 'system', content: systemPrompt }, 
+                ...chatMessages.slice(-8).map((m: any) => ({ role: m.role, content: m.content }))
+            ]);
+
+            if (response.success) {
+                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
+            }
+        } catch (error: any) {
+            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
+        } finally {
+            setIsChatLoading(false);
+        }
+    };
 
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
@@ -501,7 +544,7 @@ export function useCryptoRadarV4(
                 const freshCandles = getCandlesFor(symbol);
                 const currentSpot = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
 
-                // V5.6: Alpha Decay Guard
+                // Alpha Decay Guard (Etapa 5.6)
                 if (!isManual && decision.t2tLatencyMs > 4000) {
                     addLog(`[ALPHA-DECAY] ${symbol}: Latência LLM excessiva (${decision.t2tLatencyMs}ms) para contrato de 15s. Abortando execução.`, 'warning', undefined, symbol);
                     executionLockRef.current = false;
