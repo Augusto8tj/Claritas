@@ -118,6 +118,10 @@ export interface RuleEdgeStats {
   avgLoss: number;
   profitFactor: number;
   maxDrawdown: number;
+  // Campos Etapa 15
+  lastBacktestRate?: number;
+  driftBps?: number;
+  consistencyStatus?: 'CONSISTENTE' | 'DEGRADAÇÃO' | 'RECALIBRAR';
 }
 
 export interface CouncilStats {
@@ -164,4 +168,22 @@ export interface CryptoShadowTrade {
   bbwAtEntry?: number;
   correlationAtEntry?: number;
   entropyAtEntry?: number;
+}
+
+export interface RuleCalibration {
+    zBtc: number;
+    zTargetMax: number;
+    corrMin: number;
+    horizon: number;
+    variant: 'A' | 'B';
+    suggestedDuration: number;
+    payoutAssumed: number;
+    verdict: string;
+    trainWinRate: number;
+    testWinRate: number;
+    n: number;
+    periodFrom: number;
+    periodTo: number;
+    symbols: string[];
+    timestamp: string;
 }

@@ -4,6 +4,7 @@
 /**
  * @fileOverview TERMINAL QUANT V4.2 - CRYPTO LAB (SUPREME EDITION)
  * V13: Integrado controle de Piloto Demo e Dashboard de Execução.
+ * V5.8: Calibração Lead-Lag e Telemetria Observed vs Expected.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -44,6 +45,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Asset, Operation } from '@/lib/types';
+import { buildPerformanceReport } from '@/features/trading/services/performance-report';
+import { buildLeadLagReport } from '@/features/trading/services/report-builders';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -59,9 +62,9 @@ function CryptoLabContent() {
     const v4 = useCryptoRadarV4(activeSymbol, priceTicks, chartData as any);
     
     const { 
-        lastDecision, reasoningLog, memoryBuffer, isAutoMode, toggleAutoMode, 
+        lastDecision, reasoningLog, isAutoMode, toggleAutoMode, 
         pilotMode, setPilotMode,
-        isShadowMode, toggleShadowMode, radarStatus, telemetry, sendMessage, 
+        radarStatus, telemetry, sendMessage, 
         isChatLoading, chatMessages, strategicProfile, setStrategicProfile,
         confidenceThreshold, setConfidenceThreshold, analysisInterval, setAnalysisInterval, 
         resilience, stakeValue, setStakeValue,
@@ -69,21 +72,18 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, backtest, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        resetSession, sessionStats, lockedProfitFloor
+        resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
 
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
-    const [isBacktestSelectorOpen, setIsBacktestSelectorOpen] = useState(false);
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
     const [expandedLogTs, setExpandedLogTs] = useState<string | null>(null);
     const [chatInput, setChatInput] = useState('');
     const [chatTarget, setChatTarget] = useState('CHAIRMAN');
 
-    const [payoutInput, setPayoutInput] = useState(85);
     const [targetCount, setTargetCount] = useState(40000);
-    const [extraBacktestSymbols, setExtraBacktestSymbols] = useState<string[]>([]);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -111,30 +111,6 @@ function CryptoLabContent() {
             setChatInput('');
         }
     };
-
-    const handleRunBacktest = useCallback(async () => {
-        const uniqueSymbols = Array.from(new Set([...watchedSymbols, ...extraBacktestSymbols])).filter(s => !!s);
-        
-        if (uniqueSymbols.length === 0) {
-            toast({
-                title: "Ativos necessários",
-                description: "Selecione pelo menos um ativo para rodar o backtest.",
-                variant: "destructive"
-            });
-            return;
-        }
-
-        await runBacktest(uniqueSymbols, payoutInput, targetCount);
-        
-        // Verificação de resultados após a conclusão
-        if (Object.keys(backtest.merged).length === 0) {
-            toast({
-                title: "Backtest sem resultados",
-                description: "Nenhum dado estatístico foi gerado. Verifique os ativos selecionados.",
-                variant: "destructive"
-            });
-        }
-    }, [runBacktest, watchedSymbols, extraBacktestSymbols, payoutInput, targetCount, toast, backtest.merged]);
 
     const copyLogs = () => {
         const text = (filteredLogs as any[]).map((l: any) => `[${l.time}] ${l.message}`).join('\n');
@@ -194,20 +170,18 @@ function CryptoLabContent() {
                                         {(assetGroups as any).map((group: AssetGroup) => (
                                             <CommandGroup key={group.label} heading={group.label}>
                                                 {group.options.map((asset: Asset) => (
-                                                    <CommandGroup key={asset.value}>
-                                                        <CommandItem
-                                                            key={asset.value}
-                                                            onSelect={() => {
-                                                                const newSymbols = watchedSymbols.includes(asset.value)
-                                                                    ? watchedSymbols.filter((s: string) => s !== asset.value)
-                                                                    : [...watchedSymbols, asset.value];
-                                                                setWatchedSymbols(newSymbols);
-                                                            }}
-                                                        >
-                                                            <Check className={cn("mr-2 h-4 w-4", watchedSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
-                                                            {asset.label}
-                                                        </CommandItem>
-                                                    </CommandGroup>
+                                                    <CommandItem
+                                                        key={asset.value}
+                                                        onSelect={() => {
+                                                            const newSymbols = watchedSymbols.includes(asset.value)
+                                                                ? watchedSymbols.filter((s: string) => s !== asset.value)
+                                                                : [...watchedSymbols, asset.value];
+                                                            setWatchedSymbols(newSymbols);
+                                                        }}
+                                                    >
+                                                        <Check className={cn("mr-2 h-4 w-4", watchedSymbols.includes(asset.value) ? "opacity-100" : "opacity-0")} />
+                                                        {asset.label}
+                                                    </CommandItem>
                                                 ))}
                                             </CommandGroup>
                                         ))}
@@ -226,7 +200,7 @@ function CryptoLabContent() {
                             const status = radarStatus[symbol];
                             const gravity = status?.gravity;
                             const isStable = resilience.checkStability(symbol);
-                            const rigor = resilience.thresholds[symbol] || 0.65;
+                            const rigor = resilience.thresholds[symbol] || (confidenceThreshold / 100);
                             const min = staleMinutes(symbol);
                             const isStale = min !== null && min > 2.5;
 
@@ -268,7 +242,7 @@ function CryptoLabContent() {
                                             </Badge>
                                         ) : (
                                             <Badge variant="outline" className="text-red-600 border-red-200 flex gap-1 items-center font-bold">
-                                                <ShieldX className="h-3 w-3" /> BLOQUEIO: N {"<"} 200
+                                                <ShieldX className="h-3 w-3" /> BLOQUEIO: RIGOR
                                             </Badge>
                                         )}
                                     </div>
@@ -290,7 +264,6 @@ function CryptoLabContent() {
                                             )}
                                         </div>
                                     )}
-                                    {isStale && <p className="text-[9px] text-muted-foreground mt-2 italic text-center">Último dado: {Math.round(min || 0)} min atrás</p>}
                                 </div>
                             );
                         })}
@@ -400,16 +373,15 @@ function CryptoLabContent() {
 
                             <Button onClick={toggleAutoMode} className={cn("w-full h-12 font-bold shadow-md", isAutoMode ? "bg-destructive text-white" : "bg-orange-600 text-white hover:bg-orange-700")}>
                                 {isAutoMode ? <PauseCircle className="mr-2 h-5 w-5" /> : <PlayCircle className="mr-2 h-5 w-5" />}
-                                {isAutoMode ? 'Parar Automação' : 'Ativar Piloto V13'}
+                                {isAutoMode ? 'Parar Automação' : 'Ativar Piloto V14'}
                             </Button>
                         </CardContent>
                     </Card>
 
-                    {/* CARD DO PILOTO ETAPA 13 */}
                     <Card className="bg-muted/30 border-orange-200 shadow-inner">
                         <CardHeader className="py-3 bg-orange-600/5 border-b border-orange-200">
                              <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-orange-700">
-                                <Shield className="h-3.5 w-3.5" /> Estatísticas do Piloto (Demo)
+                                <Shield className="h-3.5 w-3.5" /> Estatísticas do Piloto
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="p-4 space-y-3 text-[11px]">
@@ -418,198 +390,53 @@ function CryptoLabContent() {
                                 <Badge variant="outline" className="text-[10px] h-4 font-mono">0.12%</Badge>
                              </div>
                              <Separator className="opacity-50" />
-                             <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <p className="opacity-50 uppercase text-[9px]">Slippage Médio:</p>
-                                    <p className="text-xs font-bold text-orange-600">0.45 pips</p>
+                             {calibration ? (
+                                <div className="space-y-2">
+                                    <p className="text-primary font-bold uppercase text-[9px]">Calibração Ativa (V5.8):</p>
+                                    <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                        <span>zBtc: {calibration.zBtc}</span>
+                                        <span>zMax: {calibration.zTargetMax}</span>
+                                        <span>Corr: {calibration.corrMin}</span>
+                                        <span>WR (BT): {(calibration.testWinRate * 100).toFixed(1)}%</span>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className="opacity-50 uppercase text-[9px]">Latência Rede:</p>
-                                    <p className="text-xs font-bold text-orange-600">420ms</p>
-                                </div>
-                             </div>
-                             <div className="space-y-1.5 pt-2">
-                                <div className="flex justify-between">
-                                    <p className="opacity-50 uppercase text-[9px]">Wilson Interval (Demo):</p>
-                                    <span className="font-mono font-bold">[52% - 58%]</span>
-                                </div>
-                                <Progress value={55} className="h-1 bg-orange-200" indicatorClassName="bg-orange-600" />
-                             </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="bg-slate-950 text-slate-300 border-slate-800 shadow-xl overflow-hidden font-mono">
-                        <CardHeader className="py-3 bg-slate-900 border-b border-slate-800">
-                             <CardTitle className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2 text-cyan-500 w-full">
-                                <Gauge className="h-3.5 w-3.5" />
-                                <span className="shrink-0">Hardware Node:</span>
-                                <div className="flex-1 flex items-center gap-2">
-                                    <Select 
-                                        value={ollamaConfig?.model || ""} 
-                                        onValueChange={(val) => {
-                                            if (val !== "none") updateOllamaConfig({ model: val });
-                                        }}
-                                    >
-                                        <SelectTrigger className="h-6 bg-slate-900 border-slate-700 text-[10px] font-mono hover:bg-slate-800 transition-colors py-0 px-2 flex-1">
-                                            <SelectValue placeholder="Model..." />
-                                        </SelectTrigger>
-                                        <SelectContent className="bg-slate-950 border-slate-800 text-slate-300">
-                                            {(availableModels as any[]).length > 0 ? (
-                                                availableModels.map((m: any) => (
-                                                    <SelectItem key={m.name} value={m.name} className="text-[10px] font-mono">
-                                                        {m.name}
-                                                    </SelectItem>
-                                                ))
-                                            ) : (
-                                                <SelectItem value="none" disabled>Nenhum modelo</SelectItem>
-                                            )}
-                                        </SelectContent>
-                                    </Select>
-                                    <Button 
-                                        variant="ghost" 
-                                        size="icon" 
-                                        className="h-6 w-6 text-cyan-500 hover:text-cyan-400 hover:bg-slate-800" 
-                                        onClick={fetchAvailableModels}
-                                        title="Sincronizar"
-                                    >
-                                        <RefreshCw className="h-3 w-3" />
-                                    </Button>
-                                </div>
-                            </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-4 space-y-4 text-[11px]">
-                             <div className="space-y-2">
-                                <div className="flex justify-between">
-                                    <span className="opacity-60 uppercase">TPS Intensity:</span>
-                                    <span className={cn("font-bold", telemetry.avgTokensPerSec > 40 ? "text-green-500" : "text-orange-500")}>
-                                        {telemetry.avgTokensPerSec.toFixed(1)} <span className="text-[9px]">TOK/S</span>
-                                    </span>
-                                </div>
-                                <Progress value={telemetry.avgTokensPerSec * 2} className="h-1 bg-slate-800" indicatorClassName="bg-cyan-500" />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3 border-t border-slate-800 pt-3">
-                                <div className="space-y-1">
-                                    <p className="opacity-50 uppercase text-[9px]">Consensus Entropy:</p>
-                                    <p className={cn("text-xs font-bold", telemetry.consensusEntropy < 0.4 ? "text-green-500" : "text-red-500")}>
-                                        {telemetry.consensusEntropy.toFixed(3)}
-                                    </p>
-                                </div>
-                                <div className="space-y-1">
-                                    <p className="opacity-50 uppercase text-[9px]">Cycle Jitter:</p>
-                                    <p className="text-xs font-bold text-slate-100">{telemetry.jitterMs}ms</p>
-                                </div>
-                            </div>
+                             ) : (
+                                <p className="text-destructive font-black text-[9px] animate-pulse uppercase">⚠️ Sistema não calibrado</p>
+                             )}
                         </CardContent>
                     </Card>
 
                     <Card className="bg-card/50 border-border shadow-sm">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm font-bold uppercase tracking-widest text-muted-foreground flex items-center gap-2">
-                                <ShieldAlert className="h-4 w-4 text-orange-600" /> Governança de Risco & Sessão
+                                <ShieldAlert className="h-4 w-4 text-orange-600" /> Governança de Risco
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-6">
-                            {/* Alvos e Limites com Controle Incremental */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-2">
                                     <Label className="text-[10px] uppercase font-black text-muted-foreground flex items-center gap-1">
-                                        <Target className="h-3 w-3" /> Banca do Dia (USD)
+                                        <Target className="h-3 w-3" /> Banca (USD)
                                     </Label>
-                                    <div className="flex items-center gap-1">
-                                        <Button 
-                                            variant="outline" size="icon" className="h-8 w-8" 
-                                            onClick={() => setDailyBalance(Math.max(10, dailyBalance - 10))}
-                                            disabled={isAutoMode}
-                                        >
-                                            <Minus className="h-3 w-3" />
-                                        </Button>
-                                        <Input 
-                                            type="number" 
-                                            value={dailyBalance} 
-                                            onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 10)} 
-                                            className="h-8 font-mono text-xs text-center" 
-                                            disabled={isAutoMode} 
-                                        />
-                                        <Button 
-                                            variant="outline" size="icon" className="h-8 w-8" 
-                                            onClick={() => setDailyBalance(dailyBalance + 10)}
-                                            disabled={isAutoMode}
-                                        >
-                                            <Plus className="h-3 w-3" />
-                                        </Button>
-                                    </div>
+                                    <Input 
+                                        type="number" 
+                                        value={dailyBalance} 
+                                        onChange={(e) => setDailyBalance(parseFloat(e.target.value) || 10)} 
+                                        className="h-8 font-mono text-xs text-center" 
+                                        disabled={isAutoMode} 
+                                    />
                                 </div>
                                 <div className="space-y-2">
                                     <Label className="text-[10px] uppercase font-black text-muted-foreground flex items-center gap-1">
-                                        <TrendingUp className="h-3 w-3" /> Meta de Lucro (USD)
+                                        <TrendingUp className="h-3 w-3" /> Meta (USD)
                                     </Label>
-                                    <div className="flex items-center gap-1">
-                                        <Button 
-                                            variant="outline" size="icon" className="h-8 w-8" 
-                                            onClick={() => setDailyTarget(Math.max(5, dailyTarget - 5))}
-                                            disabled={isAutoMode}
-                                        >
-                                            <Minus className="h-3 w-3" />
-                                        </Button>
-                                        <Input 
-                                            type="number" 
-                                            value={dailyTarget} 
-                                            onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 5)} 
-                                            className="h-8 font-mono text-xs text-center" 
-                                            disabled={isAutoMode} 
-                                        />
-                                        <Button 
-                                            variant="outline" size="icon" className="h-8 w-8" 
-                                            onClick={() => setDailyTarget(dailyTarget + 5)}
-                                            disabled={isAutoMode}
-                                        >
-                                            <Plus className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <Separator className="opacity-50" />
-
-                            {/* Progressão de Metas */}
-                            <div className="space-y-3">
-                                <div className="space-y-1.5">
-                                    <div className="flex justify-between text-[10px] uppercase font-bold">
-                                        <span className="text-muted-foreground">Progresso da Meta</span>
-                                        <span className="text-green-600">{Math.max(0, (sessionStats.pnl / dailyTarget) * 100).toFixed(1)}%</span>
-                                    </div>
-                                    <Progress value={Math.max(0, (sessionStats.pnl / dailyTarget) * 100)} className="h-1.5 bg-muted" indicatorClassName="bg-green-500" />
-                                </div>
-                                <div className="space-y-1.5">
-                                    <div className="flex justify-between text-[10px] uppercase font-bold">
-                                        <span className="text-muted-foreground">Drawdown do Dia</span>
-                                        <span className="text-red-600">{Math.min(100, Math.max(0, (Math.abs(Math.min(0, sessionStats.pnl)) / dailyBalance) * 100)).toFixed(1)}%</span>
-                                    </div>
-                                    <Progress value={Math.min(100, (Math.abs(Math.min(0, sessionStats.pnl)) / dailyBalance) * 100)} className="h-1.5 bg-muted" indicatorClassName="bg-red-500" />
-                                </div>
-                            </div>
-
-                            {/* Estatísticas e Reset */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-3 rounded-xl bg-muted/20 border border-border/50 flex flex-col items-center justify-center">
-                                    <p className="text-[10px] text-muted-foreground uppercase font-black tracking-tighter mb-1">Win Rate</p>
-                                    <div className="flex items-baseline gap-1">
-                                        <span className={cn("text-xl font-black", (sessionStats.winRate ?? 0) >= 50 ? "text-green-600" : "text-red-600")}>
-                                            {sessionStats.winRate === null ? '—' : `${sessionStats.winRate.toFixed(1)}%`}
-                                        </span>
-                                    </div>
-                                    <p className="text-[9px] opacity-60 font-mono">{sessionStats.total} trades total</p>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                    <Button 
-                                        variant="outline" 
-                                        className="flex-1 h-full flex flex-col gap-1 py-2 border-destructive/20 text-destructive hover:bg-destructive/10 transition-all rounded-xl"
-                                        onClick={resetSession}
-                                    >
-                                        <RefreshCw className="h-4 w-4" />
-                                        <span className="text-[10px] font-black uppercase">Reset Lab</span>
-                                    </Button>
+                                    <Input 
+                                        type="number" 
+                                        value={dailyTarget} 
+                                        onChange={(e) => setDailyTarget(parseFloat(e.target.value) || 5)} 
+                                        className="h-8 font-mono text-xs text-center" 
+                                        disabled={isAutoMode} 
+                                    />
                                 </div>
                             </div>
                             
@@ -617,7 +444,7 @@ function CryptoLabContent() {
                                 <Alert className="bg-green-600/10 border-green-600/20 py-2">
                                     <Lock className="h-3 w-3 text-green-600" />
                                     <AlertDescription className="text-[10px] font-bold text-green-700 uppercase">
-                                        Lucro Protegido: {formatCurrency(lockedProfitFloor)} (Piso Ativo)
+                                        Piso Protegido: {formatCurrency(lockedProfitFloor)}
                                     </AlertDescription>
                                 </Alert>
                             )}
@@ -651,25 +478,13 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    {/* DIÁLOGO TÁTICO COM O CONSELHO */}
                     <Card className="bg-card border-border h-[400px] flex flex-col shadow-sm">
                         <CardHeader className="py-3 border-b border-border bg-orange-50/10">
                             <div className="flex items-center justify-between">
                                 <CardTitle className="text-sm flex items-center gap-2 text-orange-700">
                                     <MessageSquare className="h-4 w-4 text-orange-600" />
-                                    Diálogo Tático com o Conselho
+                                    Interface de Diálogo Tático
                                 </CardTitle>
-                                <Select value={chatTarget} onValueChange={setChatTarget}>
-                                    <SelectTrigger className="h-7 w-[160px] text-[10px] font-bold uppercase border-orange-200">
-                                        <SelectValue placeholder="Personagem" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="CHAIRMAN">Chairman (Síntese)</SelectItem>
-                                        <SelectItem value="MOMENTUM">Quant Momentum</SelectItem>
-                                        <SelectItem value="RISK_CRITIC">Risk Critic</SelectItem>
-                                        <SelectItem value="ARCHIVIST">Pattern Archivist</SelectItem>
-                                    </SelectContent>
-                                </Select>
                             </div>
                         </CardHeader>
                         <CardContent className="flex-1 overflow-hidden p-0 relative bg-muted/5">
@@ -678,7 +493,7 @@ function CryptoLabContent() {
                                     {(chatMessages as any[]).length === 0 && (
                                         <div className="text-center py-10 opacity-30">
                                             <Brain className="h-10 w-10 mx-auto mb-2 text-orange-600"/>
-                                            <p className="text-xs font-mono">Conselho em prontidão operacional.</p>
+                                            <p className="text-xs font-mono">Aguardando comando institucional.</p>
                                         </div>
                                     )}
                                     {(chatMessages as any[]).map((msg: any, i: number) => (
@@ -686,35 +501,16 @@ function CryptoLabContent() {
                                             "flex flex-col max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed border shadow-sm",
                                             msg.role === 'user' ? "bg-primary/10 ml-auto border-primary/20" : "bg-card mr-auto border-border"
                                         )}>
-                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50 flex items-center gap-2">
-                                                {msg.role === 'user' ? 'COMANDO' : (msg.agentName || 'CONSELHO')} • {msg.time}
+                                            <span className="font-bold uppercase text-[9px] mb-1 opacity-50">
+                                                {msg.role === 'user' ? 'OPERADOR' : (msg.agentName || 'CIO')} • {msg.time}
                                             </span>
                                             {msg.role === 'assistant' ? renderMessageContent(msg.content) : <p className="font-mono whitespace-pre-wrap">{msg.content}</p>}
                                         </div>
                                     ))}
-                                    {isChatLoading && (
-                                        <div className="flex items-center gap-2 text-orange-600 animate-pulse font-mono p-3">
-                                            <RefreshCw className="h-3 w-3 animate-spin"/> {chatTarget} está processando...
-                                        </div>
-                                    )}
                                     <div ref={messagesEndRef} />
                                 </div>
                             </ScrollArea>
                         </CardContent>
-                        <CardFooter className="p-3 border-t border-border">
-                            <form onSubmit={handleChatSubmit} className="flex w-full gap-2">
-                                <Input 
-                                    value={chatInput}
-                                    onChange={(e) => setChatInput(e.target.value)}
-                                    placeholder={`Falar com ${chatTarget.toLowerCase()}...`}
-                                    className="bg-background border-border h-9 text-xs"
-                                    disabled={isChatLoading}
-                                />
-                                <Button type="submit" size="icon" className="h-9 w-9 bg-orange-600 hover:bg-orange-700" disabled={isChatLoading || !chatInput.trim()}>
-                                    <Send className="h-4 w-4 text-white" />
-                                </Button>
-                            </form>
-                        </CardFooter>
                     </Card>
                 </div>
 
@@ -736,10 +532,9 @@ function CryptoLabContent() {
                                     )}>
                                         <p className="text-[10px] uppercase font-bold mb-1 opacity-70">Consenso ({lastDecision.executedVia})</p>
                                         <p className="text-3xl font-black">{lastDecision.finalAction}</p>
-                                        <p className="text-xs mt-2 font-mono font-bold">Certainty: {lastDecision.consensusConfidence}%</p>
+                                        <p className="text-xs mt-2 font-mono font-bold">Confiança: {lastDecision.consensusConfidence}%</p>
                                     </div>
-                                    <div className="bg-muted/30 p-2 rounded border text-[10px] text-center uppercase font-bold flex items-center justify-center gap-2">
-                                        <Zap className="h-3 w-3 text-orange-600" />
+                                    <div className="bg-muted/30 p-2 rounded border text-[10px] text-center uppercase font-bold">
                                         Motor: {lastDecision.recommendedContract}
                                     </div>
                                     <Button onClick={v4.executeManualDecision} className="w-full bg-orange-600 text-white font-bold" disabled={!lastDecision || lastDecision.finalAction === 'HOLD'}>
@@ -755,52 +550,53 @@ function CryptoLabContent() {
                         </CardContent>
                     </Card>
 
-                    <Card className="border-orange-200 bg-orange-50/5 shadow-sm">
-                        <CardHeader className="py-3 border-b flex flex-row items-center justify-between space-y-0">
-                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-orange-600 flex items-center gap-2">
-                                <TestTube className="h-4 w-4" /> Backtest das regras (1m)
+                    <Card className="border-purple-600 shadow-sm bg-purple-50/5">
+                        <CardHeader className="py-3 border-b flex flex-row items-center justify-between">
+                            <CardTitle className="text-xs font-bold uppercase tracking-widest text-purple-700 flex items-center gap-2">
+                                <TestTube className="h-4 w-4" /> Aprendizado Lead-Lag
                             </CardTitle>
-                            {Object.keys(backtest.merged).length > 0 && (
-                                <Button variant="ghost" size="icon" className="h-6 w-6 text-orange-600" onClick={() => { const report = buildBacktestReport(); navigator.clipboard.writeText(report); toast({ title: "Relatório Copiado" }); }}>
-                                    <Copy className="h-3.5 w-3.5" />
-                                </Button>
-                            )}
                         </CardHeader>
                         <CardContent className="p-4 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Payout (%)</Label>
-                                    <Input 
-                                        type="number" 
-                                        value={payoutInput} 
-                                        onChange={(e) => setPayoutInput(Number(e.target.value))}
-                                        className="h-8 text-xs font-mono"
-                                        min={50} max={100}
-                                    />
-                                </div>
-                                <div className="space-y-1">
-                                    <Label className="text-[10px] uppercase font-bold text-muted-foreground">Candles por ativo</Label>
-                                    <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
-                                        <SelectTrigger className="h-8 text-xs font-mono">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem value="20000">20k</SelectItem>
-                                            <SelectItem value="40000">40k</SelectItem>
-                                            <SelectItem value="50000">50k</SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                </div>
+                            <div className="space-y-2">
+                                <Label className="text-[10px] uppercase font-bold text-muted-foreground">Candles por ativo</Label>
+                                <Select value={String(targetCount)} onValueChange={v => setTargetCount(Number(v))}>
+                                    <SelectTrigger className="h-8 text-xs font-mono">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="20000">20k</SelectItem>
+                                        <SelectItem value="40000">40k</SelectItem>
+                                        <SelectItem value="60000">60k</SelectItem>
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <Button 
-                                onClick={handleRunBacktest} 
+                                onClick={() => runLeadLagBacktest(targetCount)} 
                                 disabled={backtest.running}
                                 size="sm"
-                                className="w-full h-8 bg-orange-600 text-white font-bold"
+                                className="w-full h-8 bg-purple-600 text-white font-bold"
                             >
-                                {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar backtest"}
+                                {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar Lead-Lag BT"}
                             </Button>
-                            {backtest.progress && <p className="text-[10px] text-center text-orange-600 animate-pulse font-bold uppercase">{backtest.progress}</p>}
+                            
+                            {backtest.leadLagReport && (
+                                <div className="mt-4 p-3 bg-white rounded border border-purple-200">
+                                    <p className="text-xs font-bold text-purple-700 mb-1">Veredito V5.8:</p>
+                                    <p className="text-sm font-black uppercase">{backtest.leadLagReport.horizons[0].veredito}</p>
+                                    <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="w-full h-7 mt-2 text-[10px] font-bold text-purple-600 border border-purple-100"
+                                        onClick={() => {
+                                            const report = buildLeadLagReport(backtest.leadLagReport);
+                                            navigator.clipboard.writeText(report);
+                                            toast({ title: "Relatório Copiado!" });
+                                        }}
+                                    >
+                                        <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
+                                    </Button>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
 
@@ -809,59 +605,25 @@ function CryptoLabContent() {
                             <CardTitle className="text-[10px] flex items-center gap-2 uppercase tracking-widest font-bold text-muted-foreground">
                                 <TerminalIcon className="h-3 w-3" /> Reasoning Engine
                             </CardTitle>
-                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs} title="Copiar log">
+                            <Button variant="ghost" size="icon" className="h-6 w-6 text-muted-foreground hover:text-primary" onClick={copyLogs}>
                                 <Copy className="h-3.5 w-3.5" />
                             </Button>
                         </CardHeader>
-                        <div className="bg-card/30 px-4 py-2 border-b flex flex-col gap-2">
-                             <div className="flex flex-wrap gap-2 text-[9px] font-mono text-muted-foreground leading-tight">
-                                <span>{councilStats.total} evals</span>
-                                <span>| HOLD {councilStats.total > 0 ? Math.round(councilStats.hold/councilStats.total*100) : 0}%</span>
-                                <span>| CALL {councilStats.call}</span>
-                                <span>| PUT {councilStats.put}</span>
-                                <span>| vetos {councilStats.vetoes}</span>
-                                <span>| {(councilStats.avgLatencyMs/1000).toFixed(1)}s/ativo</span>
-                             </div>
-                             <div className="flex gap-2">
-                                {['all', 'decision', 'sentinel', 'execution', 'error'].map((f: any) => (
-                                    <Badge 
-                                        key={f} 
-                                        variant={logFilter === f ? 'default' : 'outline'} 
-                                        className="text-[8px] cursor-pointer h-4 px-1.5 uppercase font-black tracking-tighter"
-                                        onClick={() => setLogFilter(f as any)}
-                                    >
-                                        {f === 'decision' ? 'Conselho' : f === 'sentinel' ? 'Sentinela' : f === 'execution' ? 'Execução' : f === 'error' ? 'Erros' : 'Todos'}
-                                    </Badge>
-                                ))}
-                             </div>
-                        </div>
                         <CardContent className="p-0 flex-1 overflow-hidden relative">
                             <ScrollArea className="h-full p-4 text-[10px]">
-                                {(filteredLogs as any[]).length === 0 ? (
-                                    <p className="animate-pulse text-muted-foreground italic">Aguardando auditoria...</p>
-                                ) : (
-                                    (filteredLogs as any[]).map((log: any) => (
-                                        <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
-                                            <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
-                                                <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
-                                                {log.symbol && <Badge variant="outline" className="text-[8px] h-3 px-1 border-orange-200 text-orange-600">{log.symbol}</Badge>}
-                                                <span className={cn(
-                                                    "font-medium break-words",
-                                                    log.type === 'decision' ? "text-orange-600 font-bold" : 
-                                                    log.type === 'execution' ? "text-green-600 font-bold" : 
-                                                    log.type === 'sentinel' ? "text-blue-500" :
-                                                    (log.type === 'error' || log.type === 'warning') ? "text-red-600" : "text-muted-foreground"
-                                                )}>{log.message}</span>
-                                                {log.details && (log.details as any[]).length > 0 && <ChevronsUpDown className={cn("h-2.5 w-2.5 transition-transform opacity-30 group-hover:opacity-100", expandedLogTs === log.ts && "rotate-180")} />}
-                                            </div>
-                                            {expandedLogTs === log.ts && log.details && (
-                                                <div className="mt-1 py-1 px-2 bg-muted/40 rounded border-l border-orange-200 font-mono text-[9px] text-muted-foreground whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-1">
-                                                    {(log.details as any[]).join('\n')}
-                                                </div>
-                                            )}
+                                {(filteredLogs as any[]).map((log: any) => (
+                                    <div key={log.ts} className="mb-1.5 border-l-2 border-orange-500/30 pl-2">
+                                        <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setExpandedLogTs(expandedLogTs === log.ts ? null : log.ts)}>
+                                            <span className="opacity-40 shrink-0">[{log.time}]</span>{' '}
+                                            <span className={cn(
+                                                "font-medium break-words",
+                                                log.type === 'decision' ? "text-orange-600 font-bold" : 
+                                                log.type === 'execution' ? "text-green-600 font-bold" : 
+                                                (log.type === 'error' || log.type === 'warning') ? "text-red-600" : "text-muted-foreground"
+                                            )}>{log.message}</span>
                                         </div>
-                                    ))
-                                )}
+                                    </div>
+                                ))}
                             </ScrollArea>
                         </CardContent>
                     </Card>

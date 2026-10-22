@@ -5,6 +5,7 @@ import { useState, useRef, useCallback } from 'react';
 import type { CandleData } from '@/lib/types';
 import { backtestCandlesAsync, mergeStats, type RuleReport } from '../services/backtest';
 import { groupOf } from '../services/report-builders';
+import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -16,6 +17,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         perAsset: Record<string, { recent: RuleReport[], older?: RuleReport[] }>;
         assetCounts: Record<string, number>;
         assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }>;
+        leadLagReport?: any;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -126,5 +128,26 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest };
+    const runLeadLagBacktest = async (targetCount = 40000) => {
+        if (runningRef.current) return;
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Baixando Cluster BTC/ETH...' }));
+        
+        try {
+            const btc = await fetchCandlesPaged('cryBTCUSD', targetCount, (msg) => setBacktest(prev => ({ ...prev, progress: msg })));
+            const eth = await fetchCandlesPaged('cryETHUSD', targetCount, (msg) => setBacktest(prev => ({ ...prev, progress: msg })));
+            
+            setBacktest(prev => ({ ...prev, progress: 'Calculando Lead-Lag Walk-Forward...' }));
+            const report = await runLLLogic(btc, eth);
+            
+            setBacktest(prev => ({ ...prev, leadLagReport: report, running: false, progress: '' }));
+        } catch (e) {
+            console.error(e);
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest };
 }

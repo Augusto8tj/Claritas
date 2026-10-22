@@ -6,6 +6,7 @@
  * beta dinâmico e Lead-Lag Arbitrage entre cryBTCUSD e o cluster de Altcoins.
  * V13: Hardening numérico e refino de Lag no Slingshot.
  * V5.7: Garantia de alinhamento dropForming no fallback.
+ * V5.8: Correção do Bug de Ponto Cego (Correlação pré-evento).
  */
 
 // ============================================================================
@@ -44,6 +45,7 @@ export type BitcoinGravity = BitcoinGravityResult;
 // Constantes de Calibração Institucional
 export const Z_THRESHOLD_BTC = 1.8;
 export const Z_THRESHOLD_TARGET = 1.0;
+export const CORR_MIN_DEFAULT = 0.65;
 
 // ============================================================================
 // 2. MATH UTILITIES
@@ -125,11 +127,31 @@ function calculateZScoreFromReturns(returns: number[]): number {
 // 3. CORE ENGINE
 // ============================================================================
 
+/**
+ * Função Pura para avaliação de Slingshot (V5.8)
+ * Garante paridade entre o Live e o Backtest.
+ */
+export function evaluateSlingshot(
+    metrics: { correlation: number; zBtc: number; zTarget: number },
+    thresholds = { zBtc: Z_THRESHOLD_BTC, zTargetMax: Z_THRESHOLD_TARGET, corrMin: CORR_MIN_DEFAULT }
+): boolean {
+    const { correlation, zBtc, zTarget } = metrics;
+    const { zBtc: tBtc, zTargetMax: tTarget, corrMin: tCorr } = thresholds;
+
+    return (
+        correlation >= tCorr &&
+        Math.abs(zBtc) >= tBtc &&
+        Math.abs(zTarget) <= tTarget &&
+        (Math.sign(zTarget) === Math.sign(zBtc) || Math.abs(zTarget) < 0.35)
+    );
+}
+
 export function calculateBitcoinGravity(
   btc: CryptoAssetFeatures,
   target: CryptoAssetFeatures,
   windowSize = 60,
-  dropForming = true
+  dropForming = true,
+  thresholds?: { zBtc: number; zTargetMax: number; corrMin: number }
 ): BitcoinGravityResult {
   
   // 1. Hardening: Proteção contra histórico insuficiente (V13)
@@ -170,18 +192,20 @@ export function calculateBitcoinGravity(
       }
   }
 
-  const btcReturns = getReturns(alignedBtc).slice(-windowSize);
-  const targetReturns = getReturns(alignedTarget).slice(-windowSize);
+  const btcReturnsFull = getReturns(alignedBtc).slice(-(windowSize + 1));
+  const targetReturnsFull = getReturns(alignedTarget).slice(-(windowSize + 1));
   
-  const correlation = calculatePearsonCorrelation(btcReturns, targetReturns);
-  const beta = calculateBeta(targetReturns, btcReturns);
+  // V5.8: CORREÇÃO DO PONTO CEGO
+  // Correlação e Beta medidos sobre a janela ANTERIOR ao sinal.
+  const btcReturnsStable = btcReturnsFull.slice(0, -1);
+  const targetReturnsStable = targetReturnsFull.slice(0, -1);
 
-  // 3. CÁLCULO DE Z-SCORES
-  const btcZHistory = dropForming ? btc.priceHistory.slice(0, -1) : btc.priceHistory;
-  const targetZHistory = dropForming ? target.priceHistory.slice(0, -1) : target.priceHistory;
-  
-  const zBtc = calculateZScoreFromReturns(getReturns(btcZHistory));
-  const zTarget = calculateZScoreFromReturns(getReturns(targetZHistory));
+  const correlation = calculatePearsonCorrelation(btcReturnsStable, targetReturnsStable);
+  const beta = calculateBeta(targetReturnsStable, btcReturnsStable);
+
+  // 3. CÁLCULO DE Z-SCORES (Usa o candle do sinal)
+  const zBtc = calculateZScoreFromReturns(btcReturnsFull);
+  const zTarget = calculateZScoreFromReturns(targetReturnsFull);
 
   // 4. DETECÇÃO DE EXPLOSÃO
   const isBtcExploding = btc.atrRatio > 1.5 || btc.bbw > 2.5;
@@ -193,13 +217,8 @@ export function calculateBitcoinGravity(
     else btcVector = btc.momentumMedium > 0 ? 'BULL_DRAG' : 'BEAR_DRAG';
   }
 
-  // 6. SLINGSHOT (Lead-Lag Arbitrage) - V5.7: Lag alinhamento fix
-  const slingshotDetected = 
-    correlation > 0.7 && 
-    Math.abs(zBtc) > Z_THRESHOLD_BTC && 
-    Math.abs(zTarget) < Z_THRESHOLD_TARGET && 
-    Math.sign(zBtc) === Math.sign(btc.momentumMedium) &&
-    (Math.sign(zTarget) === Math.sign(zBtc) || Math.abs(zTarget) < 0.35);
+  // 6. SLINGSHOT (Lead-Lag Arbitrage)
+  const slingshotDetected = evaluateSlingshot({ correlation, zBtc, zTarget }, thresholds);
 
   // 7. DIVERGENT STATE
   if (correlation > 0.7 && Math.abs(zBtc) > 0.2 && Math.abs(zTarget) > 0.2) {
@@ -213,7 +232,7 @@ export function calculateBitcoinGravity(
   if (btcVector === 'CHOP') gravityScore -= 30;
 
   let vetoReason: string | undefined;
-  if (correlation < 0.65) vetoReason = "DESACOPLAMENTO: Correlação < 0.65";
+  if (correlation < (thresholds?.corrMin ?? CORR_MIN_DEFAULT)) vetoReason = "DESACOPLAMENTO: Correlação < Limiar";
 
   // Hardening Numérico (Etapa 14)
   const finalCorrelation = Number.isFinite(correlation) ? correlation : 0;

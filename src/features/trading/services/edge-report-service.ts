@@ -40,7 +40,7 @@ export const getRuleEdgeStats = async (userId: string, rule: string, gravity: st
 };
 
 /**
- * Atualiza as estatísticas de vantagem de uma regra após liquidação. (Etapa 13)
+ * Atualiza as estatísticas de vantagem de uma regra após liquidação. (Etapa 14)
  * Utiliza Intervalo de Wilson para calcular o Lower Bound de acerto.
  */
 export const updateRuleEdgeStats = async (userId: string, symbol: string, rule: string, gravity: string, win: boolean, pnl: number) => {

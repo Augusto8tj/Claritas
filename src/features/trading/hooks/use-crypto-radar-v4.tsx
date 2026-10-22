@@ -6,6 +6,7 @@
  * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails, Payout Filter e HWM.
  * V5.6/V5.7: Alpha Decay Guard, Cálculo Real de EV (Veredito Institucional) e Resiliência Adaptativa.
  * V14: Hardening de Duração, Payout Dinâmico e Registro de Fechamento Automático.
+ * V5.8: Calibração Lead-Lag Walk-Forward e Bloqueio de Piloto Não-Calibrado.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -15,11 +16,11 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/features/auth/hooks/use-auth';
 import { TradeMemoryManager } from '../services/trade-memory-service';
 import { runCryptoCouncil } from '../services/crypto-council-engine';
-import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3 } from '../types/council';
+import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPermission, PortfolioRiskState, AllowedContractsV3, AllowedActionsV3, RuleCalibration } from '../types/council';
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { evaluateCryptoSignals, type CryptoSignalFeatures, SENTINEL_MIN_SCORE } from '../services/crypto-signal-engine';
-import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
+import { calculateBitcoinGravity, type BitcoinGravity, evaluateSlingshot } from '../services/crypto-gravity-engine';
 import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
@@ -30,6 +31,8 @@ import { checkGuardrails, DEFAULT_GUARDRAILS, parseDurationToSeconds } from '../
 import { logLiveTrade, updateLiveTradeResult } from '../services/live-trade-log';
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
+import { CalibrationService } from '../services/calibration-service';
+import { updateRuleEdgeStats } from '../services/edge-report-service';
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -116,7 +119,8 @@ export function useCryptoRadarV4(
         inferenceHealth: 100 
     });
 
-    // ETAPA 14: Registro de Trades Reais para atualização de resultados
+    const [calibration, setCalibration] = useState<RuleCalibration | null>(null);
+
     const [liveTradeRegistry, setLiveTradeRegistry] = useState<Record<number, string>>({});
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
@@ -148,7 +152,7 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
 
-    const { backtest, runBacktest } = useBacktestRunner(getHistoricalData);
+    const { backtest, runBacktest, runLeadLagBacktest } = useBacktestRunner(getHistoricalData);
 
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
@@ -175,7 +179,20 @@ export function useCryptoRadarV4(
     const operationsLogRef = useRef(operationsLog);
     useEffect(() => { operationsLogRef.current = operationsLog; }, [operationsLog]);
 
-    // ETAPA 14: Monitoramento de Fechamento de Trades Reais
+    // V5.8: CARREGA CALIBRAÇÃO AO INICIAR
+    useEffect(() => {
+        if (user) {
+            CalibrationService.get(user.uid).then(cal => {
+                if (cal) {
+                    setCalibration(cal);
+                    addLog(`[V5.8] Calibração carregada: zBtc=${cal.zBtc} | zMax=${cal.zTargetMax} | Corr=${cal.corrMin}`, 'info');
+                } else {
+                    addLog(`[V5.8] SISTEMA NÃO CALIBRADO. Usando limiares padrão.`, 'warning');
+                }
+            });
+        }
+    }, [user, addLog]);
+
     useEffect(() => {
         if (!user || !operationsLog.length || !Object.keys(liveTradeRegistry).length) return;
         
@@ -187,12 +204,19 @@ export function useCryptoRadarV4(
         finishedTrades.forEach(async (op) => {
             const docId = liveTradeRegistry[op.id];
             if (docId) {
+                const win = op.status === 'won';
+                const pnl = op.result || 0;
+                
                 await updateLiveTradeResult(user.uid, docId, {
-                    status: op.status === 'won' ? 'won' : 'lost',
-                    profit: op.result || 0,
+                    status: win ? 'won' : 'lost',
+                    profit: pnl,
                     exitSpot: op.exitPrice || 0,
                     closedTs: Date.now()
                 });
+
+                // V5.8: Atualizar Edge Stats com Payout Real
+                await updateRuleEdgeStats(user.uid, op.asset, 'LEADLAG_SLINGSHOT', 'BULL_DRAG', win, pnl);
+
                 setLiveTradeRegistry(prev => {
                     const next = { ...prev };
                     delete next[op.id];
@@ -249,24 +273,6 @@ export function useCryptoRadarV4(
         return Math.max(0.35, Number(finalStake.toFixed(2)));
     }, []);
 
-    useEffect(() => {
-        if (!user || !ollamaConfig.model) return;
-        
-        const loadCalibration = async () => {
-            const calRef = doc(db, 'users', user.uid, 'crypto_calibration', 'llm');
-            const snap = await getDoc(calRef);
-            if (snap.exists()) {
-                const data = snap.data();
-                const isFresh = (Date.now() - new Date(data.date).getTime()) < 14 * 24 * 3600 * 1000;
-                if (isFresh && data.model === ollamaConfig.model) {
-                    setConfidenceThreshold(data.limiar);
-                    addLog(`[V12] Limiar calibrado carregado: ${data.limiar}% (modelo: ${data.model})`, 'info');
-                }
-            }
-        };
-        loadCalibration();
-    }, [user, ollamaConfig.model, addLog]);
-
     const resetSession = useCallback(() => {
         setIsAutoMode(false);
         setIsShadowMode(true);
@@ -294,8 +300,6 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
-    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
-
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) resilience.recordPulse(activeSymbol);
     }, [priceTicks, activeSymbol, resilience]);
@@ -305,24 +309,6 @@ export function useCryptoRadarV4(
             if (watchedSymbols.includes(symbol)) resilience.recordPulse(symbol);
         });
     }, [multiAssetCandles, watchedSymbols, resilience]);
-
-    useEffect(() => {
-        const savedOllama = localStorage.getItem('ollamaConfig');
-        if (savedOllama) {
-            try { setOllamaConfig(JSON.parse(savedOllama)); } catch (e) {}
-        }
-    }, []);
-
-    useEffect(() => {
-        if (!initializedRef.current && isConnected) {
-            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
-            if (watchedSymbols.length === 0 || isSyntheticDefault) {
-                setWatchedSymbols(DEFAULT_CLUSTER);
-                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão.", "info");
-            }
-            initializedRef.current = true;
-        }
-    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog, DEFAULT_CLUSTER]);
 
     useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) dailyHighWaterMark.current = sessionStats.pnl;
@@ -393,46 +379,6 @@ export function useCryptoRadarV4(
         return () => clearInterval(settleInterval);
     }, [user, isShadowMode, addLog]);
 
-    const sendMessage = async (content: string, targetAgent: string = 'CHAIRMAN') => {
-        if (!content.trim() || !ollamaConfig) return;
-        const time = new Date().toLocaleTimeString();
-        setChatMessages(prev => [...prev, { role: 'user', content, time }]);
-        setIsChatLoading(true);
-
-        try {
-            const context = buildShortContext({ 
-                sentinel: radarStatus, 
-                lastDecisions: lastDecisionBySymbolRef.current, 
-                staleMinutes,
-                financialState: { pnl: sessionStats.pnl, floor: lockedProfitFloor, balance: accountBalance.balance || 0 }
-            });
-
-            const persona = (AGENT_PERSONAS as any)[targetAgent] || AGENT_PERSONAS.CHAIRMAN;
-            const systemPrompt = `VOCÊ É UNICAMENTE ${persona.toUpperCase()}. RESPONDA EXCLUSIVAMENTE NESTE PAPEL. Responda em português do Brasil.
-
-DIRETRIZES RÍGIDAS DE DADOS (V5.3):
-1. USE APENAS OS DADOS DO DOSSIER DE TELEMETRIA ABAIXO.
-2. PROIBIDO ALUCINAR: Nunca invente ativos (como 'Ativo A') ou preços (como '$100').
-3. Se um valor não estiver no dossier, diga "Dados Não Disponíveis no Snapshot".
-4. Baseie seu rigor de risco no P&L de $${sessionStats.pnl.toFixed(2)} e no Piso de $${lockedProfitFloor.toFixed(2)}.
-
-${context}`;
-
-            const response = await getOllamaResponse(ollamaConfig, content, [
-                { role: 'system', content: systemPrompt }, 
-                ...chatMessages.slice(-8).map((m: any) => ({ role: m.role, content: m.content }))
-            ]);
-
-            if (response.success) {
-                setChatMessages(prev => [...prev, { role: 'assistant', content: response.success!, time: new Date().toLocaleTimeString(), agentName: targetAgent }]);
-            }
-        } catch (error: any) {
-            setChatMessages(prev => [...prev, { role: 'assistant', content: `Erro: ${error.message}.`, time: new Date().toLocaleTimeString(), agentName: 'SISTEMA', isError: true }]);
-        } finally {
-            setIsChatLoading(false);
-        }
-    };
-
     const runAnalysisForSymbol = useCallback(async (symbol: string, candles: CandleData[], isManual: boolean = false) => {
         if (!isConnected || !user || !ollamaConfig || executionLockRef.current) return;
         const analysisStartTs = Date.now();
@@ -451,10 +397,11 @@ ${context}`;
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
-                    if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, baseFeats as any);
+                    if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, baseFeats as any, 60, true, calibration ? { zBtc: calibration.zBtc, zTargetMax: calibration.zTargetMax, corrMin: calibration.corrMin } : undefined);
                 }
             }
 
+            // V5.6: VETO GRAVITACIONAL PRÉ-LLM
             if (gravity) {
                 addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
                 if (symbol !== 'cryBTCUSD' && gravity.vetoReason) {
@@ -474,7 +421,6 @@ ${context}`;
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats as any, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             
-            // ETAPA 14: Todas as regras (incluindo Slingshot) devem respeitar SENTINEL_MIN_SCORE
             const bestCandidate = candidates
                 .filter((c: any) => c.direction !== 'NONE' && c.score >= SENTINEL_MIN_SCORE)
                 .sort((a: any, b: any) => b.score - a.score)[0];
@@ -538,7 +484,7 @@ ${context}`;
                 const freshCandles = getCandlesFor(symbol);
                 const currentSpot = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
 
-                // Alpha Decay Guard (Etapa 5.6)
+                // V5.6: Alpha Decay Guard
                 if (!isManual && decision.t2tLatencyMs > 4000) {
                     addLog(`[ALPHA-DECAY] ${symbol}: Latência LLM excessiva (${decision.t2tLatencyMs}ms) para contrato de 15s. Abortando execução.`, 'warning', undefined, symbol);
                     executionLockRef.current = false;
@@ -578,6 +524,13 @@ ${context}`;
                         correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
                     });
                 } else if (pilotMode === 'DEMO_LIVE') {
+                    // V5.8: BLOQUEIO DE PILOTO NÃO-CALIBRADO
+                    if (!calibration || calibration.verdict === 'SEM EDGE') {
+                        addLog(`[EXEC-ABORT] ${symbol}: Execução Demo Live bloqueada por falta de calibração válida.`, 'warning', undefined, symbol);
+                        executionLockRef.current = false;
+                        return;
+                    }
+
                     const guard = checkGuardrails(symbol, accountType, finalStake, operationsLog, staleMinutes(symbol));
                     if (!guard.allowed) { addLog(`[GUARDRAIL-BLOCK] ${symbol}: ${guard.reason}`, 'warning', undefined, symbol); executionLockRef.current = false; return; }
 
@@ -586,7 +539,6 @@ ${context}`;
                         const available = contractsRes.contracts_for?.available || [];
                         const callPuts = available.filter((c: any) => c.contract_category === 'callput');
                         
-                        // ETAPA 14: Escolha de duração unit-aware
                         let finalDurVal: number | null = null;
                         let finalDurUnit: DurationUnit | null = null;
                         let minFoundSec = Infinity;
@@ -606,7 +558,7 @@ ${context}`;
                         }
 
                         if (!finalDurVal || !finalDurUnit) {
-                            addLog(`[EXEC-ABORT] ${symbol}: Nenhuma duração temporal >= 15s disponível (apenas ticks?).`, 'warning', undefined, symbol);
+                            addLog(`[EXEC-ABORT] ${symbol}: Nenhuma duração temporal >= 15s disponível.`, 'warning', undefined, symbol);
                             executionLockRef.current = false;
                             return;
                         }
@@ -624,7 +576,6 @@ ${context}`;
                         if (propRes.error) throw new Error(propRes.error.message);
                         const actualPayout = (propRes.proposal.payout - propRes.proposal.ask_price) / propRes.proposal.ask_price;
                         
-                        // ETAPA 14: Uso do minPayout do Guardrails
                         if (actualPayout < DEFAULT_GUARDRAILS.minPayout) { 
                             addLog(`[EXEC-ABORT] ${symbol}: Payout ${(actualPayout*100).toFixed(1)}% < ${DEFAULT_GUARDRAILS.minPayout * 100}%`, 'warning', undefined, symbol); 
                             executionLockRef.current = false; 
@@ -688,7 +639,7 @@ ${context}`;
                 }
             }
         } catch (e: any) { addLog(`Erro V5 em ${symbol}: ${e.message}`, 'error'); } finally { executionLockRef.current = false; }
-    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast, backtest.payoutPct, liveTradeRegistry]);
+    }, [isConnected, user, ollamaConfig, isShadowMode, isAutoMode, activeSymbol, operationsLog, confidenceThreshold, strategicProfile, getCandlesFor, addLog, executeTrade, stakeValue, dailyBalance, maxConcurrentTrades, allowedContracts, allowedActions, staleMinutes, requireSentinelCandidate, pilotMode, accountType, getContractsFor, getProposal, lockedProfitFloor, calculateDynamicStake, resilience, toast, backtest.payoutPct, liveTradeRegistry, calibration]);
 
     const runMultiAssetCycle = useCallback(async () => {
         if (!isConnected || executionLockRef.current) return;
@@ -707,7 +658,7 @@ ${context}`;
                       const btcCandles = getCandlesFor('cryBTCUSD');
                       if (btcCandles.length >= 30) {
                           const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
-                          if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, feats as any);
+                          if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, feats as any, 60, true, calibration ? { zBtc: calibration.zBtc, zTargetMax: calibration.zTargetMax, corrMin: calibration.corrMin } : undefined);
                       }
                   }
                   const cryptoFeats: CryptoSignalFeatures = { ...feats as any, gravity, vwapDist: feats.bbPos };
@@ -730,7 +681,7 @@ ${context}`;
                 }
             }
         }
-    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, backgroundIntervalSec, isAutoMode, getCandlesFor, runAnalysisForSymbol]);
+    }, [isConnected, watchedSymbols, activeSymbol, analysisInterval, backgroundIntervalSec, isAutoMode, getCandlesFor, runAnalysisForSymbol, calibration]);
 
     useEffect(() => {
         const id = setInterval(runMultiAssetCycle, 5000);
@@ -754,8 +705,9 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
+        calibration,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };
 }

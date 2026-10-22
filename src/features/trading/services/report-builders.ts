@@ -3,6 +3,7 @@ import { SignalCandidate, SignalFeatures } from './signal-engine';
 import { CouncilDecision, CouncilStats } from '../types/council';
 import { RuleReport } from './backtest';
 import { Operation } from '@/lib/types';
+import { LeadLagReport } from './leadlag-backtest';
 
 /**
  * @fileOverview REPORT BUILDERS V5.3 (SUPREME EDITION - HYPER-DENSE TELEMETRY)
@@ -189,6 +190,30 @@ export function buildBacktestReport(params: {
     });
 
     return report;
+}
+
+/**
+ * Constrói relatório de backtest Lead-Lag (V5.8)
+ */
+export function buildLeadLagReport(report: LeadLagReport): string {
+    const now = new Date().toLocaleString('pt-BR');
+    let out = `[RELATÓRIO LEAD-LAG WALK-FORWARD V5.8]\n`;
+    out += `==================================================\n`;
+    out += `DATA: ${now} | N EVENTOS (TESTE): ${report.n}\n`;
+    out += `FREQUÊNCIA: ${report.eventsPerDay.toFixed(2)} eventos/dia\n\n`;
+
+    report.horizons.forEach(h => {
+        out += `>>> HORIZONTE: ${h.h} min | VARIANTE: ${h.variant}\n`;
+        out += `- Taxa Acerto: ${(h.rate * 100).toFixed(1)}% | IC95: [${(h.wilson[0] * 100).toFixed(0)}% - ${(h.wilson[1] * 100).toFixed(0)}%]\n`;
+        out += `- P-Valor: ${h.pValPermutation.toFixed(4)} (Adjusted: ${h.pValAdjusted.toFixed(4)})\n`;
+        out += `- Veredito: ${h.veredito}\n`;
+        if (h.variant === 'B' && h.veredito === 'SEM EDGE') {
+            out += `⚠️ ALERTA: O edge não sobrevive à latência (Variante B).\n`;
+        }
+        out += `--------------------------------------------------\n`;
+    });
+
+    return out;
 }
 
 /**
