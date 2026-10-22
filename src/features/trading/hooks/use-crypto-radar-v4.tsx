@@ -311,6 +311,24 @@ export function useCryptoRadarV4(
     }, [multiAssetCandles, watchedSymbols, resilience]);
 
     useEffect(() => {
+        const savedOllama = localStorage.getItem('ollamaConfig');
+        if (savedOllama) {
+            try { setOllamaConfig(JSON.parse(savedOllama)); } catch (e) {}
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!initializedRef.current && isConnected) {
+            const isSyntheticDefault = watchedSymbols.length === 5 && watchedSymbols.includes('1HZ10V');
+            if (watchedSymbols.length === 0 || isSyntheticDefault) {
+                setWatchedSymbols(DEFAULT_CLUSTER);
+                addLog("Cluster Institucional cryBTCUSD/cryETHUSD configurado como padrão.", "info");
+            }
+            initializedRef.current = true;
+        }
+    }, [isConnected, watchedSymbols, setWatchedSymbols, addLog, DEFAULT_CLUSTER]);
+
+    useEffect(() => {
         if (sessionStats.pnl > dailyHighWaterMark.current) dailyHighWaterMark.current = sessionStats.pnl;
         const profitRatio = sessionStats.pnl / dailyTarget;
         if (profitRatio >= 0.8) {
@@ -401,7 +419,6 @@ export function useCryptoRadarV4(
                 }
             }
 
-            // V5.6: VETO GRAVITACIONAL PRÉ-LLM
             if (gravity) {
                 addLog(`[RADAR] ${symbol} vs BTC: ${gravity.btcVector} | Corr: ${gravity.correlation.toFixed(3)} | SlingShot: ${gravity.slingshotDetected}`, 'radar', undefined, symbol);
                 if (symbol !== 'cryBTCUSD' && gravity.vetoReason) {

@@ -1,7 +1,7 @@
 // src/features/trading/services/crypto-gravity-engine.ts
 
 /**
- * @fileOverview CRYPTO GRAVITY ENGINE V5.3 (SUPREME)
+ * @fileOverview CRYPTO GRAVITY ENGINE V5.8 (SUPREME)
  * Motor matemático institucional para detecção de correlação líder, 
  * beta dinâmico e Lead-Lag Arbitrage entre cryBTCUSD e o cluster de Altcoins.
  * V13: Hardening numérico e refino de Lag no Slingshot.
