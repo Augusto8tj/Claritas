@@ -1,4 +1,3 @@
-// src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -20,11 +19,11 @@ import { CouncilDecision, TradeMemoryBuffer, CouncilTelemetry, AssetExecutionPer
 import { calculateAllIndicators } from '../services/indicator-service';
 import { initialCouncilStrategies } from '../services/council-strategies';
 import { evaluateCryptoSignals, type CryptoSignalFeatures, SENTINEL_MIN_SCORE } from '../services/crypto-signal-engine';
-import { calculateBitcoinGravity, type BitcoinGravity, evaluateSlingshot } from '../services/crypto-gravity-engine';
+import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto-gravity-engine';
 import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
-import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
+import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext, buildLeadLagReport } from '../services/report-builders';
 import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 import { buildAssetFeatures } from '../services/asset-features';
 import { checkGuardrails, DEFAULT_GUARDRAILS, parseDurationToSeconds } from '../services/pilot-guardrails';
@@ -32,7 +31,6 @@ import { logLiveTrade, updateLiveTradeResult } from '../services/live-trade-log'
 import { db } from '@/lib/firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { CalibrationService } from '../services/calibration-service';
-import { updateRuleEdgeStats } from '../services/edge-report-service';
 
 export interface ChatMessage {
     role: 'user' | 'assistant';
@@ -121,6 +119,7 @@ export function useCryptoRadarV4(
 
     const [calibration, setCalibration] = useState<RuleCalibration | null>(null);
 
+    // ETAPA 14: Registro de Trades Reais para atualização de resultados
     const [liveTradeRegistry, setLiveTradeRegistry] = useState<Record<number, string>>({});
 
     const addLog = useCallback((message: string, type: LogEntry['type'] = 'info', details?: string[], symbol?: string) => {
@@ -185,7 +184,7 @@ export function useCryptoRadarV4(
             CalibrationService.get(user.uid).then(cal => {
                 if (cal) {
                     setCalibration(cal);
-                    addLog(`[V5.8] Calibração carregada: zBtc=${cal.zBtc} | zMax=${cal.zTargetMax} | Corr=${cal.corrMin}`, 'info');
+                    addLog(`[V5.8] Calibração carregada: zBtc=${cal.zBtc} | zTargetMax=${cal.zTargetMax} | Corr=${cal.corrMin}`, 'info');
                 } else {
                     addLog(`[V5.8] SISTEMA NÃO CALIBRADO. Usando limiares padrão.`, 'warning');
                 }
@@ -193,6 +192,7 @@ export function useCryptoRadarV4(
         }
     }, [user, addLog]);
 
+    // ETAPA 14: Monitoramento de Fechamento de Trades Reais
     useEffect(() => {
         if (!user || !operationsLog.length || !Object.keys(liveTradeRegistry).length) return;
         
@@ -204,19 +204,12 @@ export function useCryptoRadarV4(
         finishedTrades.forEach(async (op) => {
             const docId = liveTradeRegistry[op.id];
             if (docId) {
-                const win = op.status === 'won';
-                const pnl = op.result || 0;
-                
                 await updateLiveTradeResult(user.uid, docId, {
-                    status: win ? 'won' : 'lost',
-                    profit: pnl,
+                    status: op.status === 'won' ? 'won' : 'lost',
+                    profit: op.result || 0,
                     exitSpot: op.exitPrice || 0,
                     closedTs: Date.now()
                 });
-
-                // V5.8: Atualizar Edge Stats com Payout Real
-                await updateRuleEdgeStats(user.uid, op.asset, 'LEADLAG_SLINGSHOT', 'BULL_DRAG', win, pnl);
-
                 setLiveTradeRegistry(prev => {
                     const next = { ...prev };
                     delete next[op.id];
@@ -300,6 +293,8 @@ export function useCryptoRadarV4(
         return { pnl: Number(pnl) || 0, winRate, total };
     }, [operationsLog]);
 
+    useEffect(() => { activeSymbolRef.current = activeSymbol; }, [activeSymbol]);
+
     useEffect(() => {
         if (activeSymbol && priceTicks.length > 0) resilience.recordPulse(activeSymbol);
     }, [priceTicks, activeSymbol, resilience]);
@@ -376,9 +371,6 @@ export function useCryptoRadarV4(
                     }
                     resilienceRef.current.processResult(sym, win);
                     
-                    // V5.8: Atualizar Edge Stats na sombra
-                    await updateRuleEdgeStats(user.uid, sym, trade.rule, trade.gravityState, win, pnl);
-
                     await TradeMemoryManager.addTrade(user.uid, sym, {
                         id: `shadow_${trade.id}`,
                         timestamp: trade.entryTs || Date.now(),
@@ -458,7 +450,7 @@ ${context}`;
                 const btcCandles = getCandlesFor('cryBTCUSD');
                 if (btcCandles.length >= 30) {
                     const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
-                    if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, baseFeats as any, 60, true, calibration ? { zBtc: calibration.zBtc, zTargetMax: calibration.zTargetMax, corrMin: calibration.corrMin } : undefined);
+                    if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, baseFeats as any);
                 }
             }
 
@@ -481,6 +473,7 @@ ${context}`;
             const cryptoFeats: CryptoSignalFeatures = { ...baseFeats as any, gravity, vwapDist: baseFeats.bbPos };
             const candidates = evaluateCryptoSignals(symbol, cryptoFeats);
             
+            // ETAPA 14: Todas as regras (incluindo Slingshot) devem respeitar SENTINEL_MIN_SCORE
             const bestCandidate = candidates
                 .filter((c: any) => c.direction !== 'NONE' && c.score >= SENTINEL_MIN_SCORE)
                 .sort((a: any, b: any) => b.score - a.score)[0];
@@ -718,7 +711,7 @@ ${context}`;
                       const btcCandles = getCandlesFor('cryBTCUSD');
                       if (btcCandles.length >= 30) {
                           const btcFeats = buildAssetFeatures('cryBTCUSD', btcCandles);
-                          if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, feats as any, 60, true, calibration ? { zBtc: calibration.zBtc, zTargetMax: calibration.zTargetMax, corrMin: calibration.corrMin } : undefined);
+                          if (btcFeats) gravity = calculateBitcoinGravity(btcFeats as any, feats as any);
                       }
                   }
                   const cryptoFeats: CryptoSignalFeatures = { ...feats as any, gravity, vwapDist: feats.bbPos };
@@ -765,9 +758,11 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), buildLeadLagReport: (rep: any) => buildLeadLagReport(rep), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         calibration,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };
 }
+
+```
