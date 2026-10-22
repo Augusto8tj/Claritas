@@ -1,3 +1,4 @@
+//src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -764,5 +765,3 @@ ${context}`;
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
     };
 }
-
-```
