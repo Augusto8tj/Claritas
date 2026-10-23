@@ -1,4 +1,3 @@
-//src/features/trading/hooks/use-crypto-radar-v4.tsx
 'use client';
 
 /**
@@ -24,7 +23,7 @@ import { calculateBitcoinGravity, type BitcoinGravity } from '../services/crypto
 import { useAdaptiveResilience } from '@/hooks/useAdaptiveResilience';
 import { getOllamaResponse } from '@/app/actions';
 import { useBacktestRunner } from './use-backtest-runner';
-import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext, buildLeadLagReport } from '../services/report-builders';
+import { buildStatusReport, buildAssetReport, buildBacktestReport, buildShortContext } from '../services/report-builders';
 import { CryptoShadowEngine } from '../services/crypto-shadow-engine';
 import { buildAssetFeatures } from '../services/asset-features';
 import { checkGuardrails, DEFAULT_GUARDRAILS, parseDurationToSeconds } from '../services/pilot-guardrails';
@@ -570,7 +569,7 @@ ${context}`;
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                         entryPrice: currentSpot, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
-                        confidence: decision.consensusConfidence, payoutRatio: backtest.payoutPct || 85,
+                        confidence: decision.consensusConfidence, payoutRatio: 85,
                         duration: 15, durationUnit: 's', ev, stake: finalStake,
                         timestamp: new Date(entryTs).toISOString(),
                         decisionTs: analysisStartTs, entryTs, llmLatencyMs: decision.t2tLatencyMs,
@@ -759,9 +758,17 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), buildLeadLagReport: (rep: any) => buildLeadLagReport(rep), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
-        calibration,
-        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true)
+        executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
+        calibration
     };
+}
+
+export default function CryptoLabV4Page() {
+    return (
+        <DerivApiProvider>
+            <CryptoLabContent />
+        </DerivApiProvider>
+    );
 }
