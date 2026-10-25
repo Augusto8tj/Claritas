@@ -569,7 +569,7 @@ ${context}`;
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                         entryPrice: currentSpot, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
-                        confidence: decision.consensusConfidence, payoutRatio: 85,
+                        confidence: decision.consensusConfidence, payoutRatio: Math.round(85),
                         duration: 15, durationUnit: 's', ev, stake: finalStake,
                         timestamp: new Date(entryTs).toISOString(),
                         decisionTs: analysisStartTs, entryTs, llmLatencyMs: decision.t2tLatencyMs,
@@ -679,10 +679,9 @@ ${context}`;
                             await CryptoShadowEngine.logTrade(user.uid!, {
                                 symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                                 entryPrice: executionPrice, rule: bestCandidate?.rule || 'V14_PARALLEL',
-                                score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
-                                confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
+                                score: decision.consensusConfidence, confidence: decision.consensusConfidence, payoutRatio: Math.round(actualPayout * 100),
                                 duration: finalDurVal, durationUnit: finalDurUnit, ev: realEv, stake: finalStake,
-                                timestamp: new Date(purchaseTs).toISOString(),
+                                timestamp: new Date(purchaseTs).toISOString(), gravityState: gravity?.btcVector || 'CHOP',
                                 decisionTs: analysisStartTs, entryTs: purchaseTs, llmLatencyMs: decision.t2tLatencyMs,
                                 rsiAtEntry: baseFeats.rsi, bbwAtEntry: indicators.bbw || 0,
                                 correlationAtEntry: gravity?.correlation, entropyAtEntry: decision.telemetry.consensusEntropy
@@ -763,12 +762,4 @@ ${context}`;
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         calibration
     };
-}
-
-export default function CryptoLabV4Page() {
-    return (
-        <DerivApiProvider>
-            <CryptoLabContent />
-        </DerivApiProvider>
-    );
 }
