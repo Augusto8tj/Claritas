@@ -5,7 +5,7 @@
  * V13: Implementado Piloto Automático DEMO_LIVE com Guardrails, Payout Filter e HWM.
  * V5.6/V5.7: Alpha Decay Guard, Cálculo Real de EV (Veredito Institucional) e Resiliência Adaptativa.
  * V14: Hardening de Duração, Payout Dinâmico e Registro de Fechamento Automático.
- * V5.8: Calibração Lead-Lag Walk-Forward e Bloqueio de Piloto Não-Calibrado.
+ * V5.8: Calibração Lead-Lag Walk-Forward e Bloqueio de Piloto Não-CalIBRADO.
  */
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -569,7 +569,7 @@ ${context}`;
                         symbol, direction: decision.finalAction, contract: decision.recommendedContract,
                         entryPrice: currentSpot, rule: bestCandidate?.rule || 'COUNCIL_DISCRETION',
                         score: decision.consensusConfidence, gravityState: gravity?.btcVector || 'CHOP',
-                        confidence: decision.consensusConfidence, payoutRatio: Math.round(85),
+                        confidence: decision.consensusConfidence, payoutRatio: backtest.payoutPct || 85,
                         duration: 15, durationUnit: 's', ev, stake: finalStake,
                         timestamp: new Date(entryTs).toISOString(),
                         decisionTs: analysisStartTs, entryTs, llmLatencyMs: decision.t2tLatencyMs,
