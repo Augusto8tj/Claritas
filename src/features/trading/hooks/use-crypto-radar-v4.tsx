@@ -153,6 +153,18 @@ export function useCryptoRadarV4(
 
     const { backtest, runBacktest, runLeadLagBacktest } = useBacktestRunner(getHistoricalData);
 
+    // V6.1: PERSISTE A CALIBRAÇÃO GERADA PELO BACKTEST LEAD-LAG (sem isso o interlock bloqueia o DEMO para sempre)
+    useEffect(() => {
+        const rep = backtest.leadLagReport;
+        if (!user || !rep) return;
+        const cal = rep.calibration as RuleCalibration | null | undefined;
+        if (!cal) { addLog('[V6.1] Backtest lead-lag sem calibração (poucos eventos no treino). Nada foi salvo.', 'warning'); return; }
+        CalibrationService.save(user.uid, cal)
+            .then(() => { setCalibration(cal); addLog(`[V6.1] Calibração salva: ${cal.verdict} | h=${cal.horizon} candle(s) | zBtc=${cal.zBtc} zAlt<=${cal.zTargetMax} corr>=${cal.corrMin}`, 'info'); })
+            .catch((e: any) => addLog(`[V6.1] Falha ao salvar calibração: ${e?.message || e}`, 'error'));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [backtest.leadLagReport, user]);
+
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
     const [memoryBuffer, setMemoryBuffer] = useState<TradeMemoryBuffer>({ wins: [], losses: [] });
@@ -537,13 +549,6 @@ ${context}`;
                 const freshCandles = getCandlesFor(symbol);
                 const currentSpot = freshCandles.length > 0 ? freshCandles[freshCandles.length - 1].close : candles[candles.length - 1].close;
 
-                // Alpha Decay Guard (Etapa 5.6)
-                if (!isManual && decision.t2tLatencyMs > 4000) {
-                    addLog(`[ALPHA-DECAY] ${symbol}: Latência LLM excessiva (${decision.t2tLatencyMs}ms) para contrato de 15s. Abortando execução.`, 'warning', undefined, symbol);
-                    executionLockRef.current = false;
-                    return;
-                }
-
                 if (pilotMode === 'SHADOW') {
                     if (symbol === 'cryBTCUSD') { addLog(`[SHADOW] ${symbol}: BTC é âncora; simulação ignorada.`, 'radar', undefined, symbol); executionLockRef.current = false; return; }
                     
@@ -584,6 +589,16 @@ ${context}`;
                         return;
                     }
 
+                    // Alpha Decay Guard (só na EXECUÇÃO; o SHADOW sempre registra e grava a latência).
+                    // Limite proporcional ao contrato calibrado: 25% da duração, entre 4s e 30s.
+                    const contractSec = calibration.suggestedDuration || 15;
+                    const maxLatencyMs = Math.max(4000, Math.min(30000, contractSec * 250));
+                    if (!isManual && decision.t2tLatencyMs > maxLatencyMs) {
+                        addLog(`[ALPHA-DECAY] ${symbol}: Latência ${decision.t2tLatencyMs}ms > ${maxLatencyMs}ms (contrato de ${contractSec}s). Abortando execução.`, 'warning', undefined, symbol);
+                        executionLockRef.current = false;
+                        return;
+                    }
+
                     const guard = checkGuardrails(symbol, accountType, finalStake, operationsLog, staleMinutes(symbol));
                     if (!guard.allowed) { addLog(`[GUARDRAIL-BLOCK] ${symbol}: ${guard.reason}`, 'warning', undefined, symbol); executionLockRef.current = false; return; }
 
@@ -615,6 +630,11 @@ ${context}`;
                             executionLockRef.current = false;
                             return;
                         }
+
+                        // Duração calibrada pelo backtest (horizonte medido), nunca abaixo do mínimo do contrato.
+                        const wantSec = Math.max(minFoundSec, calibration.suggestedDuration || 15);
+                        if (wantSec % 60 === 0) { finalDurVal = wantSec / 60; finalDurUnit = 'm' as DurationUnit; }
+                        else { finalDurVal = wantSec; finalDurUnit = 's' as DurationUnit; }
 
                         const propRes = await getProposal({ 
                             contract_type: decision.finalAction === 'CALL' ? 'CALL' : 'PUT', 

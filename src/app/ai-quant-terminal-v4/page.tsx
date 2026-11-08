@@ -602,7 +602,7 @@ function CryptoLabContent() {
                             {backtest.leadLagReport && (
                                 <div className="mt-4 p-3 bg-white rounded border border-purple-200">
                                     <p className="text-xs font-bold text-purple-700 mb-1">Veredito V5.8:</p>
-                                    <p className="text-sm font-black uppercase">{backtest.leadLagReport.horizons[0].veredito}</p>
+                                    <p className="text-sm font-black uppercase">{backtest.leadLagReport.calibration?.verdict ?? backtest.leadLagReport.horizons[0]?.veredito ?? 'SEM DADOS'}</p>
                                     <Button 
                                         variant="ghost" 
                                         size="sm" 

@@ -11,41 +11,27 @@ const createMock = (prices: number[], epochs: number[]): any => ({
 });
 
 describe('Crypto Gravity Engine V13 (Hardening)', () => {
-  it('detecta slingshotDetected = true quando zBtc > 1.8 e zTarget está em lag positivo', () => {
-    // BTC e Alt subindo em correlação base para estabilizar desvio padrão
-    // 25 velas no total
-    const btcPrices = [];
-    const altPrices = [];
-    let btcPrice = 100;
-    let altPrice = 50;
-    for (let i = 0; i < 22; i++) {
-        const step = (i % 2 === 0 ? 0.05 : -0.02);
-        btcPrice += step;
-        altPrice += step / 2;
-        btcPrices.push(btcPrice);
-        altPrices.push(altPrice);
+  it('detecta slingshotDetected quando o BTC salta e o alvo (correlacionado antes) fica parado', () => {
+    // Regressão: a correlação NÃO pode incluir o candle do evento (senão o veto DESACOPLAMENTO bloqueia o setup).
+    const rng = (seed: number) => () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const gauss = (r: () => number) => Math.sqrt(-2 * Math.log(r() + 1e-12)) * Math.cos(2 * Math.PI * r());
+    const seeds = [2, 3, 4, 5]; // seed 1 tem zAlvo=1.1 (> 1.0): o alvo já reagiu, não é slingshot
+    for (const seed of seeds) {
+      const r = rng(seed);
+      let b = 60000, a = 3000;
+      const bp = [b], ap = [a];
+      for (let i = 0; i < 80; i++) {
+        const rb = 0.001 * gauss(r); const ra = 0.8 * rb + 0.0004 * gauss(r);
+        b *= Math.exp(rb); a *= Math.exp(ra); bp.push(b); ap.push(a);
+      }
+      b *= Math.exp(0.012); a *= Math.exp(0.0006); bp.push(b); ap.push(a); // candle do evento (fechado)
+      bp.push(b * 1.0002); ap.push(a * 1.0002);                           // vela em formação (descartada)
+      const ep = bp.map((_, i) => i * 60);
+      const res = calculateBitcoinGravity(createMock(bp, ep), createMock(ap, ep), 60, true);
+      expect(res.correlation).toBeGreaterThan(0.7);
+      expect(res.slingshotDetected).toBe(true);
+      expect(res.vetoReason).toBeUndefined();
     }
-    
-    // Vela 23: Salto explosivo BTC
-    btcPrices.push(btcPrice + 8); // 100 -> 108 approx
-    altPrices.push(altPrice + 0.012); // Lag suave e controlado para zTarget < 1.0
-    
-    // Vela 24 (formando, será descartada se dropForming=true)
-    btcPrices.push(btcPrice + 8.1);
-    altPrices.push(altPrice + 0.02);
-
-    const btcEpochs = Array(25).fill(0).map((_, i) => i * 60);
-    const altEpochs = Array(25).fill(0).map((_, i) => i * 60);
-    
-    const btc = createMock(btcPrices, btcEpochs);
-    btc.momentumMedium = 1.0; 
-    
-    const alt = createMock(altPrices, altEpochs);
-
-    const result = calculateBitcoinGravity(btc, alt, 60, true);
-    
-    expect(result.correlation).toBeGreaterThan(0.7);
-    expect(result.slingshotDetected).toBe(true);
   });
 
   it('retorna HISTÓRICO_INSUFICIENTE quando as séries têm menos de 10 velas alinhadas', () => {

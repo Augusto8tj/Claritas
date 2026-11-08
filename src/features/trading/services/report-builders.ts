@@ -197,22 +197,40 @@ export function buildBacktestReport(params: {
  */
 export function buildLeadLagReport(report: LeadLagReport): string {
     const now = new Date().toLocaleString('pt-BR');
-    let out = `[RELATÓRIO LEAD-LAG WALK-FORWARD V5.8]\n`;
+    const pct = (x: number | null | undefined, d = 1) => (x === null || x === undefined ? 'n/d' : `${(x * 100).toFixed(d)}%`);
+    let out = `[RELATÓRIO LEAD-LAG WALK-FORWARD V6.1]\n`;
     out += `==================================================\n`;
-    out += `DATA: ${now} | N EVENTOS (TESTE): ${report.n}\n`;
-    out += `FREQUÊNCIA: ${report.eventsPerDay.toFixed(2)} eventos/dia\n\n`;
-
+    out += `DATA: ${now} | N EVENTOS (TESTE): ${report.n} | ${report.eventsPerDay.toFixed(2)} eventos/dia\n`;
+    if (report.periodFrom && report.periodTo) {
+        out += `PERÍODO: ${new Date(report.periodFrom * 1000).toLocaleDateString('pt-BR')} a ${new Date(report.periodTo * 1000).toLocaleDateString('pt-BR')}\n`;
+    }
+    if (report.params) {
+        out += `LIMIARES ESCOLHIDOS NO TREINO: zBtc>=${report.params.zBtc} | zAlvo<=${report.params.zTargetMax} | corr>=${report.params.corrMin}\n`;
+        out += `TREINO: ${report.trainEvents ?? 0} eventos | acerto ${pct(report.trainRate)} | combinações testadas: ${report.combosTested ?? 0}\n`;
+    }
+    if (report.calibration) {
+        const c = report.calibration;
+        out += `\n>>> CALIBRAÇÃO: ${c.verdict} | horizonte ${c.horizon} candle(s) | variante ${c.variant} | duração sugerida ${c.suggestedDuration}s\n`;
+    } else {
+        out += `\n>>> CALIBRAÇÃO: NENHUMA (sem combinação válida no treino)\n`;
+    }
+    out += `\n`;
     report.horizons.forEach(h => {
-        out += `>>> HORIZONTE: ${h.h} min | VARIANTE: ${h.variant}\n`;
-        out += `- Taxa Acerto: ${(h.rate * 100).toFixed(1)}% | IC95: [${(h.wilson[0] * 100).toFixed(0)}% - ${(h.wilson[1] * 100).toFixed(0)}%]\n`;
-        out += `- P-Valor: ${h.pValPermutation.toFixed(4)} (Adjusted: ${h.pValAdjusted.toFixed(4)})\n`;
-        out += `- Veredito: ${h.veredito}\n`;
-        if (h.variant === 'B' && h.veredito === 'SEM EDGE') {
-            out += `⚠️ ALERTA: O edge não sobrevive à latência (Variante B).\n`;
-        }
+        out += `>>> HORIZONTE ${h.h} candle(s) | VARIANTE ${h.variant}${h.variant === 'B' ? ' (entrada 1 candle depois)' : ' (entrada no fechamento)'}\n`;
+        out += `- N=${h.n} | Acerto ${pct(h.rate)} | Wilson95 [${pct(h.wilson[0], 0)} - ${pct(h.wilson[1], 0)}]\n`;
+        out += `- Breakeven: ${pct(h.breakeven80)} (payout 80%) | ${pct(h.breakeven85)} (payout 85%)\n`;
+        out += `- 1ª/2ª metade do teste: ${pct(h.halves[0])} / ${pct(h.halves[1])}\n`;
+        out += `- Bootstrap por dia (IC95 do acerto): ${h.bootstrapCI ? `[${pct(h.bootstrapCI[0], 0)} - ${pct(h.bootstrapCI[1], 0)}]` : 'n/d (poucos dias)'} | retorno médio ${h.meanRetBps.toFixed(2)} bps\n`;
+        out += `- Placebo de deriva: p=${h.pValPermutation.toFixed(4)} | Holm (m=8): ${h.pValAdjusted.toFixed(4)}\n`;
+        out += `- Sem filtro de atraso (seguir BTC): N=${h.noLag.n} | acerto ${pct(h.noLag.rate)}\n`;
+        out += `- VEREDITO: ${h.veredito} (${h.motivo})\n`;
+        if (h.variant === 'B' && h.veredito !== 'EDGE EM 1m') out += `⚠️ O edge não sobrevive à latência de 1 candle (Variante B).\n`;
         out += `--------------------------------------------------\n`;
     });
-
+    if (report.notes?.length) {
+        out += `NOTAS E LIMITAÇÕES:\n`;
+        report.notes.forEach(n => { out += `* ${n}\n`; });
+    }
     return out;
 }
 
