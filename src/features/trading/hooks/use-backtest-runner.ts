@@ -6,6 +6,7 @@ import type { CandleData } from '@/lib/types';
 import { backtestCandlesAsync, mergeStats, type RuleReport } from '../services/backtest';
 import { groupOf } from '../services/report-builders';
 import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
+import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services/leadlag-tick-study';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -18,6 +19,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         assetCounts: Record<string, number>;
         assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }>;
         leadLagReport?: any;
+        tickStudyReport?: TickStudyReport;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -149,5 +151,28 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest };
+    // ETAPA 17: event study com ticks (BTC -> ETH), grade de 1 s
+    const runLeadLagTickStudy = async (days = 3, latencySec = 4) => {
+        if (runningRef.current) return;
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Baixando ticks BTC/ETH...' }));
+        try {
+            const to = Math.floor(Date.now() / 1000) - 5;
+            const from = to - Math.round(days * 86400);
+            const onProgress = (msg: string) => setBacktest(prev => ({ ...prev, progress: msg }));
+            const btc = await fetchTicksPaged(getHistoricalData, 'cryBTCUSD', from, to, onProgress);
+            const eth = await fetchTicksPaged(getHistoricalData, 'cryETHUSD', from, to, onProgress);
+            setBacktest(prev => ({ ...prev, progress: 'Calculando event study com ticks...' }));
+            await new Promise(r => setTimeout(r, 20)); // deixa a UI atualizar antes do cálculo síncrono
+            const report = runTickStudy(btc, eth, { latencySec });
+            setBacktest(prev => ({ ...prev, tickStudyReport: report }));
+        } catch (e) {
+            console.error('Tick study error:', e);
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy };
 }

@@ -45,6 +45,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Asset, Operation } from '@/lib/types';
 import { buildLeadLagReport } from '@/features/trading/services/report-builders';
+import { buildTickStudyReport } from '@/features/trading/services/leadlag-tick-study';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -70,11 +71,12 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
 
+    const [tickDays, setTickDays] = useState(3);
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
     const [isBacktestSelectorOpen, setIsBacktestSelectorOpen] = useState(false);
     const [logFilter, setLogFilter] = useState<'all' | 'decision' | 'sentinel' | 'execution' | 'error'>('all');
@@ -617,6 +619,48 @@ function CryptoLabContent() {
                                     </Button>
                                 </div>
                             )}
+
+                            <div className="pt-3 border-t border-purple-200 space-y-2">
+                                <Label htmlFor="tick-days-select">Event study com ticks (Etapa 17)</Label>
+                                <Select value={String(tickDays)} onValueChange={v => setTickDays(Number(v))}>
+                                    <SelectTrigger id="tick-days-select">
+                                        <SelectValue placeholder="Dias de ticks" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="1">1 dia</SelectItem>
+                                        <SelectItem value="3">3 dias</SelectItem>
+                                        <SelectItem value="7">7 dias</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    onClick={() => runLeadLagTickStudy(tickDays)}
+                                    disabled={backtest.running}
+                                    size="sm"
+                                    className="w-full h-8 bg-indigo-600 text-white font-bold"
+                                >
+                                    {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar Event Study (ticks)"}
+                                </Button>
+                                {backtest.running && backtest.progress && (
+                                    <p className="text-[10px] text-muted-foreground">{backtest.progress}</p>
+                                )}
+                                {backtest.tickStudyReport && (
+                                    <div className="p-3 bg-white rounded border border-indigo-200">
+                                        <p className="text-xs font-bold text-indigo-700 mb-1">Conclusão (ticks):</p>
+                                        <p className="text-xs font-black">{backtest.tickStudyReport.conclusion}</p>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full h-7 mt-2 text-[10px] font-bold text-indigo-600 border border-indigo-100"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(buildTickStudyReport(backtest.tickStudyReport!));
+                                                toast({ title: "Relatório de ticks copiado!" });
+                                            }}
+                                        >
+                                            <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
                         </CardContent>
                     </Card>
 
