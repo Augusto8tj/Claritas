@@ -104,3 +104,16 @@ describe('OOS com dados importados', () => {
         expect(r.verdict).toBe('CONFIRMADO');
     });
 });
+
+describe('qualidade por mês e sonda sem callput', () => {
+    it('detalha velas planas por mês (acha o mês com mercado ralo)', () => {
+        const base = Date.UTC(2026, 6, 31, 23, 50) / 1000; // 31/07 23:50 UTC
+        const list: any[] = [];
+        for (let i = 0; i < 20; i++) { const flat = i < 10; list.push({ epoch: base + i * 60, open: 1, high: flat ? 1 : 2, low: 1, close: flat ? 1 : 1.5, volume: 1 }); }
+        const q = assessQuality('ETH', mergeCandles(list));
+        expect(q.months.map(m => m.month)).toEqual(['2026-07', '2026-08']);
+        expect(q.months[0].flatShare).toBe(1);
+        expect(q.months[1].flatShare).toBe(0);
+        expect(buildQualityText([q])).toContain('por mês');
+    });
+});

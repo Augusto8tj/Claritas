@@ -68,14 +68,21 @@ export interface QualityReport {
     label: string; n: number; from: number; to: number; expectedMinutes: number; missingMinutes: number;
     gaps: number; maxGapMinutes: number; zeroVolumeShare: number | null; flatShare: number;
     duplicates: number; conflicts: number; skipped: number;
+    months: { month: string; n: number; flatShare: number; zeroVolumeShare: number | null }[];
 }
 
 export function assessQuality(label: string, m: MergeResult, skipped = 0): QualityReport {
     const c = m.candles;
     const n = c.length;
-    if (n === 0) return { label, n: 0, from: 0, to: 0, expectedMinutes: 0, missingMinutes: 0, gaps: 0, maxGapMinutes: 0, zeroVolumeShare: null, flatShare: 0, duplicates: m.duplicates, conflicts: m.conflicts, skipped };
+    if (n === 0) return { label, n: 0, from: 0, to: 0, expectedMinutes: 0, missingMinutes: 0, gaps: 0, maxGapMinutes: 0, zeroVolumeShare: null, flatShare: 0, duplicates: m.duplicates, conflicts: m.conflicts, skipped, months: [] };
     let gaps = 0, missing = 0, maxGap = 0, zero = 0, vol = 0, flat = 0;
+    const mm = new Map<string, { n: number; flat: number; vol: number; zero: number }>();
     for (let i = 0; i < n; i++) {
+        const mk = new Date(c[i].epoch * 1000).toISOString().slice(0, 7);
+        const g = mm.get(mk) ?? { n: 0, flat: 0, vol: 0, zero: 0 }; g.n++;
+        if (typeof c[i].volume === 'number') { g.vol++; if (c[i].volume === 0) g.zero++; }
+        if (c[i].open === c[i].high && c[i].high === c[i].low && c[i].low === c[i].close) g.flat++;
+        mm.set(mk, g);
         if (i > 0) {
             const d = Math.round((c[i].epoch - c[i - 1].epoch) / 60);
             if (d !== 1) { gaps++; missing += Math.max(0, d - 1); maxGap = Math.max(maxGap, d - 1); }
@@ -87,6 +94,7 @@ export function assessQuality(label: string, m: MergeResult, skipped = 0): Quali
         label, n, from: c[0].epoch, to: c[n - 1].epoch, expectedMinutes: Math.round((c[n - 1].epoch - c[0].epoch) / 60) + 1,
         missingMinutes: missing, gaps, maxGapMinutes: maxGap, zeroVolumeShare: vol > 0 ? zero / vol : null, flatShare: flat / n,
         duplicates: m.duplicates, conflicts: m.conflicts, skipped,
+        months: Array.from(mm.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([month, g]) => ({ month, n: g.n, flatShare: g.flat / g.n, zeroVolumeShare: g.vol > 0 ? g.zero / g.vol : null })),
     };
 }
 
@@ -98,6 +106,7 @@ export function buildQualityText(qs: QualityReport[]): string {
         if (q.n === 0) { L.push(`${q.label}: nenhuma vela válida lida (linhas ignoradas: ${q.skipped}).`); continue; }
         L.push(`${q.label}: ${q.n} velas | ${d(q.from)} a ${d(q.to)} | esperadas ${q.expectedMinutes}, faltando ${q.missingMinutes} em ${q.gaps} buraco(s) (maior: ${q.maxGapMinutes} min)`);
         L.push(`   velas sem volume: ${q.zeroVolumeShare === null ? 'n/d' : pc(q.zeroVolumeShare)} | velas planas (O=H=L=C): ${pc(q.flatShare)} | duplicadas: ${q.duplicates} (conflitantes: ${q.conflicts}) | linhas ignoradas: ${q.skipped}`);
+        if (q.months.length > 1) L.push('   por mês: ' + q.months.map(x => `${x.month} (N=${x.n}, planas ${pc(x.flatShare)}, sem volume ${x.zeroVolumeShare === null ? 'n/d' : pc(x.zeroVolumeShare)})`).join(' | '));
         if (q.flatShare > 0.2 || (q.zeroVolumeShare ?? 0) > 0.2) L.push('   ⚠️ Mercado ralo neste par: muitas velas planas/sem negócio. Saltos após trechos parados são artefato, não movimento de mercado. Prefira o par com mais liquidez (ex.: USDT).');
     }
     return L.join('\n');

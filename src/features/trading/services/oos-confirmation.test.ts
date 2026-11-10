@@ -111,3 +111,17 @@ describe('probePayout', () => {
     expect(r.error).toBe('ws fechado');
   });
 });
+
+describe('probePayout sem Rise/Fall', () => {
+  it('lista as categorias oferecidas quando não há callput', async () => {
+    const cf = { contracts_for: { available: [
+      { contract_category: 'multiplier', contract_type: 'MULTUP', min_contract_duration: '1m', max_contract_duration: '1d' },
+      { contract_category: 'accumulator', contract_type: 'ACCU', min_contract_duration: '1t', max_contract_duration: '1t' },
+    ] } };
+    const r = await probePayout(async () => cf, async () => ({}), 'cryETHUSD', 900);
+    expect(r.ok).toBe(false);
+    expect(r.categories.map(c => c.name)).toEqual(['multiplier', 'accumulator']);
+    expect(r.error).toContain('multiplier, accumulator');
+    expect(buildPayoutProbeText(r)).toContain('Categorias de contrato oferecidas');
+  });
+});
