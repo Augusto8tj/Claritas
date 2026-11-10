@@ -16,6 +16,11 @@
  * Também reporta: taxa-base de PUT em 15 min no período (deriva), acerto por blocos de 15 dias e se o acerto de
  * referência (62,2%) cabe no IC fora da amostra.
  *
+ * Validade dos dados (ETAPA 20, vale para qualquer fonte): eventos cuja janela cruza buraco de tempo são descartados; se as velas
+ * trazem volume (CSV da Binance), exige-se negócio real (volume > 0) no sinal do BTC e nas velas de entrada/saída da ETH e que
+ * no máximo 50% das últimas 120 velas de cada ativo sejam planas — senão o "choque" é artefato de mercado parado, não de preço.
+ * Sem volume (Deriv) esses filtros de liquidez não se aplicam.
+ *
  * LIMITAÇÕES: velas de 1 min; payout assumido (use a sonda de payout); empate = perda; só Rise/Fall; a regra
  * continua sendo UMA de 14 candidatas — confirmar aqui reduz, mas não elimina, o risco de falso positivo.
  */
@@ -37,7 +42,8 @@ export type OosVerdict = 'CONFIRMADO' | 'NÃO CONFIRMADO' | 'INCONCLUSIVO';
 
 export interface OosReport {
     ok: boolean; reason?: string;
-    meta: { from: number; to: number; days: number; candles: number; cutoffEpoch: number; candlesAfterCutoffDiscarded: number };
+    meta: { from: number; to: number; days: number; candles: number; cutoffEpoch: number; candlesAfterCutoffDiscarded: number; source: string };
+    filters: { gapDropped: number; liquidityDropped: number; liquidityFilterActive: boolean };
     payoutPct: number; breakeven: number;
     n: number; wins: number; ties: number; winRate: number; wilson: [number, number];
     halves: [number | null, number | null]; dayBootstrap: [number, number] | null;
@@ -48,7 +54,8 @@ export interface OosReport {
 
 function failReport(reason: string, meta: Partial<OosReport['meta']>, payoutPct: number): OosReport {
     return {
-        ok: false, reason, meta: { from: 0, to: 0, days: 0, candles: 0, cutoffEpoch: 0, candlesAfterCutoffDiscarded: 0, ...meta },
+        ok: false, reason, meta: { from: 0, to: 0, days: 0, candles: 0, cutoffEpoch: 0, candlesAfterCutoffDiscarded: 0, source: 'n/d', ...meta },
+        filters: { gapDropped: 0, liquidityDropped: 0, liquidityFilterActive: false },
         payoutPct, breakeven: 1 / (1 + payoutPct / 100), n: 0, wins: 0, ties: 0, winRate: 0, wilson: [0, 1], halves: [null, null],
         dayBootstrap: null, winRateB: null, pPlacebo: 1, basePutRate: 0, blocks: [], refInside: false,
         verdict: 'INCONCLUSIVO', motivo: reason, conclusion: `DADOS INSUFICIENTES: ${reason}`,
@@ -57,34 +64,56 @@ function failReport(reason: string, meta: Partial<OosReport['meta']>, payoutPct:
 
 export function runOosConfirmation(
     btc: CandleData[], eth: CandleData[],
-    opts: { cutoffEpoch?: number; payoutPct?: number; placeboReps?: number; seed?: number; blockDays?: number } = {}
+    opts: { cutoffEpoch?: number; payoutPct?: number; placeboReps?: number; seed?: number; blockDays?: number; source?: string } = {}
 ): OosReport {
     const cutoff = opts.cutoffEpoch ?? DEFAULT_CUTOFF_EPOCH;
     const payoutPct = opts.payoutPct ?? 80;
     const reps = opts.placeboReps ?? 999, seed = opts.seed ?? 19, blockDays = opts.blockDays ?? 15;
+    const source = opts.source ?? 'Deriv (API)';
     const H = FROZEN_RULE.horizon;
     const all = alignBars(btc, eth);
     const keep = all.epochs.filter(e => e < cutoff).length;
     const discarded = all.epochs.length - keep;
     const cut = <T,>(a: T[]) => a.slice(0, keep);
     const bars = {
-        epochs: cut(all.epochs),
+        epochs: cut(all.epochs), v: { b: cut(all.v.b), e: cut(all.v.e) },
         o: { b: cut(all.o.b), e: cut(all.o.e) }, h: { b: cut(all.h.b), e: cut(all.h.e) },
         l: { b: cut(all.l.b), e: cut(all.l.e) }, c: { b: cut(all.c.b), e: cut(all.c.e) },
     };
     const n = bars.epochs.length;
-    if (n < 3000) return failReport(`apenas ${n} velas anteriores ao corte (mínimo 3000). Baixe mais histórico (candles por ativo maior).`, { candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded }, payoutPct);
+    if (n < 3000) return failReport(`apenas ${n} velas anteriores ao corte (mínimo 3000). Baixe mais histórico (candles por ativo maior).`, { candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded, source }, payoutPct);
 
     const { dir, warmup } = computeSignals(bars, FROZEN_RULE.config);
     const sig = dir[FROZEN_RULE.id];
     const le = bars.c.e.map(Math.log);
     const breakeven = 1 / (1 + payoutPct / 100);
 
+    // validade dos dados: buracos de tempo e liquidez (ver cabeçalho)
+    const gc = new Int32Array(n);
+    for (let i = 1; i < n; i++) gc[i] = gc[i - 1] + (bars.epochs[i] - bars.epochs[i - 1] !== 60 ? 1 : 0);
+    const hasVol = bars.v.b.some(x => Number.isFinite(x)) && bars.v.e.some(x => Number.isFinite(x));
+    const flatB = new Int32Array(n + 1), flatE = new Int32Array(n + 1);
+    for (let i = 0; i < n; i++) {
+        flatB[i + 1] = flatB[i] + (bars.o.b[i] === bars.h.b[i] && bars.h.b[i] === bars.l.b[i] && bars.l.b[i] === bars.c.b[i] ? 1 : 0);
+        flatE[i + 1] = flatE[i] + (bars.o.e[i] === bars.h.e[i] && bars.h.e[i] === bars.l.e[i] && bars.l.e[i] === bars.c.e[i] ? 1 : 0);
+    }
+    const LB = FROZEN_RULE.config.sigmaWin + FROZEN_RULE.config.shockWin + 2;
+    const noGap = (a: number, b: number) => a >= 0 && b < n && gc[a] === gc[b];
+    const traded = (i: number) => !hasVol || (bars.v.e[i] > 0);
+    const activeMarket = (i: number) => {
+        if (!hasVol) return true;
+        const a = Math.max(0, i - FROZEN_RULE.config.sigmaWin + 1), len = i - a + 1;
+        return (flatB[i + 1] - flatB[a]) / len <= 0.5 && (flatE[i + 1] - flatE[a]) / len <= 0.5;
+    };
+    const liquidAt = (i: number) => !hasVol || (bars.v.b[i] > 0 && bars.v.e[i] > 0 && traded(i + H) && activeMarket(i));
+
     const t: number[] = [], win: boolean[] = [], tie: boolean[] = [], winB: boolean[] = [];
-    let next = 0;
+    let next = 0, gapDropped = 0, liquidityDropped = 0;
     for (let i = warmup; i < n - H - 1; i++) {
         const d = sig[i];
         if (!d || i < next) continue;
+        if (!noGap(i - LB, i + H + 1)) { gapDropped++; continue; }
+        if (!liquidAt(i)) { liquidityDropped++; continue; }
         const rA = (le[i + H] - le[i]) * d, rB = (le[i + 1 + H] - le[i + 1]) * d;
         t.push(i); win.push(rA > 0); tie.push(rA === 0); winB.push(rB > 0);
         next = i + H;
@@ -116,7 +145,7 @@ export function runOosConfirmation(
 
     // taxa-base: fração de janelas de 15 min em que a ETH cai (deriva do período)
     let down = 0, tot = 0;
-    for (let i = warmup; i < n - H; i++) { tot++; if (le[i + H] < le[i]) down++; }
+    for (let i = warmup; i < n - H; i++) { if (!noGap(i, i + H) || (hasVol && !(traded(i) && traded(i + H)))) continue; tot++; if (le[i + H] < le[i]) down++; }
     const basePutRate = tot ? down / tot : 0;
 
     // blocos cronológicos de `blockDays` dias
@@ -153,7 +182,8 @@ export function runOosConfirmation(
             : `INCONCLUSIVO: ${motivo}. Não executar; aumente o histórico ou aguarde mais dados.`;
 
     return {
-        ok: true, meta: { from: bars.epochs[0], to: bars.epochs[n - 1], days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded },
+        ok: true, meta: { from: bars.epochs[0], to: bars.epochs[n - 1], days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded, source },
+        filters: { gapDropped, liquidityDropped, liquidityFilterActive: hasVol },
         payoutPct, breakeven, n: N, wins, ties, winRate: obs, wilson, halves, dayBootstrap, winRateB, pPlacebo, basePutRate, blocks, refInside, verdict, motivo, conclusion,
     };
 }
@@ -165,6 +195,7 @@ export function buildOosReport(r: OosReport): string {
     if (!r.ok) { L.push(r.conclusion); return L.join('\n'); }
     L.push(`REGRA CONGELADA: ${FROZEN_RULE.id} @ ${FROZEN_RULE.horizon}m (${FROZEN_RULE.direction}) | zShock=${FROZEN_RULE.config.zShock}, janela ${FROZEN_RULE.config.shockWin}m, sem alterações`);
     L.push(`DESCOBERTA (referência): ${IN_SAMPLE_REF.from} a ${IN_SAMPLE_REF.to} | N=${IN_SAMPLE_REF.n} | acerto ${pc(IN_SAMPLE_REF.winRate)} | Wilson inferior ${pc(IN_SAMPLE_REF.wilsonLower)}`);
+    L.push(`FONTE DOS DADOS: ${r.meta.source}`);
     L.push(`FORA DA AMOSTRA: ${d(r.meta.from)} a ${d(r.meta.to)} (${r.meta.days.toFixed(1)} dias, ${r.meta.candles} velas) | corte em ${d(r.meta.cutoffEpoch)} | descartadas após o corte: ${r.meta.candlesAfterCutoffDiscarded}`);
     L.push(`Payout ${r.payoutPct}% => breakeven ${pc(r.breakeven)} | m=1 teste`, '', `>>> VEREDITO: ${r.verdict}`, `>>> ${r.conclusion}`, '');
     L.push(`- N=${r.n} (${(r.n / Math.max(1, r.meta.days)).toFixed(1)}/dia) | acerto ${pc(r.winRate)} | Wilson95 [${pc(r.wilson[0])} - ${pc(r.wilson[1])}] | empates ${r.ties}`);
@@ -172,6 +203,7 @@ export function buildOosReport(r: OosReport): string {
     L.push(`- Variante B (1 vela depois): ${r.winRateB === null ? 'n/d' : pc(r.winRateB)} | placebo p=${r.pPlacebo.toFixed(4)} | taxa-base de PUT 15m no período: ${pc(r.basePutRate)}`);
     L.push(`- Acerto de referência (${pc(IN_SAMPLE_REF.winRate)}) ${r.refInside ? 'CABE' : 'NÃO cabe'} no IC fora da amostra | encolhimento: ${((IN_SAMPLE_REF.winRate - r.winRate) * 100).toFixed(1)} pp`);
     L.push('- Blocos cronológicos: ' + (r.blocks.length ? r.blocks.map(b => `${d(b.from)}: N=${b.n} ${b.winRate === null ? 'n/d' : pc(b.winRate)}`).join(' | ') : 'n/d'));
+    L.push(`- Validade dos dados: sinais descartados por buraco de tempo: ${r.filters.gapDropped} | por mercado parado/sem volume: ${r.filters.liquidityDropped}${r.filters.liquidityFilterActive ? '' : ' (filtro de liquidez inativo: velas sem volume)'}`);
     L.push(`- Motivo: ${r.motivo}`, '', 'NOTAS E LIMITAÇÕES:',
         '* Teste único, parâmetros congelados; critérios definidos antes de rodar. Velas de 1 min; payout assumido; empate = perda; só Rise/Fall.',
         '* A regra foi a melhor de 14 candidatas na descoberta. Confirmar aqui reduz o risco de falso positivo, não o elimina.',

@@ -9,6 +9,7 @@ import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
 import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services/leadlag-tick-study';
 import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypotheses';
 import { runOosConfirmation, type OosReport } from '../services/oos-confirmation';
+import { parseKlinesCsv, mergeCandles, assessQuality, buildQualityText } from '../services/candle-csv-import';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -24,6 +25,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         tickStudyReport?: TickStudyReport;
         horizonReport?: HypReport;
         oosReport?: OosReport;
+        importQuality?: string;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -220,5 +222,42 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy };
+    // ETAPA 20: confirmação fora da amostra com velas importadas de CSV (Binance Vision, Kaggle...), sem Deriv
+    const runOosFromFiles = async (btcFiles: File[], ethFiles: File[], payoutPct = 80) => {
+        if (runningRef.current) return;
+        if (btcFiles.length === 0 || ethFiles.length === 0) {
+            setBacktest(prev => ({ ...prev, importQuality: 'Selecione os arquivos CSV de BTC e de ETH.' }));
+            return;
+        }
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Lendo arquivos CSV...' }));
+        try {
+            const read = async (files: File[]) => {
+                const all: any[] = [];
+                let skipped = 0;
+                for (let i = 0; i < files.length; i++) {
+                    setBacktest(prev => ({ ...prev, progress: `Lendo ${files[i].name} (${i + 1}/${files.length})...` }));
+                    const r = parseKlinesCsv(await files[i].text());
+                    for (const c of r.candles) all.push(c);
+                    skipped += r.skipped;
+                }
+                return { merged: mergeCandles(all), skipped };
+            };
+            const b = await read(btcFiles);
+            const e = await read(ethFiles);
+            const qualityText = buildQualityText([assessQuality('BTC', b.merged, b.skipped), assessQuality('ETH', e.merged, e.skipped)]);
+            setBacktest(prev => ({ ...prev, importQuality: qualityText, progress: 'Calculando confirmação fora da amostra...' }));
+            await new Promise(r => setTimeout(r, 20));
+            const report = runOosConfirmation(b.merged.candles, e.merged.candles, { payoutPct, source: `CSV importado (${btcFiles.length} arquivo(s) BTC, ${ethFiles.length} arquivo(s) ETH)` });
+            setBacktest(prev => ({ ...prev, oosReport: report }));
+        } catch (err) {
+            console.error('OOS CSV error:', err);
+            setBacktest(prev => ({ ...prev, importQuality: `Erro ao ler os arquivos: ${(err as Error)?.message ?? err}` }));
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles };
 }

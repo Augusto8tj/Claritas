@@ -152,7 +152,7 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
 
-    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy } = useBacktestRunner(getHistoricalData);
+    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles } = useBacktestRunner(getHistoricalData);
 
     // V6.1: PERSISTE A CALIBRAÇÃO GERADA PELO BACKTEST LEAD-LAG (sem isso o interlock bloqueia o DEMO para sempre)
     useEffect(() => {
@@ -788,7 +788,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, payoutProbe, runPayoutProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         calibration

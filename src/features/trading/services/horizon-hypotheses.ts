@@ -39,7 +39,7 @@ export const DEFAULT_HYP_CONFIG: HypConfig = {
     breakoutWin: 30, shockWin: 5, zShock: 2.5, sigmaWin: 120, vrWin: 120, vrQ: 15, vrMax: 0.85, placeboReps: 999, seed: 18,
 };
 
-export interface Bars { epochs: number[]; o: { b: number[]; e: number[] }; h: { b: number[]; e: number[] }; l: { b: number[]; e: number[] }; c: { b: number[]; e: number[] }; }
+export interface Bars { epochs: number[]; v: { b: number[]; e: number[] }; o: { b: number[]; e: number[] }; h: { b: number[]; e: number[] }; l: { b: number[]; e: number[] }; c: { b: number[]; e: number[] }; }
 
 export interface HypRow {
     id: HypId; horizon: number; n: number; wins: number; ties: number; winRate: number; wilson: [number, number];
@@ -55,13 +55,14 @@ export interface HypReport {
 export function alignBars(btc: CandleData[], eth: CandleData[]): Bars {
     const m = new Map<number, CandleData>(); btc.forEach(c => m.set(c.epoch, c));
     const sorted = [...eth].sort((a, b) => a.epoch - b.epoch);
-    const out: Bars = { epochs: [], o: { b: [], e: [] }, h: { b: [], e: [] }, l: { b: [], e: [] }, c: { b: [], e: [] } };
+    const out: Bars = { epochs: [], v: { b: [], e: [] }, o: { b: [], e: [] }, h: { b: [], e: [] }, l: { b: [], e: [] }, c: { b: [], e: [] } };
     for (const e of sorted) {
         const b = m.get(e.epoch); if (!b) continue;
         const v = [b.open, b.high, b.low, b.close, e.open, e.high, e.low, e.close].map(Number);
         if (!v.every(x => Number.isFinite(x) && x > 0)) continue;
         if (out.epochs.length && e.epoch <= out.epochs[out.epochs.length - 1]) continue;
         out.epochs.push(e.epoch);
+        out.v.b.push(typeof b.volume === 'number' ? b.volume : NaN); out.v.e.push(typeof e.volume === 'number' ? e.volume : NaN);
         out.o.b.push(v[0]); out.h.b.push(v[1]); out.l.b.push(v[2]); out.c.b.push(v[3]);
         out.o.e.push(v[4]); out.h.e.push(v[5]); out.l.e.push(v[6]); out.c.e.push(v[7]);
     }
