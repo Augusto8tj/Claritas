@@ -7,6 +7,7 @@ import { backtestCandlesAsync, mergeStats, type RuleReport } from '../services/b
 import { groupOf } from '../services/report-builders';
 import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
 import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services/leadlag-tick-study';
+import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypotheses';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -20,6 +21,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         assetMeta: Record<string, { n: number, from: string, to: string, mid?: string }>;
         leadLagReport?: any;
         tickStudyReport?: TickStudyReport;
+        horizonReport?: HypReport;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -174,5 +176,26 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy };
+    // ETAPA 18: hipóteses pré-registradas de 15/30 min (determinístico, sem LLM)
+    const runHorizonStudy = async (targetCount = 40000, payoutPct = 80) => {
+        if (runningRef.current) return;
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Baixando velas BTC/ETH...' }));
+        try {
+            const onProgress = (msg: string) => setBacktest(prev => ({ ...prev, progress: msg }));
+            const btc = await fetchCandlesPaged('cryBTCUSD', targetCount, onProgress);
+            const eth = await fetchCandlesPaged('cryETHUSD', targetCount, onProgress);
+            setBacktest(prev => ({ ...prev, progress: 'Calculando hipóteses 15/30 min...' }));
+            await new Promise(r => setTimeout(r, 20));
+            const report = runHorizonHypotheses(btc, eth, { payoutPct });
+            setBacktest(prev => ({ ...prev, horizonReport: report }));
+        } catch (e) {
+            console.error('Horizon study error:', e);
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy };
 }

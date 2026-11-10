@@ -46,6 +46,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Asset, Operation } from '@/lib/types';
 import { buildLeadLagReport } from '@/features/trading/services/report-builders';
 import { buildTickStudyReport } from '@/features/trading/services/leadlag-tick-study';
+import { buildHorizonReport } from '@/features/trading/services/horizon-hypotheses';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -71,7 +72,7 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
@@ -654,6 +655,35 @@ function CryptoLabContent() {
                                             onClick={() => {
                                                 navigator.clipboard.writeText(buildTickStudyReport(backtest.tickStudyReport!));
                                                 toast({ title: "Relatório de ticks copiado!" });
+                                            }}
+                                        >
+                                            <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pt-3 border-t border-purple-200 space-y-2">
+                                <p className="text-xs font-bold text-emerald-700">Hipóteses 15/30 min (Etapa 18, sem LLM)</p>
+                                <Button
+                                    onClick={() => runHorizonStudy(targetCount, 80)}
+                                    disabled={backtest.running}
+                                    size="sm"
+                                    className="w-full h-8 bg-emerald-600 text-white font-bold"
+                                >
+                                    {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar Hipóteses 15/30m"}
+                                </Button>
+                                {backtest.horizonReport && (
+                                    <div className="p-3 bg-white rounded border border-emerald-200">
+                                        <p className="text-xs font-bold text-emerald-700 mb-1">Conclusão (15/30m):</p>
+                                        <p className="text-xs font-black">{backtest.horizonReport.conclusion}</p>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full h-7 mt-2 text-[10px] font-bold text-emerald-600 border border-emerald-100"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(buildHorizonReport(backtest.horizonReport!));
+                                                toast({ title: "Relatório 15/30m copiado!" });
                                             }}
                                         >
                                             <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
