@@ -47,6 +47,8 @@ import { Asset, Operation } from '@/lib/types';
 import { buildLeadLagReport } from '@/features/trading/services/report-builders';
 import { buildTickStudyReport } from '@/features/trading/services/leadlag-tick-study';
 import { buildHorizonReport } from '@/features/trading/services/horizon-hypotheses';
+import { buildOosReport } from '@/features/trading/services/oos-confirmation';
+import { buildPayoutProbeText } from '@/features/trading/services/payout-probe';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -72,7 +74,7 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, payoutProbe, runPayoutProbe, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
@@ -590,6 +592,8 @@ function CryptoLabContent() {
                                         <SelectItem value="20000">20k</SelectItem>
                                         <SelectItem value="40000">40k</SelectItem>
                                         <SelectItem value="60000">60k</SelectItem>
+                                        <SelectItem value="120000">120k</SelectItem>
+                                        <SelectItem value="200000">200k</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
@@ -687,6 +691,60 @@ function CryptoLabContent() {
                                             }}
                                         >
                                             <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="pt-3 border-t border-purple-200 space-y-2">
+                                <p className="text-xs font-bold text-amber-700">Confirmação fora da amostra (Etapa 19)</p>
+                                <p className="text-[10px] text-muted-foreground">Selecione 120k candles acima. Regra H3_ALTA@15m congelada, testada só em dados anteriores a 12/10.</p>
+                                <Button
+                                    onClick={() => runOosStudy(targetCount, 80)}
+                                    disabled={backtest.running}
+                                    size="sm"
+                                    className="w-full h-8 bg-amber-600 text-white font-bold"
+                                >
+                                    {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar Confirmação OOS"}
+                                </Button>
+                                {backtest.oosReport && (
+                                    <div className="p-3 bg-white rounded border border-amber-200">
+                                        <p className="text-xs font-bold text-amber-700 mb-1">Veredito OOS: {backtest.oosReport.verdict}</p>
+                                        <p className="text-xs font-black">{backtest.oosReport.conclusion}</p>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full h-7 mt-2 text-[10px] font-bold text-amber-600 border border-amber-100"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(buildOosReport(backtest.oosReport!));
+                                                toast({ title: "Relatório OOS copiado!" });
+                                            }}
+                                        >
+                                            <Copy className="h-3 w-3 mr-1.5"/> Copiar Relatório
+                                        </Button>
+                                    </div>
+                                )}
+                                <Button
+                                    onClick={() => runPayoutProbe(900)}
+                                    size="sm"
+                                    variant="outline"
+                                    className="w-full h-8 font-bold"
+                                >
+                                    Sondar payout 15 min (sem comprar)
+                                </Button>
+                                {payoutProbe && (
+                                    <div className="p-3 bg-white rounded border border-amber-200">
+                                        <pre className="text-[10px] whitespace-pre-wrap">{buildPayoutProbeText(payoutProbe)}</pre>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="w-full h-7 mt-2 text-[10px] font-bold text-amber-600 border border-amber-100"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(buildPayoutProbeText(payoutProbe));
+                                                toast({ title: "Sonda copiada!" });
+                                            }}
+                                        >
+                                            <Copy className="h-3 w-3 mr-1.5"/> Copiar
                                         </Button>
                                     </div>
                                 )}

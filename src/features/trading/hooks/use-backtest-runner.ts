@@ -8,6 +8,7 @@ import { groupOf } from '../services/report-builders';
 import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
 import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services/leadlag-tick-study';
 import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypotheses';
+import { runOosConfirmation, type OosReport } from '../services/oos-confirmation';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -22,6 +23,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         leadLagReport?: any;
         tickStudyReport?: TickStudyReport;
         horizonReport?: HypReport;
+        oosReport?: OosReport;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -197,5 +199,26 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy };
+    // ETAPA 19: confirmação fora da amostra da regra congelada H3_ALTA@15m (dados anteriores à janela de descoberta)
+    const runOosStudy = async (targetCount = 120000, payoutPct = 80) => {
+        if (runningRef.current) return;
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Baixando histórico longo BTC/ETH...' }));
+        try {
+            const onProgress = (msg: string) => setBacktest(prev => ({ ...prev, progress: msg }));
+            const btc = await fetchCandlesPaged('cryBTCUSD', targetCount, onProgress);
+            const eth = await fetchCandlesPaged('cryETHUSD', targetCount, onProgress);
+            setBacktest(prev => ({ ...prev, progress: 'Calculando confirmação fora da amostra...' }));
+            await new Promise(r => setTimeout(r, 20));
+            const report = runOosConfirmation(btc, eth, { payoutPct });
+            setBacktest(prev => ({ ...prev, oosReport: report }));
+        } catch (e) {
+            console.error('OOS study error:', e);
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy };
 }

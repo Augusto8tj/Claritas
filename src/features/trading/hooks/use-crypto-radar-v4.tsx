@@ -8,6 +8,7 @@
  * V5.8: Calibração Lead-Lag Walk-Forward e Bloqueio de Piloto Não-CalIBRADO.
  */
 
+import { probePayout, type PayoutProbeResult } from '../services/payout-probe';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
@@ -151,7 +152,7 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
 
-    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy } = useBacktestRunner(getHistoricalData);
+    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy } = useBacktestRunner(getHistoricalData);
 
     // V6.1: PERSISTE A CALIBRAÇÃO GERADA PELO BACKTEST LEAD-LAG (sem isso o interlock bloqueia o DEMO para sempre)
     useEffect(() => {
@@ -164,6 +165,16 @@ export function useCryptoRadarV4(
             .catch((e: any) => addLog(`[V6.1] Falha ao salvar calibração: ${e?.message || e}`, 'error'));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [backtest.leadLagReport, user]);
+
+    // ETAPA 19: sonda de payout (contracts_for + proposal, NUNCA compra)
+    const [payoutProbe, setPayoutProbe] = useState<PayoutProbeResult | null>(null);
+    const runPayoutProbe = useCallback(async (durationSec = 900, symbol = 'cryETHUSD') => {
+        const res = await probePayout(getContractsFor, getProposal, symbol, durationSec, 1);
+        setPayoutProbe(res);
+        addLog(`[V19] Sonda de payout ${symbol} ${durationSec}s: ${res.ok && res.put ? `PUT ${res.put.payoutPct.toFixed(1)}% (breakeven ${(res.put.breakeven * 100).toFixed(2)}%)` : `falhou: ${res.error ?? 'sem dados'}`}`, res.ok ? 'info' : 'warning');
+        return res;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [getContractsFor, getProposal]);
 
     const [lastDecision, setLastDecision] = useState<CouncilDecision | null>(null);
     const [radarStatus, setRadarStatus] = useState<Record<string, any>>({});
@@ -777,7 +788,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, payoutProbe, runPayoutProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         calibration
