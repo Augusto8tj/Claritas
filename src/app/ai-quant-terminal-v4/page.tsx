@@ -48,7 +48,8 @@ import { buildLeadLagReport } from '@/features/trading/services/report-builders'
 import { buildTickStudyReport } from '@/features/trading/services/leadlag-tick-study';
 import { buildHorizonReport } from '@/features/trading/services/horizon-hypotheses';
 import { buildOosReport } from '@/features/trading/services/oos-confirmation';
-import { buildPayoutProbeText } from '@/features/trading/services/payout-probe';
+import { buildPayoutProbeText, buildMultiplierProbeText } from '@/features/trading/services/payout-probe';
+import { evaluateMultiplier, buildMultiplierReport } from '@/features/trading/services/multiplier-economics';
 
 type AssetGroup = { label: string; options: Asset[] };
 
@@ -74,12 +75,13 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
 
     const [tickDays, setTickDays] = useState(3);
+    const [multiplierText, setMultiplierText] = useState('');
     const [csvBtcFiles, setCsvBtcFiles] = useState<File[]>([]);
     const [csvEthFiles, setCsvEthFiles] = useState<File[]>([]);
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -768,6 +770,47 @@ function CryptoLabContent() {
                                 >
                                     Sondar payout 15 min (sem comprar)
                                 </Button>
+                                <div className="space-y-1 pt-2 border-t border-amber-100">
+                                    <p className="text-[10px] font-bold text-amber-700">Multiplier (Etapa 21): a Deriv só oferece MULTUP/MULTDOWN para cripto</p>
+                                    <Button onClick={() => runMultiplierProbe()} size="sm" variant="outline" className="w-full h-8 font-bold">
+                                        Sondar custo do Multiplier (sem comprar)
+                                    </Button>
+                                    {multiplierProbe && (
+                                        <div className="p-2 bg-white rounded border border-amber-200">
+                                            <pre className="text-[10px] whitespace-pre-wrap">{buildMultiplierProbeText(multiplierProbe)}</pre>
+                                        </div>
+                                    )}
+                                    <Button
+                                        size="sm"
+                                        className="w-full h-8 bg-amber-800 text-white font-bold"
+                                        disabled={!backtest.oosReport || !backtest.oosReport.ok}
+                                        onClick={() => {
+                                            const rep = backtest.oosReport!;
+                                            const opts = multiplierProbe && multiplierProbe.ok
+                                                ? multiplierProbe.quotes.map(q => ({ multiplier: q.multiplier, costBps: q.costBps }))
+                                                : [100, 200, 500].map(m => ({ multiplier: m, costBps: null }));
+                                            setMultiplierText(buildMultiplierReport(rep, evaluateMultiplier(rep, opts)));
+                                        }}
+                                    >
+                                        Avaliar como Multiplier (usa o último OOS)
+                                    </Button>
+                                    {multiplierText && (
+                                        <div className="p-2 bg-white rounded border border-amber-200">
+                                            <pre className="text-[10px] whitespace-pre-wrap">{multiplierText}</pre>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full h-7 mt-1 text-[10px] font-bold text-amber-600 border border-amber-100"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(multiplierText);
+                                                    toast({ title: "Relatório Multiplier copiado!" });
+                                                }}
+                                            >
+                                                <Copy className="h-3 w-3 mr-1.5"/> Copiar
+                                            </Button>
+                                        </div>
+                                    )}
+                                </div>
                                 {payoutProbe && (
                                     <div className="p-3 bg-white rounded border border-amber-200">
                                         <pre className="text-[10px] whitespace-pre-wrap">{buildPayoutProbeText(payoutProbe)}</pre>

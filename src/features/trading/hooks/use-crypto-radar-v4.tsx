@@ -8,7 +8,7 @@
  * V5.8: Calibração Lead-Lag Walk-Forward e Bloqueio de Piloto Não-CalIBRADO.
  */
 
-import { probePayout, type PayoutProbeResult } from '../services/payout-probe';
+import { probePayout, probeMultiplier, type PayoutProbeResult, type MultiplierProbeResult } from '../services/payout-probe';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { TickData, CandleData, OperationInitiator, DurationUnit, Operation, OllamaConfig } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi, type AccountType } from './use-deriv-api-v2';
@@ -172,6 +172,16 @@ export function useCryptoRadarV4(
         const res = await probePayout(getContractsFor, getProposal, symbol, durationSec, 1);
         setPayoutProbe(res);
         addLog(`[V19] Sonda de payout ${symbol} ${durationSec}s: ${res.ok && res.put ? `PUT ${res.put.payoutPct.toFixed(1)}% (breakeven ${(res.put.breakeven * 100).toFixed(2)}%)` : `falhou: ${res.error ?? 'sem dados'}`}`, res.ok ? 'info' : 'warning');
+        return res;
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [getContractsFor, getProposal]);
+
+    // ETAPA 21: sonda de custo do Multiplier (proposal, NUNCA compra)
+    const [multiplierProbe, setMultiplierProbe] = useState<MultiplierProbeResult | null>(null);
+    const runMultiplierProbe = useCallback(async (symbol = 'cryETHUSD') => {
+        const res = await probeMultiplier(getContractsFor, getProposal, symbol, 10, 'MULTDOWN');
+        setMultiplierProbe(res);
+        addLog(`[V21] Sonda Multiplier ${symbol}: ${res.ok ? res.quotes.map(q => `x${q.multiplier}=${q.costBps.toFixed(1)}bps`).join(' ') : `falhou: ${res.error ?? 'sem dados'}`}`, res.ok ? 'info' : 'warning');
         return res;
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [getContractsFor, getProposal]);
@@ -788,7 +798,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         calibration

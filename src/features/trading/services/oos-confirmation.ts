@@ -28,6 +28,7 @@
 import type { CandleData } from '@/lib/types';
 import { wilsonInterval, mulberry32, blockBootstrapDays } from './leadlag-backtest';
 import { alignBars, computeSignals, DEFAULT_HYP_CONFIG } from './horizon-hypotheses';
+import { bootstrapMeanByDay } from './multiplier-economics';
 
 /** Regra congelada (NÃO editar sem registrar nova hipótese). */
 export const FROZEN_RULE = { id: 'H3_ALTA', horizon: 15, direction: 'PUT', config: DEFAULT_HYP_CONFIG } as const;
@@ -49,6 +50,8 @@ export interface OosReport {
     halves: [number | null, number | null]; dayBootstrap: [number, number] | null;
     winRateB: number | null; pPlacebo: number; basePutRate: number;
     blocks: { from: number; to: number; n: number; winRate: number | null }[];
+    events: { day: number; retBps: number; maeBps: number }[];
+    grossMeanBps: number; grossCiBps: [number, number] | null; pPlaceboMean: number;
     refInside: boolean; verdict: OosVerdict; motivo: string; conclusion: string;
 }
 
@@ -57,7 +60,7 @@ function failReport(reason: string, meta: Partial<OosReport['meta']>, payoutPct:
         ok: false, reason, meta: { from: 0, to: 0, days: 0, candles: 0, cutoffEpoch: 0, candlesAfterCutoffDiscarded: 0, source: 'n/d', ...meta },
         filters: { gapDropped: 0, liquidityDropped: 0, liquidityFilterActive: false },
         payoutPct, breakeven: 1 / (1 + payoutPct / 100), n: 0, wins: 0, ties: 0, winRate: 0, wilson: [0, 1], halves: [null, null],
-        dayBootstrap: null, winRateB: null, pPlacebo: 1, basePutRate: 0, blocks: [], refInside: false,
+        dayBootstrap: null, winRateB: null, pPlacebo: 1, basePutRate: 0, blocks: [], events: [], grossMeanBps: 0, grossCiBps: null, pPlaceboMean: 1, refInside: false,
         verdict: 'INCONCLUSIVO', motivo: reason, conclusion: `DADOS INSUFICIENTES: ${reason}`,
     };
 }
@@ -108,6 +111,7 @@ export function runOosConfirmation(
     const liquidAt = (i: number) => !hasVol || (bars.v.b[i] > 0 && bars.v.e[i] > 0 && traded(i + H) && activeMarket(i));
 
     const t: number[] = [], win: boolean[] = [], tie: boolean[] = [], winB: boolean[] = [];
+    const retBpsArr: number[] = [], maeArr: number[] = [];
     let next = 0, gapDropped = 0, liquidityDropped = 0;
     for (let i = warmup; i < n - H - 1; i++) {
         const d = sig[i];
@@ -116,6 +120,13 @@ export function runOosConfirmation(
         if (!liquidAt(i)) { liquidityDropped++; continue; }
         const rA = (le[i + H] - le[i]) * d, rB = (le[i + 1 + H] - le[i + 1]) * d;
         t.push(i); win.push(rA > 0); tie.push(rA === 0); winB.push(rB > 0);
+        retBpsArr.push(rA * 1e4);
+        let adv = 0; // excursão adversária máxima (máx/mín intravela) durante os H minutos, em bps do ativo
+        for (let j = i + 1; j <= i + H; j++) {
+            const a = d === -1 ? Math.log(bars.h.e[j] / bars.c.e[i]) : Math.log(bars.c.e[i] / bars.l.e[j]);
+            if (a > adv) adv = a;
+        }
+        maeArr.push(adv * 1e4);
         next = i + H;
     }
     const N = t.length, wins = win.filter(Boolean).length, ties = tie.filter(Boolean).length;
@@ -130,18 +141,22 @@ export function runOosConfirmation(
     // placebo (um teste): mesmos instantes, direção PUT, retornos da ETH em instantes deslocados circularmente
     const rng = mulberry32(seed);
     const minShift = Math.min(1440, Math.floor(n * 0.1));
-    let ge = 0, used = 0;
+    const obsMean = N ? retBpsArr.reduce((a, b) => a + b, 0) / N : 0;
+    let ge = 0, used = 0, geMean = 0;
     for (let r = 0; r < reps && N > 0; r++) {
         const s = minShift + Math.floor(rng() * Math.max(1, n - 2 * minShift));
-        let w = 0, c = 0;
+        let w = 0, c = 0, rs = 0;
         for (let k = 0; k < N; k++) {
             const j = (t[k] + s) % n;
             if (j + H >= n) continue;
-            c++; if ((le[j + H] - le[j]) * -1 > 0) w++;
+            c++; rs += (le[j + H] - le[j]) * -1e4; if ((le[j + H] - le[j]) * -1 > 0) w++;
         }
-        if (c > 0) { used++; if (w / c >= obs) ge++; }
+        if (c > 0) { used++; if (w / c >= obs) ge++; if (rs / c >= obsMean) geMean++; }
     }
     const pPlacebo = N && used ? (ge + 1) / (used + 1) : 1;
+    const pPlaceboMean = N && used ? (geMean + 1) / (used + 1) : 1;
+    const events = t.map((i, k) => ({ day: Math.floor(bars.epochs[i] / 86400), retBps: retBpsArr[k], maeBps: maeArr[k] }));
+    const grossCiBps = bootstrapMeanByDay(events.map(e => ({ day: e.day, x: e.retBps })), 1000, seed);
 
     // taxa-base: fração de janelas de 15 min em que a ETH cai (deriva do período)
     let down = 0, tot = 0;
@@ -184,7 +199,7 @@ export function runOosConfirmation(
     return {
         ok: true, meta: { from: bars.epochs[0], to: bars.epochs[n - 1], days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded, source },
         filters: { gapDropped, liquidityDropped, liquidityFilterActive: hasVol },
-        payoutPct, breakeven, n: N, wins, ties, winRate: obs, wilson, halves, dayBootstrap, winRateB, pPlacebo, basePutRate, blocks, refInside, verdict, motivo, conclusion,
+        payoutPct, breakeven, n: N, wins, ties, winRate: obs, wilson, halves, dayBootstrap, winRateB, pPlacebo, basePutRate, blocks, events, grossMeanBps: obsMean, grossCiBps, pPlaceboMean, refInside, verdict, motivo, conclusion,
     };
 }
 
@@ -201,6 +216,7 @@ export function buildOosReport(r: OosReport): string {
     L.push(`- N=${r.n} (${(r.n / Math.max(1, r.meta.days)).toFixed(1)}/dia) | acerto ${pc(r.winRate)} | Wilson95 [${pc(r.wilson[0])} - ${pc(r.wilson[1])}] | empates ${r.ties}`);
     L.push(`- Metades: ${r.halves[0] === null ? 'n/d' : pc(r.halves[0])} / ${r.halves[1] === null ? 'n/d' : pc(r.halves[1])} | bootstrap/dia ${r.dayBootstrap ? `[${pc(r.dayBootstrap[0])} - ${pc(r.dayBootstrap[1])}]` : 'n/d'}`);
     L.push(`- Variante B (1 vela depois): ${r.winRateB === null ? 'n/d' : pc(r.winRateB)} | placebo p=${r.pPlacebo.toFixed(4)} | taxa-base de PUT 15m no período: ${pc(r.basePutRate)}`);
+    L.push(`- Retorno médio bruto por operação (PUT 15m): ${r.grossMeanBps.toFixed(2)} bps${r.grossCiBps ? ` (IC95 por dia [${r.grossCiBps[0].toFixed(2)}, ${r.grossCiBps[1].toFixed(2)}])` : ''} | placebo do retorno p=${r.pPlaceboMean.toFixed(4)}`);
     L.push(`- Acerto de referência (${pc(IN_SAMPLE_REF.winRate)}) ${r.refInside ? 'CABE' : 'NÃO cabe'} no IC fora da amostra | encolhimento: ${((IN_SAMPLE_REF.winRate - r.winRate) * 100).toFixed(1)} pp`);
     L.push('- Blocos cronológicos: ' + (r.blocks.length ? r.blocks.map(b => `${d(b.from)}: N=${b.n} ${b.winRate === null ? 'n/d' : pc(b.winRate)}`).join(' | ') : 'n/d'));
     L.push(`- Validade dos dados: sinais descartados por buraco de tempo: ${r.filters.gapDropped} | por mercado parado/sem volume: ${r.filters.liquidityDropped}${r.filters.liquidityFilterActive ? '' : ' (filtro de liquidez inativo: velas sem volume)'}`);

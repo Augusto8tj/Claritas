@@ -71,3 +71,43 @@ export function buildPayoutProbeText(r: PayoutProbeResult): string {
     r.notes.forEach(n => L.push(`nota: ${n}`));
     return L.join('\n');
 }
+
+// ---------------- MULTIPLIER (ETAPA 21) ----------------
+export interface MultiplierQuote { multiplier: number; ask: number; commission: number; stake: number; costBps: number; stopOutPct: number; }
+export interface MultiplierProbeResult { ok: boolean; error?: string; symbol: string; stake: number; side: 'MULTUP' | 'MULTDOWN'; quotes: MultiplierQuote[]; notes: string[]; }
+
+/** Pede `proposal` (NUNCA compra) para cada multiplicador oferecido e mede a comissão em bps do ativo: comissão / (stake * multiplicador). */
+export async function probeMultiplier(getContractsFor: Fn, getProposal: Fn, symbol: string, stake = 10, side: 'MULTUP' | 'MULTDOWN' = 'MULTDOWN'): Promise<MultiplierProbeResult> {
+    const res: MultiplierProbeResult = { ok: false, symbol, stake, side, quotes: [], notes: [] };
+    try {
+        const cf = await getContractsFor(symbol);
+        if (cf?.error) { res.error = `contracts_for: ${cf.error.message}`; return res; }
+        const mult = (cf?.contracts_for?.available || []).filter((c: any) => c.contract_category === 'multiplier');
+        if (mult.length === 0) { res.error = 'nenhum contrato multiplier disponível para o símbolo'; return res; }
+        const entry = mult.find((c: any) => c.contract_type === side) ?? mult[0];
+        const range: number[] = (Array.isArray(entry.multiplier_range) ? entry.multiplier_range : []).map(Number).filter((x: number) => x > 0).sort((a: number, b: number) => a - b).slice(0, 6);
+        if (range.length === 0) { res.error = 'contracts_for não trouxe multiplier_range'; return res; }
+        for (const m of range) {
+            const p = await getProposal({ contract_type: side, currency: 'USD', symbol, amount: stake, basis: 'stake', multiplier: m });
+            if (p?.error || !p?.proposal) { res.notes.push(`x${m}: ${p?.error?.message ?? 'sem proposal'}`); continue; }
+            const ask = Number(p.proposal.ask_price);
+            const commission = Number(p.proposal.commission ?? (ask - stake));
+            if (!(ask > 0) || !Number.isFinite(commission) || commission < 0) { res.notes.push(`x${m}: valores inválidos no proposal`); continue; }
+            res.quotes.push({ multiplier: m, ask, commission, stake, costBps: (commission / (stake * m)) * 1e4, stopOutPct: 100 / m });
+        }
+        res.ok = res.quotes.length > 0;
+        if (!res.ok) res.error = 'nenhum proposal de multiplier retornou preço';
+        return res;
+    } catch (e: any) {
+        res.error = e?.message || String(e);
+        return res;
+    }
+}
+
+export function buildMultiplierProbeText(r: MultiplierProbeResult): string {
+    const L = [`[SONDA DE MULTIPLIER] ${r.symbol} | ${r.side} | stake ${r.stake} USD (nenhuma compra realizada)`];
+    r.quotes.forEach(q => L.push(`x${q.multiplier}: ask ${q.ask} | comissão ${q.commission.toFixed(4)} USD | custo ${q.costBps.toFixed(2)} bps do ativo | stop-out em ${q.stopOutPct.toFixed(2)}%`));
+    if (r.error) L.push(`ERRO: ${r.error}`);
+    r.notes.forEach(n => L.push(`nota: ${n}`));
+    return L.join('\n');
+}
