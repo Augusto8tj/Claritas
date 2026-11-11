@@ -10,6 +10,7 @@ import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services
 import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypotheses';
 import { runOosConfirmation, type OosReport } from '../services/oos-confirmation';
 import { parseKlinesCsv, mergeCandles, assessQuality, buildQualityText } from '../services/candle-csv-import';
+import { compareWindows, buildWindowComparisonReport } from '../services/window-comparison';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -26,6 +27,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         horizonReport?: HypReport;
         oosReport?: OosReport;
         importQuality?: string;
+        windowComparisonText?: string;
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -259,5 +261,39 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles };
+    // ETAPA 22: mesma regra congelada em duas janelas (pré-descoberta x janela de descoberta), fonte CSV
+    const runWindowComparisonFromFiles = async (btcFiles: File[], ethFiles: File[], payoutPct = 80) => {
+        if (runningRef.current) return;
+        if (btcFiles.length === 0 || ethFiles.length === 0) {
+            setBacktest(prev => ({ ...prev, windowComparisonText: 'Selecione os arquivos CSV de BTC e de ETH.' }));
+            return;
+        }
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Lendo arquivos CSV...' }));
+        try {
+            const readAll = async (files: File[]) => {
+                const all: any[] = [];
+                for (let i = 0; i < files.length; i++) {
+                    setBacktest(prev => ({ ...prev, progress: `Lendo ${files[i].name} (${i + 1}/${files.length})...` }));
+                    for (const c of parseKlinesCsv(await files[i].text()).candles) all.push(c);
+                }
+                return mergeCandles(all);
+            };
+            const b = await readAll(btcFiles);
+            const e = await readAll(ethFiles);
+            const quality = buildQualityText([assessQuality('BTC', b), assessQuality('ETH', e)]);
+            setBacktest(prev => ({ ...prev, importQuality: quality, progress: 'Comparando janelas...' }));
+            await new Promise(r => setTimeout(r, 20));
+            const cmp = compareWindows(b.candles, e.candles, { payoutPct, source: `CSV importado (${btcFiles.length} arquivo(s) BTC, ${ethFiles.length} arquivo(s) ETH)` });
+            setBacktest(prev => ({ ...prev, windowComparisonText: buildWindowComparisonReport(cmp) }));
+        } catch (err) {
+            console.error('Window comparison error:', err);
+            setBacktest(prev => ({ ...prev, windowComparisonText: `Erro: ${(err as Error)?.message ?? err}` }));
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles };
 }

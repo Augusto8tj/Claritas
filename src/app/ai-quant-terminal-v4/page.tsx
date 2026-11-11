@@ -75,7 +75,7 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
@@ -745,6 +745,30 @@ function CryptoLabContent() {
                                     >
                                         {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Rodar OOS com arquivos CSV"}
                                     </Button>
+                                    <Button
+                                        onClick={() => runWindowComparisonFromFiles(csvBtcFiles, csvEthFiles, 80)}
+                                        disabled={backtest.running || csvBtcFiles.length === 0 || csvEthFiles.length === 0}
+                                        size="sm"
+                                        className="w-full h-8 bg-amber-900 text-white font-bold"
+                                    >
+                                        {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Comparar janelas: pré x descoberta (Etapa 22)"}
+                                    </Button>
+                                    {backtest.windowComparisonText && (
+                                        <div className="p-2 bg-white rounded border border-amber-200">
+                                            <pre className="text-[10px] whitespace-pre-wrap">{backtest.windowComparisonText}</pre>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                className="w-full h-7 mt-1 text-[10px] font-bold text-amber-600 border border-amber-100"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(backtest.windowComparisonText!);
+                                                    toast({ title: "Comparação de janelas copiada!" });
+                                                }}
+                                            >
+                                                <Copy className="h-3 w-3 mr-1.5"/> Copiar
+                                            </Button>
+                                        </div>
+                                    )}
                                     {backtest.importQuality && (
                                         <div className="p-2 bg-white rounded border border-amber-200">
                                             <pre className="text-[10px] whitespace-pre-wrap">{backtest.importQuality}</pre>

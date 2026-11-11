@@ -43,7 +43,7 @@ export type OosVerdict = 'CONFIRMADO' | 'NÃO CONFIRMADO' | 'INCONCLUSIVO';
 
 export interface OosReport {
     ok: boolean; reason?: string;
-    meta: { from: number; to: number; days: number; candles: number; cutoffEpoch: number; candlesAfterCutoffDiscarded: number; source: string };
+    meta: { from: number; to: number; days: number; candles: number; cutoffEpoch: number; candlesAfterCutoffDiscarded: number; source: string; window: { from: number; to: number; days: number } };
     filters: { gapDropped: number; liquidityDropped: number; liquidityFilterActive: boolean };
     payoutPct: number; breakeven: number;
     n: number; wins: number; ties: number; winRate: number; wilson: [number, number];
@@ -57,7 +57,7 @@ export interface OosReport {
 
 function failReport(reason: string, meta: Partial<OosReport['meta']>, payoutPct: number): OosReport {
     return {
-        ok: false, reason, meta: { from: 0, to: 0, days: 0, candles: 0, cutoffEpoch: 0, candlesAfterCutoffDiscarded: 0, source: 'n/d', ...meta },
+        ok: false, reason, meta: { from: 0, to: 0, days: 0, candles: 0, cutoffEpoch: 0, candlesAfterCutoffDiscarded: 0, source: 'n/d', window: { from: 0, to: 0, days: 0 }, ...meta },
         filters: { gapDropped: 0, liquidityDropped: 0, liquidityFilterActive: false },
         payoutPct, breakeven: 1 / (1 + payoutPct / 100), n: 0, wins: 0, ties: 0, winRate: 0, wilson: [0, 1], halves: [null, null],
         dayBootstrap: null, winRateB: null, pPlacebo: 1, basePutRate: 0, blocks: [], events: [], grossMeanBps: 0, grossCiBps: null, pPlaceboMean: 1, refInside: false,
@@ -67,7 +67,7 @@ function failReport(reason: string, meta: Partial<OosReport['meta']>, payoutPct:
 
 export function runOosConfirmation(
     btc: CandleData[], eth: CandleData[],
-    opts: { cutoffEpoch?: number; payoutPct?: number; placeboReps?: number; seed?: number; blockDays?: number; source?: string } = {}
+    opts: { cutoffEpoch?: number; payoutPct?: number; placeboReps?: number; seed?: number; blockDays?: number; source?: string; eventFromEpoch?: number; eventToEpoch?: number } = {}
 ): OosReport {
     const cutoff = opts.cutoffEpoch ?? DEFAULT_CUTOFF_EPOCH;
     const payoutPct = opts.payoutPct ?? 80;
@@ -116,6 +116,7 @@ export function runOosConfirmation(
     for (let i = warmup; i < n - H - 1; i++) {
         const d = sig[i];
         if (!d || i < next) continue;
+        if ((opts.eventFromEpoch !== undefined && bars.epochs[i] < opts.eventFromEpoch) || (opts.eventToEpoch !== undefined && bars.epochs[i] > opts.eventToEpoch)) continue;
         if (!noGap(i - LB, i + H + 1)) { gapDropped++; continue; }
         if (!liquidAt(i)) { liquidityDropped++; continue; }
         const rA = (le[i + H] - le[i]) * d, rB = (le[i + 1 + H] - le[i + 1]) * d;
@@ -189,6 +190,7 @@ export function runOosConfirmation(
         if (falhas.length === 0) { verdict = 'CONFIRMADO'; motivo = 'todos os critérios pré-definidos atendidos'; }
         else { verdict = 'INCONCLUSIVO'; motivo = falhas.join('; '); }
     }
+    const wFrom = Math.max(opts.eventFromEpoch ?? bars.epochs[0], bars.epochs[0]), wTo = Math.min(opts.eventToEpoch ?? bars.epochs[n - 1], bars.epochs[n - 1]);
     const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
     const conclusion = verdict === 'CONFIRMADO'
         ? `CONFIRMADO fora da amostra: ${pc(obs)} em N=${N} (Wilson [${pc(wilson[0])} - ${pc(wilson[1])}]). Próximo passo: shadow à frente no tempo com a regra congelada. Ainda NÃO autoriza execução.`
@@ -197,7 +199,7 @@ export function runOosConfirmation(
             : `INCONCLUSIVO: ${motivo}. Não executar; aumente o histórico ou aguarde mais dados.`;
 
     return {
-        ok: true, meta: { from: bars.epochs[0], to: bars.epochs[n - 1], days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded, source },
+        ok: true, meta: { from: bars.epochs[0], to: bars.epochs[n - 1], days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, candles: n, cutoffEpoch: cutoff, candlesAfterCutoffDiscarded: discarded, source, window: { from: wFrom, to: wTo, days: Math.max(0, (wTo - wFrom) / 86400) } },
         filters: { gapDropped, liquidityDropped, liquidityFilterActive: hasVol },
         payoutPct, breakeven, n: N, wins, ties, winRate: obs, wilson, halves, dayBootstrap, winRateB, pPlacebo, basePutRate, blocks, events, grossMeanBps: obsMean, grossCiBps, pPlaceboMean, refInside, verdict, motivo, conclusion,
     };
@@ -213,7 +215,7 @@ export function buildOosReport(r: OosReport): string {
     L.push(`FONTE DOS DADOS: ${r.meta.source}`);
     L.push(`FORA DA AMOSTRA: ${d(r.meta.from)} a ${d(r.meta.to)} (${r.meta.days.toFixed(1)} dias, ${r.meta.candles} velas) | corte em ${d(r.meta.cutoffEpoch)} | descartadas após o corte: ${r.meta.candlesAfterCutoffDiscarded}`);
     L.push(`Payout ${r.payoutPct}% => breakeven ${pc(r.breakeven)} | m=1 teste`, '', `>>> VEREDITO: ${r.verdict}`, `>>> ${r.conclusion}`, '');
-    L.push(`- N=${r.n} (${(r.n / Math.max(1, r.meta.days)).toFixed(1)}/dia) | acerto ${pc(r.winRate)} | Wilson95 [${pc(r.wilson[0])} - ${pc(r.wilson[1])}] | empates ${r.ties}`);
+    L.push(`- N=${r.n} (${(r.n / Math.max(1, r.meta.window.days)).toFixed(1)}/dia, janela de eventos de ${r.meta.window.days.toFixed(1)} dias) | acerto ${pc(r.winRate)} | Wilson95 [${pc(r.wilson[0])} - ${pc(r.wilson[1])}] | empates ${r.ties}`);
     L.push(`- Metades: ${r.halves[0] === null ? 'n/d' : pc(r.halves[0])} / ${r.halves[1] === null ? 'n/d' : pc(r.halves[1])} | bootstrap/dia ${r.dayBootstrap ? `[${pc(r.dayBootstrap[0])} - ${pc(r.dayBootstrap[1])}]` : 'n/d'}`);
     L.push(`- Variante B (1 vela depois): ${r.winRateB === null ? 'n/d' : pc(r.winRateB)} | placebo p=${r.pPlacebo.toFixed(4)} | taxa-base de PUT 15m no período: ${pc(r.basePutRate)}`);
     L.push(`- Retorno médio bruto por operação (PUT 15m): ${r.grossMeanBps.toFixed(2)} bps${r.grossCiBps ? ` (IC95 por dia [${r.grossCiBps[0].toFixed(2)}, ${r.grossCiBps[1].toFixed(2)}])` : ''} | placebo do retorno p=${r.pPlaceboMean.toFixed(4)}`);
