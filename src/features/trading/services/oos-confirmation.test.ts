@@ -90,7 +90,8 @@ describe('probePayout', () => {
     expect(r.durationAllowed).toBe(true);
     expect(r.put!.payoutPct).toBeCloseTo(80, 5);
     expect(r.put!.breakeven).toBeCloseTo(1 / 1.8, 6);
-    expect(calls[0]).toMatchObject({ contract_type: 'PUT', duration: 15, duration_unit: 'm', basis: 'stake' });
+    expect(calls[0]).toMatchObject({ contract_type: 'PUT', duration: 15, duration_unit: 'm', basis: 'stake', underlying_symbol: 'cryETHUSD' });
+    expect(calls[0].symbol).toBeUndefined(); // a API atual exige underlying_symbol
     expect(buildPayoutProbeText(r)).toContain('nenhuma compra');
   });
   it('duração fora do intervalo não pede proposal', async () => {

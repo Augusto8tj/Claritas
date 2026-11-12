@@ -11,6 +11,7 @@ import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypoth
 import { runOosConfirmation, type OosReport } from '../services/oos-confirmation';
 import { readCandlesFromFile, mergeCandles, assessQuality, buildQualityText } from '../services/candle-csv-import';
 import { compareWindows, buildWindowComparisonReport } from '../services/window-comparison';
+import { runSuperReport } from '../services/super-report';
 
 export function useBacktestRunner(getHistoricalData: any) {
     const [backtest, setBacktest] = useState<{
@@ -28,6 +29,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         oosReport?: OosReport;
         importQuality?: string;
         windowComparisonText?: string;
+        superReportText?: string;
         windowReports?: { pre: OosReport; desc: OosReport };
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
@@ -296,5 +298,46 @@ export function useBacktestRunner(getHistoricalData: any) {
         }
     };
 
-    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles };
+    // ETAPA 24: SUPER RELATÓRIO (150 regras, janelas, contratos, estabilidade) a partir dos arquivos importados
+    const runSuperReportFromFiles = async (btcFiles: File[], ethFiles: File[], extra: { notes?: string[]; costs?: { multiplier: number; costBps: number | null }[] } = {}) => {
+        if (runningRef.current) return;
+        if (btcFiles.length === 0 || ethFiles.length === 0) {
+            setBacktest(prev => ({ ...prev, superReportText: 'Selecione os arquivos de BTC e de ETH (.zip ou .csv).' }));
+            return;
+        }
+        runningRef.current = true;
+        setBacktest(prev => ({ ...prev, running: true, progress: 'Lendo arquivos...' }));
+        try {
+            const readAll = async (files: File[]) => {
+                const all: any[] = [];
+                let skipped = 0;
+                for (let i = 0; i < files.length; i++) {
+                    setBacktest(prev => ({ ...prev, progress: `Lendo ${files[i].name} (${i + 1}/${files.length})...` }));
+                    const r = await readCandlesFromFile(files[i]);
+                    for (const c of r.candles) all.push(c);
+                    skipped += r.skipped;
+                }
+                return { merged: mergeCandles(all), skipped };
+            };
+            const b = await readAll(btcFiles);
+            const e = await readAll(ethFiles);
+            const quality = buildQualityText([assessQuality('BTC', b.merged, b.skipped), assessQuality('ETH', e.merged, e.skipped)]);
+            setBacktest(prev => ({ ...prev, importQuality: quality, progress: 'Calculando o super relatório (pode levar ~20 s)...' }));
+            await new Promise(r => setTimeout(r, 30));
+            const rep = runSuperReport(b.merged.candles, e.merged.candles, {
+                source: `Arquivos importados (${btcFiles.length} BTC, ${ethFiles.length} ETH)`,
+                extraNotes: [...(extra.notes ?? []), quality],
+                costs: extra.costs,
+            });
+            setBacktest(prev => ({ ...prev, superReportText: rep.text }));
+        } catch (err) {
+            console.error('Super report error:', err);
+            setBacktest(prev => ({ ...prev, superReportText: `Erro: ${(err as Error)?.message ?? err}` }));
+        } finally {
+            runningRef.current = false;
+            setBacktest(prev => ({ ...prev, running: false, progress: '' }));
+        }
+    };
+
+    return { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, runSuperReportFromFiles };
 }

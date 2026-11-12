@@ -75,7 +75,7 @@ function CryptoLabContent() {
         maxConcurrentTrades, setMaxConcurrentTrades,
         multiplier, setMultiplier,
         allowedActions, setAllowedActions, allowedContracts, setAllowedContracts,
-        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport, staleMinutes,
+        councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, runSuperReportFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport, staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         resetSession, sessionStats, lockedProfitFloor, calibration
     } = v4;
@@ -770,6 +770,56 @@ function CryptoLabContent() {
                                             </Button>
                                         </div>
                                     )}
+                                    <div className="pt-2 border-t border-amber-200 space-y-1">
+                                        <p className="text-[10px] font-bold text-red-700">SUPER RELATÓRIO (Etapa 24): copie uma vez e cole no chat</p>
+                                        <p className="text-[10px] text-muted-foreground">Rode antes as sondas de payout e de Multiplier para incluí-las. Leva ~20 s.</p>
+                                        <Button
+                                            onClick={() => runSuperReportFromFiles(csvBtcFiles, csvEthFiles, {
+                                                notes: [payoutProbe ? buildPayoutProbeText(payoutProbe) : '', multiplierProbe ? buildMultiplierProbeText(multiplierProbe) : ''].filter(Boolean),
+                                                costs: multiplierProbe && multiplierProbe.ok ? multiplierProbe.quotes.map(q => ({ multiplier: q.multiplier, costBps: q.costBps })) : undefined,
+                                            })}
+                                            disabled={backtest.running || csvBtcFiles.length === 0 || csvEthFiles.length === 0}
+                                            size="sm"
+                                            className="w-full h-9 bg-red-700 text-white font-bold"
+                                        >
+                                            {backtest.running ? <Loader2 className="h-4 w-4 animate-spin" /> : "Gerar SUPER RELATÓRIO"}
+                                        </Button>
+                                        {backtest.running && backtest.progress && (
+                                            <p className="text-[10px] text-muted-foreground">{backtest.progress}</p>
+                                        )}
+                                        {backtest.superReportText && (
+                                            <div className="p-2 bg-white rounded border border-red-200 space-y-1">
+                                                <textarea readOnly value={backtest.superReportText} className="w-full h-40 text-[9px] font-mono border rounded p-1" />
+                                                <div className="flex gap-1">
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="flex-1 h-7 text-[10px] font-bold text-red-700 border border-red-100"
+                                                        onClick={() => {
+                                                            navigator.clipboard.writeText(backtest.superReportText!);
+                                                            toast({ title: "Super relatório copiado!" });
+                                                        }}
+                                                    >
+                                                        <Copy className="h-3 w-3 mr-1.5"/> Copiar tudo
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="flex-1 h-7 text-[10px] font-bold text-red-700 border border-red-100"
+                                                        onClick={() => {
+                                                            const blob = new Blob([backtest.superReportText!], { type: 'text/plain;charset=utf-8' });
+                                                            const a = document.createElement('a');
+                                                            a.href = URL.createObjectURL(blob);
+                                                            a.download = 'super-relatorio-v24.txt';
+                                                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                                                        }}
+                                                    >
+                                                        Baixar .txt
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                     {backtest.importQuality && (
                                         <div className="p-2 bg-white rounded border border-amber-200">
                                             <pre className="text-[10px] whitespace-pre-wrap">{backtest.importQuality}</pre>

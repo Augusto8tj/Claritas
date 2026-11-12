@@ -152,7 +152,7 @@ export function useCryptoRadarV4(
     const [allowedActions, setAllowedActions] = useState<AllowedActionsV3>({ 'CALL': true, 'PUT': true });
     const [allowedContracts, setAllowedContracts] = useState<AllowedContractsV3>({ 'OPTIONS': true, 'ACCUMULATORS': false, 'MULTIPLIERS': true });
 
-    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles } = useBacktestRunner(getHistoricalData);
+    const { backtest, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, runSuperReportFromFiles } = useBacktestRunner(getHistoricalData);
 
     // V6.1: PERSISTE A CALIBRAÇÃO GERADA PELO BACKTEST LEAD-LAG (sem isso o interlock bloqueia o DEMO para sempre)
     useEffect(() => {
@@ -660,7 +660,7 @@ ${context}`;
                         const propRes = await getProposal({ 
                             contract_type: decision.finalAction === 'CALL' ? 'CALL' : 'PUT', 
                             currency: 'USD', 
-                            symbol, 
+                            underlying_symbol: symbol, 
                             amount: finalStake, 
                             basis: 'stake', 
                             duration: finalDurVal, 
@@ -798,7 +798,7 @@ ${context}`;
         backgroundIntervalSec, setBackgroundIntervalSec,
         chatMessages, isChatLoading, sendMessage,
         resetSession, sessionStats, lockedProfitFloor,
-        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
+        resilience, councilStats, runBacktest, runLeadLagBacktest, runLeadLagTickStudy, runHorizonStudy, runOosStudy, runOosFromFiles, runWindowComparisonFromFiles, runSuperReportFromFiles, payoutProbe, runPayoutProbe, multiplierProbe, runMultiplierProbe, backtest, buildBacktestReport: () => buildBacktestReport(backtest as any), staleMinutes,
         ollamaConfig, availableModels, updateOllamaConfig, fetchAvailableModels,
         executeManualDecision: () => activeSymbol && runAnalysisForSymbol(activeSymbol, getCandlesFor(activeSymbol), true),
         calibration

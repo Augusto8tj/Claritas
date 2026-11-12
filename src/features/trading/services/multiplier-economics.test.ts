@@ -81,7 +81,8 @@ describe('probeMultiplier', () => {
         expect(r.quotes.map(q => q.multiplier)).toEqual([100, 200, 500]);
         expect(r.quotes[0].costBps).toBeCloseTo((0.5 / (10 * 100)) * 1e4, 6);
         expect(r.quotes[0].stopOutPct).toBeCloseTo(1, 6);
-        expect(calls[0]).toMatchObject({ contract_type: 'MULTDOWN', multiplier: 100, basis: 'stake' });
+        expect(calls[0]).toMatchObject({ contract_type: 'MULTDOWN', multiplier: 100, basis: 'stake', underlying_symbol: 'cryETHUSD' });
+        expect(calls[0].symbol).toBeUndefined(); // regressão: a API rejeitava `symbol`
         expect(buildMultiplierProbeText(r)).toContain('nenhuma compra');
     });
     it('sem commission no proposal usa ask - stake; erros são reportados', async () => {

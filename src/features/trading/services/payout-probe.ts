@@ -45,7 +45,7 @@ export async function probePayout(getContractsFor: Fn, getProposal: Fn, symbol: 
 
         const dur = durationSec % 60 === 0 ? { duration: durationSec / 60, duration_unit: 'm' } : { duration: durationSec, duration_unit: 's' };
         for (const side of ['PUT', 'CALL'] as const) {
-            const p = await getProposal({ contract_type: side, currency: 'USD', symbol, amount: stake, basis: 'stake', ...dur });
+            const p = await getProposal({ contract_type: side, currency: 'USD', underlying_symbol: symbol, amount: stake, basis: 'stake', ...dur });
             if (p?.error || !p?.proposal) { res.notes.push(`${side}: ${p?.error?.message ?? 'sem proposal'}`); continue; }
             const ask = Number(p.proposal.ask_price), payout = Number(p.proposal.payout);
             if (!(ask > 0) || !(payout > 0)) { res.notes.push(`${side}: valores inválidos no proposal`); continue; }
@@ -88,7 +88,7 @@ export async function probeMultiplier(getContractsFor: Fn, getProposal: Fn, symb
         const range: number[] = (Array.isArray(entry.multiplier_range) ? entry.multiplier_range : []).map(Number).filter((x: number) => x > 0).sort((a: number, b: number) => a - b).slice(0, 6);
         if (range.length === 0) { res.error = 'contracts_for não trouxe multiplier_range'; return res; }
         for (const m of range) {
-            const p = await getProposal({ contract_type: side, currency: 'USD', symbol, amount: stake, basis: 'stake', multiplier: m });
+            const p = await getProposal({ contract_type: side, currency: 'USD', underlying_symbol: symbol, amount: stake, basis: 'stake', multiplier: m });
             if (p?.error || !p?.proposal) { res.notes.push(`x${m}: ${p?.error?.message ?? 'sem proposal'}`); continue; }
             const ask = Number(p.proposal.ask_price);
             const commission = Number(p.proposal.commission ?? (ask - stake));
