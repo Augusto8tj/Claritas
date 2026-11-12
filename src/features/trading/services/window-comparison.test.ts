@@ -65,6 +65,12 @@ describe('compareWindows', () => {
         expect(c.reproduces).toBe(false);
         expect(c.interpretation).toContain('NÃO REPRODUZ');
     });
+    it('PRÉ com poucos dias (só outubro) => não conclui', () => {
+        const { btc, eth } = synth(150, DESC_START_EPOCH);
+        const oct = Date.UTC(2026, 9, 1) / 1000;
+        const c = compareWindows(btc.filter((x: any) => x.epoch >= oct), eth.filter((x: any) => x.epoch >= oct), { placeboReps: 49 });
+        expect(c.interpretation).toContain('COBERTURA INSUFICIENTE da janela PRÉ');
+    });
     it('cobertura curta da janela de descoberta => sem conclusão', () => {
         const { btc, eth } = synth(138, null); // termina ~17/10: só ~4 dias da janela
         const c = compareWindows(btc, eth, { placeboReps: 49 });

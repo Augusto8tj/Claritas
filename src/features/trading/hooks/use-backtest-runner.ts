@@ -9,7 +9,7 @@ import { runLeadLagBacktest as runLLLogic } from '../services/leadlag-backtest';
 import { fetchTicksPaged, runTickStudy, type TickStudyReport } from '../services/leadlag-tick-study';
 import { runHorizonHypotheses, type HypReport } from '../services/horizon-hypotheses';
 import { runOosConfirmation, type OosReport } from '../services/oos-confirmation';
-import { parseKlinesCsv, mergeCandles, assessQuality, buildQualityText } from '../services/candle-csv-import';
+import { readCandlesFromFile, mergeCandles, assessQuality, buildQualityText } from '../services/candle-csv-import';
 import { compareWindows, buildWindowComparisonReport } from '../services/window-comparison';
 
 export function useBacktestRunner(getHistoricalData: any) {
@@ -28,6 +28,7 @@ export function useBacktestRunner(getHistoricalData: any) {
         oosReport?: OosReport;
         importQuality?: string;
         windowComparisonText?: string;
+        windowReports?: { pre: OosReport; desc: OosReport };
     }>({ 
         running: false, progress: '', ts: null, payoutPct: 85, 
         merged: {}, perAsset: {}, assetCounts: {}, assetMeta: {} 
@@ -239,7 +240,7 @@ export function useBacktestRunner(getHistoricalData: any) {
                 let skipped = 0;
                 for (let i = 0; i < files.length; i++) {
                     setBacktest(prev => ({ ...prev, progress: `Lendo ${files[i].name} (${i + 1}/${files.length})...` }));
-                    const r = parseKlinesCsv(await files[i].text());
+                    const r = await readCandlesFromFile(files[i]);
                     for (const c of r.candles) all.push(c);
                     skipped += r.skipped;
                 }
@@ -275,7 +276,7 @@ export function useBacktestRunner(getHistoricalData: any) {
                 const all: any[] = [];
                 for (let i = 0; i < files.length; i++) {
                     setBacktest(prev => ({ ...prev, progress: `Lendo ${files[i].name} (${i + 1}/${files.length})...` }));
-                    for (const c of parseKlinesCsv(await files[i].text()).candles) all.push(c);
+                    for (const c of (await readCandlesFromFile(files[i])).candles) all.push(c);
                 }
                 return mergeCandles(all);
             };
@@ -285,7 +286,7 @@ export function useBacktestRunner(getHistoricalData: any) {
             setBacktest(prev => ({ ...prev, importQuality: quality, progress: 'Comparando janelas...' }));
             await new Promise(r => setTimeout(r, 20));
             const cmp = compareWindows(b.candles, e.candles, { payoutPct, source: `CSV importado (${btcFiles.length} arquivo(s) BTC, ${ethFiles.length} arquivo(s) ETH)` });
-            setBacktest(prev => ({ ...prev, windowComparisonText: buildWindowComparisonReport(cmp) }));
+            setBacktest(prev => ({ ...prev, windowComparisonText: buildWindowComparisonReport(cmp), windowReports: { pre: cmp.pre, desc: cmp.desc } }));
         } catch (err) {
             console.error('Window comparison error:', err);
             setBacktest(prev => ({ ...prev, windowComparisonText: `Erro: ${(err as Error)?.message ?? err}` }));

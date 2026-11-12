@@ -82,6 +82,7 @@ function CryptoLabContent() {
 
     const [tickDays, setTickDays] = useState(3);
     const [multiplierText, setMultiplierText] = useState('');
+    const [multWindow, setMultWindow] = useState<'oos' | 'pre' | 'desc'>('oos');
     const [csvBtcFiles, setCsvBtcFiles] = useState<File[]>([]);
     const [csvEthFiles, setCsvEthFiles] = useState<File[]>([]);
     const [isSelectorOpen, setIsSelectorOpen] = useState(false);
@@ -730,12 +731,12 @@ function CryptoLabContent() {
                                 )}
                                 <div className="space-y-1 pt-2 border-t border-amber-100">
                                     <p className="text-[10px] font-bold text-amber-700">OOS com arquivos CSV (Etapa 20, sem Deriv)</p>
-                                    <p className="text-[10px] text-muted-foreground">Binance Vision (.csv extraído) ou Kaggle. Selecione todos os meses de cada ativo.</p>
-                                    <Label className="text-[10px]">BTC (.csv)</Label>
-                                    <input type="file" multiple accept=".csv" className="text-[10px] w-full"
+                                    <p className="text-[10px] text-muted-foreground">Binance Vision (.zip ou .csv) ou Kaggle. Selecione todos os meses e dias de cada ativo.</p>
+                                    <Label className="text-[10px]">BTC (.zip ou .csv)</Label>
+                                    <input type="file" multiple accept=".csv,.zip" className="text-[10px] w-full"
                                         onChange={e => setCsvBtcFiles(Array.from(e.target.files ?? []))} />
-                                    <Label className="text-[10px]">ETH (.csv)</Label>
-                                    <input type="file" multiple accept=".csv" className="text-[10px] w-full"
+                                    <Label className="text-[10px]">ETH (.zip ou .csv)</Label>
+                                    <input type="file" multiple accept=".csv,.zip" className="text-[10px] w-full"
                                         onChange={e => setCsvEthFiles(Array.from(e.target.files ?? []))} />
                                     <Button
                                         onClick={() => runOosFromFiles(csvBtcFiles, csvEthFiles, 80)}
@@ -804,19 +805,24 @@ function CryptoLabContent() {
                                             <pre className="text-[10px] whitespace-pre-wrap">{buildMultiplierProbeText(multiplierProbe)}</pre>
                                         </div>
                                     )}
+                                    <select className="text-[10px] w-full border rounded h-7" value={multWindow} onChange={e => setMultWindow(e.target.value as 'oos' | 'pre' | 'desc')}>
+                                        <option value="oos">Janela: último OOS (CSV ou Deriv)</option>
+                                        <option value="pre">Janela: pré-descoberta (Etapa 22)</option>
+                                        <option value="desc">Janela: descoberta (Etapa 22)</option>
+                                    </select>
                                     <Button
                                         size="sm"
                                         className="w-full h-8 bg-amber-800 text-white font-bold"
-                                        disabled={!backtest.oosReport || !backtest.oosReport.ok}
+                                        disabled={!((multWindow === 'oos' ? backtest.oosReport : backtest.windowReports?.[multWindow])?.ok)}
                                         onClick={() => {
-                                            const rep = backtest.oosReport!;
+                                            const rep = (multWindow === 'oos' ? backtest.oosReport : backtest.windowReports?.[multWindow])!;
                                             const opts = multiplierProbe && multiplierProbe.ok
                                                 ? multiplierProbe.quotes.map(q => ({ multiplier: q.multiplier, costBps: q.costBps }))
                                                 : [100, 200, 500].map(m => ({ multiplier: m, costBps: null }));
                                             setMultiplierText(buildMultiplierReport(rep, evaluateMultiplier(rep, opts)));
                                         }}
                                     >
-                                        Avaliar como Multiplier (usa o último OOS)
+                                        Avaliar como Multiplier (janela escolhida)
                                     </Button>
                                     {multiplierText && (
                                         <div className="p-2 bg-white rounded border border-amber-200">

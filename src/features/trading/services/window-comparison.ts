@@ -9,7 +9,7 @@
  * de regime (instável). Se não replica nem na DESC, foi seleção ou feed da Deriv (a fonte importada não distingue os dois).
  *
  * Regras de interpretação (definidas antes de rodar):
- *   cobertura da DESC < 10 dias            -> "cobertura insuficiente" (sem conclusão)
+ *   cobertura da DESC < 10 dias ou da PRÉ < 60 dias -> "cobertura insuficiente" (sem conclusão: comparar com poucos dias engana)
  *   DESC não significativamente abaixo de 62,2% (Wilson superior >= 62,2%) e DESC > PRÉ (z bilateral p < 0.05) -> "efeito só na janela de descoberta: instável"
  *   DESC não abaixo de 62,2% e sem diferença para a PRÉ                 -> "compatível com a descoberta, mas a PRÉ também é compatível: ver retorno líquido"
  *   Wilson superior da DESC < 62,2%                                     -> "a fonte não reproduz os 62,2%: seleção ou feed da Deriv"
@@ -21,6 +21,7 @@ export const PRE_END_EPOCH = Date.UTC(2026, 9, 12, 0, 0, 0) / 1000;           //
 export const DESC_START_EPOCH = Date.UTC(2026, 9, 13, 0, 0, 0) / 1000;        // 13/10/2026 00:00 UTC
 export const DESC_END_EPOCH = Date.UTC(2026, 10, 10, 2, 0, 0) / 1000;         // ~10/11/2026 02:00 UTC (fim da coleta da descoberta, em BRT 09/11)
 export const MIN_DESC_COVERAGE_DAYS = 10;
+export const MIN_PRE_COVERAGE_DAYS = 60;
 
 /** CDF normal padrão (Abramowitz-Stegun 7.1.26). */
 export function normalCdf(z: number): number {
@@ -54,6 +55,7 @@ export function compareWindows(btc: CandleData[], eth: CandleData[], opts: { pay
     let interpretation: string;
     if (!pre.ok || !desc.ok) interpretation = `DADOS INSUFICIENTES: ${!pre.ok ? `PRÉ (${pre.reason})` : ''} ${!desc.ok ? `DESC (${desc.reason})` : ''}`.trim();
     else if (desc.meta.window.days < MIN_DESC_COVERAGE_DAYS) interpretation = `COBERTURA INSUFICIENTE da janela de descoberta: ${desc.meta.window.days.toFixed(1)} dias de ~28 (mínimo ${MIN_DESC_COVERAGE_DAYS}). Baixe os arquivos de outubro e novembro e rode de novo.`;
+    else if (pre.meta.window.days < MIN_PRE_COVERAGE_DAYS) interpretation = `COBERTURA INSUFICIENTE da janela PRÉ: ${pre.meta.window.days.toFixed(1)} dias (mínimo ${MIN_PRE_COVERAGE_DAYS}). Selecione também os arquivos de meses anteriores (ex.: junho a setembro) para comparar com o período antes da descoberta.`;
     else if (desc.n < 30) interpretation = `AMOSTRA INSUFICIENTE na janela de descoberta (N=${desc.n} < 30).`;
     else if (reproduces && t.diff > 0 && t.p < 0.05) interpretation = 'EFEITO SÓ NA JANELA DE DESCOBERTA: a fonte replica ~62% naquelas semanas e NÃO antes (diferença significativa). É regime específico ou sorte: o efeito não é estável. Não executar.';
     else if (reproduces) interpretation = 'COMPATÍVEL COM A DESCOBERTA, mas sem diferença significativa para o período anterior: a taxa verdadeira pode estar entre as duas janelas. Decide o retorno líquido (Etapa 21) e mais dados.';

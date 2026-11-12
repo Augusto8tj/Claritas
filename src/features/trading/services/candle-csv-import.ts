@@ -9,6 +9,7 @@
  * Cabeçalhos textuais e linhas inválidas são ignorados e contados.
  */
 import type { CandleData } from '@/lib/types';
+import { unzipEntries, isZipBytes } from './zip-reader';
 
 export interface ParseResult { candles: CandleData[]; rows: number; skipped: number; }
 
@@ -43,6 +44,30 @@ export function parseKlinesCsv(text: string): ParseResult {
         candles.push(candle);
     }
     return { candles, rows, skipped };
+}
+
+export interface FileLike { name: string; arrayBuffer(): Promise<ArrayBuffer>; }
+export interface FileParseResult extends ParseResult { entries: number; fromZip: boolean; }
+
+/** Lê um arquivo .csv OU .zip (com um ou mais .csv dentro, ex.: BTCUSDT-1m-2026-11-01.zip). Detecta zip pelo conteúdo, não só pelo nome. */
+export async function readCandlesFromFile(file: FileLike): Promise<FileParseResult> {
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    const dec = new TextDecoder();
+    if (isZipBytes(bytes) || /\.zip$/i.test(file.name)) {
+        const entries = (await unzipEntries(buf)).filter(e => /\.csv$/i.test(e.name));
+        if (entries.length === 0) throw new Error(`${file.name}: o .zip não contém nenhum .csv.`);
+        const candles: CandleData[] = [];
+        let rows = 0, skipped = 0;
+        for (const e of entries) {
+            const r = parseKlinesCsv(dec.decode(e.data));
+            for (const c of r.candles) candles.push(c);
+            rows += r.rows; skipped += r.skipped;
+        }
+        return { candles, rows, skipped, entries: entries.length, fromZip: true };
+    }
+    const r = parseKlinesCsv(dec.decode(bytes));
+    return { ...r, entries: 1, fromZip: false };
 }
 
 export interface MergeResult { candles: CandleData[]; duplicates: number; conflicts: number; }
