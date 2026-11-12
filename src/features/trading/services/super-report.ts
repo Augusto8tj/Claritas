@@ -71,7 +71,7 @@ export function computeFeatures(bars: Bars): Features {
     return { n, zB5: winZ(lb, qb, 5), zE5: winZ(le, qe, 5), zB15: winZ(lb, qb, 15), zB3: winZ(lb, qb, 3), zS, hour, minuteOfHour };
 }
 
-export function buildRules(f: Features): RuleSpec[] {
+export function buildRules(f: Features, names: { ref: string; target: string } = { ref: 'BTC', target: 'ETH' }): RuleSpec[] {
     const rules: RuleSpec[] = [];
     const shock = (fam: Family, name: string, zArr: Float64Array, zs: number[], hs: number[]) => {
         for (const z of zs) for (const side of ['ALTA', 'QUEDA'] as const) for (const act of ['FADE', 'FOLLOW'] as const) for (const h of hs) {
@@ -83,8 +83,8 @@ export function buildRules(f: Features): RuleSpec[] {
             });
         }
     };
-    shock('A', 'BTC5', f.zB5, [2, 2.5, 3], [5, 15, 30, 60]);
-    shock('B', 'ETH5', f.zE5, [2, 2.5, 3], [5, 15, 30, 60]);
+    shock('A', `${names.ref}5`, f.zB5, [2, 2.5, 3], [5, 15, 30, 60]);
+    shock('B', `${names.target}5`, f.zE5, [2, 2.5, 3], [5, 15, 30, 60]);
     for (const thr of [1.5, 2, 2.5]) for (const quiet of [false, true]) for (const h of [15, 30, 60]) {
         rules.push({
             id: `C_SPREAD_z${thr}_${quiet ? 'QUIETO' : 'LIVRE'}_h${h}`, family: 'C', horizon: h, twoSided: false,
@@ -92,7 +92,7 @@ export function buildRules(f: Features): RuleSpec[] {
             dirAt: (i: number) => { const z = f.zS[i]; if (!(Math.abs(z) >= thr)) return 0; if (quiet && !(Math.abs(f.zB3[i]) < 0.5)) return 0; return z > 0 ? -1 : 1; },
         });
     }
-    shock('D', 'BTC15', f.zB15, [2.5], [15, 30, 60]);
+    shock('D', `${names.ref}15`, f.zB15, [2.5], [15, 30, 60]);
     for (let hr = 0; hr < 24; hr++) {
         rules.push({ id: `E_HORA${String(hr).padStart(2, '0')}_h60`, family: 'E', horizon: 60, twoSided: true, label: `CALL ${String(hr).padStart(2, '0')}:00 UTC por 60m (bilateral)`, dirAt: (i: number) => (f.hour[i] === hr && f.minuteOfHour[i] === 0 ? 1 : 0) });
     }
@@ -149,34 +149,82 @@ export function summarizeEvents(evs: Ev[]): RuleStats {
     };
 }
 
-export interface RuleResult { rule: RuleSpec; events: Ev[]; stats: RuleStats; pAdj: number; survivor: boolean; flipped: boolean; placebo?: number; }
+export interface RuleResult { rule: RuleSpec; events: Ev[]; rawEvents: Ev[]; stats: RuleStats; pAdj: number; survivor: boolean; flipped: boolean; placebo?: number; }
+
+export interface WalkForwardRow { id: string; label: string; flipped: boolean; trainN: number; trainMean: number; trainPAdj: number; testN: number; testMean: number; testZ: number; testPAdj: number; confirmed: boolean; }
+export interface WalkForward { k: number; trainFrom: number; trainTo: number; testFrom: number; testTo: number; selected: number; confirmed: number; rows: WalkForwardRow[]; }
 
 export interface SuperReport {
     ok: boolean; reason?: string; days: number; from: number; to: number; candles: number;
     results: RuleResult[]; survivors: number; rawSignificant: number; expectedRawSignificant: number;
-    frozenId: string; windowsText: string; multiplierText: string; text: string;
+    frozenId: string | null; windowsText: string; multiplierText: string; text: string; walkForward?: WalkForward;
 }
 
 export const FROZEN_LIB_ID = 'A_BTC5_z2.5_ALTA_FADE_h15';
 
-export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: { includeWindows?: boolean; placeboReps?: number; seed?: number; extraNotes?: string[]; costs?: { multiplier: number; costBps: number | null }[]; source?: string } = {}): SuperReport {
+export interface ReportCfg {
+    title: string; names: { ref: string; target: string }; payouts: number[]; multipliers: number[]; costScenarios: number[]; frozenId: string | null; assetNote: string;
+}
+export const CRYPTO_REPORT_CFG: ReportCfg = {
+    title: '[SUPER RELATÓRIO V24]', names: { ref: 'BTC', target: 'ETH' }, payouts: [80, 85, 90], multipliers: [100, 200, 500], costScenarios: [2, 5, 10], frozenId: FROZEN_LIB_ID,
+    assetNote: 'o Rise/Fall NÃO é oferecido para cripto nesta conta; as linhas servem de referência (e para Forex).',
+};
+
+export interface SuperOpts {
+    includeWindows?: boolean; placeboReps?: number; seed?: number; extraNotes?: string[]; costs?: { multiplier: number; costBps: number | null }[]; source?: string;
+    names?: { ref: string; target: string }; frozenId?: string | null; title?: string; payouts?: number[]; multipliers?: number[]; costScenarios?: number[]; assetNote?: string;
+    holdoutFraction?: number; minCandles?: number;
+}
+
+function runWalkForward(results: RuleResult[], bars: Bars, holdout: number): WalkForward | undefined {
+    const n = bars.epochs.length, k = Math.floor(n * (1 - holdout));
+    if (!(holdout > 0 && holdout < 0.8) || k < SUPER_WARMUP * 4) return undefined;
+    const prep = results.map(r => {
+        const h = r.rule.horizon;
+        let tr = r.rawEvents.filter(e => e.i + h < k), te = r.rawEvents.filter(e => e.i >= k);
+        let trS = summarizeEvents(tr), flipped = false;
+        if (r.rule.twoSided && trS.mean < 0) { tr = tr.map(e => ({ ...e, dir: -e.dir })); te = te.map(e => ({ ...e, dir: -e.dir })); trS = summarizeEvents(tr); flipped = true; }
+        return { r, trS, te, flipped };
+    });
+    const pAdjTrain = holmAdjust(prep.map(x => x.trS.p));
+    const sel = prep.map((x, idx) => ({ ...x, pAdjTrain: pAdjTrain[idx] })).filter(x => x.pAdjTrain < 0.10 && x.trS.mean > 0 && x.trS.n >= 50);
+    const tests = sel.map(x => summarizeEvents(x.te));
+    const pOne = tests.map(t => (t.n >= 30 && t.se > 0 && Number.isFinite(t.se) ? 1 - normalCdf(t.z) : 1));
+    const pAdjTest = holmAdjust(pOne);
+    const rows: WalkForwardRow[] = sel.map((x, idx) => ({
+        id: x.r.rule.id, label: x.r.rule.label, flipped: x.flipped, trainN: x.trS.n, trainMean: x.trS.mean, trainPAdj: x.pAdjTrain,
+        testN: tests[idx].n, testMean: tests[idx].mean, testZ: tests[idx].z, testPAdj: pAdjTest[idx],
+        confirmed: pAdjTest[idx] < 0.05 && tests[idx].mean > 0 && tests[idx].n >= 30,
+    }));
+    return { k, trainFrom: bars.epochs[0], trainTo: bars.epochs[k - 1], testFrom: bars.epochs[k], testTo: bars.epochs[n - 1], selected: rows.length, confirmed: rows.filter(r => r.confirmed).length, rows };
+}
+
+export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: SuperOpts = {}): SuperReport {
+    const cfg: ReportCfg = {
+        ...CRYPTO_REPORT_CFG,
+        ...(opts.names ? { names: opts.names, frozenId: null } : {}),
+        ...(opts.frozenId !== undefined ? { frozenId: opts.frozenId } : {}),
+        ...(opts.title ? { title: opts.title } : {}), ...(opts.payouts ? { payouts: opts.payouts } : {}), ...(opts.multipliers ? { multipliers: opts.multipliers } : {}),
+        ...(opts.costScenarios ? { costScenarios: opts.costScenarios } : {}), ...(opts.assetNote ? { assetNote: opts.assetNote } : {}),
+    };
     const bars = alignBars(btc, eth);
     const n = bars.epochs.length;
-    const empty = (reason: string): SuperReport => ({ ok: false, reason, days: 0, from: 0, to: 0, candles: n, results: [], survivors: 0, rawSignificant: 0, expectedRawSignificant: 0, frozenId: FROZEN_LIB_ID, windowsText: '', multiplierText: '', text: `[SUPER RELATÓRIO V24]\nDADOS INSUFICIENTES: ${reason}` });
-    if (n < 20_000) return empty(`apenas ${n} velas alinhadas (mínimo 20000, ~14 dias)`);
+    const minC = opts.minCandles ?? 20_000;
+    const empty = (reason: string): SuperReport => ({ ok: false, reason, days: 0, from: 0, to: 0, candles: n, results: [], survivors: 0, rawSignificant: 0, expectedRawSignificant: 0, frozenId: cfg.frozenId, windowsText: '', multiplierText: '', text: `${cfg.title}\nDADOS INSUFICIENTES: ${reason}` });
+    if (n < minC) return empty(`apenas ${n} velas alinhadas (mínimo ${minC}, ~${Math.round(minC / 1440)} dias)`);
 
     const features = computeFeatures(bars);
-    const rules = buildRules(features);
+    const rules = buildRules(features, cfg.names);
     const gc = new Int32Array(n);
     for (let i = 1; i < n; i++) gc[i] = gc[i - 1] + (bars.epochs[i] - bars.epochs[i - 1] !== 60 ? 1 : 0);
 
     const results: RuleResult[] = rules.map(rule => {
-        let events = collectEvents(bars, rule, gc);
+        const rawEvents = collectEvents(bars, rule, gc);
+        let events = rawEvents;
         let stats = summarizeEvents(events), flipped = false;
         if (rule.twoSided && stats.mean < 0) { events = events.map(e => ({ ...e, dir: -e.dir })); stats = summarizeEvents(events); flipped = true; }
-        return { rule, events, stats, pAdj: 1, survivor: false, flipped };
+        return { rule, events, rawEvents, stats, pAdj: 1, survivor: false, flipped };
     });
-    // bilateral: p do teste da direção original (para E, o p já é bilateral e não depende do lado)
     const pAdj = holmAdjust(results.map(r => r.stats.p));
     results.forEach((r, k) => {
         r.pAdj = pAdj[k];
@@ -186,7 +234,7 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: { inc
     const rawSig = results.filter(r => r.stats.p < 0.05 && r.stats.n >= 30).length;
     const survivors = results.filter(r => r.survivor).length;
 
-    // placebo (deslocamento circular da ETH) nas 10 regras de maior |z|
+    // placebo (deslocamento circular) nas 10 regras de maior |z|. ATENÇÃO: otimista (ver notas do relatório).
     const reps = opts.placeboReps ?? 2999, rng = mulberry32(opts.seed ?? 24);
     const top = [...results].filter(r => r.stats.n >= 30).sort((a, b) => Math.abs(b.stats.z) - Math.abs(a.stats.z)).slice(0, 10);
     const lE = Float64Array.from(bars.c.e, Math.log), minShift = Math.min(1440, Math.floor(n * 0.1));
@@ -202,9 +250,8 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: { inc
         r.placebo = used ? (ge + 1) / (used + 1) : 1;
     }
 
-    // janela de descoberta x pré (regra congelada) e Multiplier por janela
     let windowsText = '', multiplierText = '';
-    if (opts.includeWindows !== false) {
+    if (opts.includeWindows !== false && cfg.frozenId) {
         try {
             const cmp = compareWindows(btc, eth, { source: opts.source });
             windowsText = buildWindowComparisonReport(cmp);
@@ -215,12 +262,13 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: { inc
             multiplierText = parts.join('\n\n');
         } catch (e) { windowsText = `Falha na comparação de janelas: ${(e as Error).message}`; }
     }
+    const walkForward = opts.holdoutFraction ? runWalkForward(results, bars, opts.holdoutFraction) : undefined;
 
     const rep: SuperReport = {
         ok: true, days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, from: bars.epochs[0], to: bars.epochs[n - 1], candles: n,
-        results, survivors, rawSignificant: rawSig, expectedRawSignificant: 0.05 * results.length, frozenId: FROZEN_LIB_ID, windowsText, multiplierText, text: '',
+        results, survivors, rawSignificant: rawSig, expectedRawSignificant: 0.05 * results.length, frozenId: cfg.frozenId, windowsText, multiplierText, text: '', walkForward,
     };
-    rep.text = buildSuperReportText(rep, bars, opts.extraNotes ?? [], opts.source);
+    rep.text = buildSuperReportText(rep, opts.extraNotes ?? [], opts.source, cfg);
     return rep;
 }
 
@@ -229,38 +277,41 @@ const f2 = (x: number) => (Number.isFinite(x) ? x.toFixed(2) : 'n/d');
 const pc = (x: number) => `${(x * 100).toFixed(1)}%`;
 const fp = (p: number) => (p < 0.0001 ? '<0.0001' : p.toFixed(4));
 
-function contractSim(r: RuleResult): string[] {
+function contractSim(r: RuleResult, cfg: ReportCfg): string[] {
     const L: string[] = [], evs = r.events, n = evs.length, s = r.stats;
     if (n === 0) return L;
-    for (const pay of [80, 85, 90]) {
+    for (const pay of cfg.payouts) {
         const be = 1 / (1 + pay / 100), ev = s.winRate * (pay / 100) - (1 - s.winRate);
         L.push(`     Rise/Fall payout ${pay}%: breakeven ${pc(be)} | acerto ${pc(s.winRate)} (Wilson inf. ${pc(s.wilson[0])}) | EV/stake ${ev >= 0 ? '+' : ''}${(ev * 100).toFixed(1)}% | ${s.wilson[0] > be ? 'Wilson acima do breakeven' : 'Wilson NÃO supera o breakeven'}`);
     }
-    for (const m of [100, 200, 500]) {
+    for (const m of cfg.multipliers) {
         const stop = 1e4 / m, eff = meanOf(evs.map(e => (adv(e) >= stop ? -stop : ret(e))));
         const so = evs.filter(e => adv(e) >= stop).length / n;
-        L.push(`     Multiplier x${m}: retorno efetivo ${f2(eff)} bps | stop-out ${pc(so)} | custo de equilíbrio ${f2(eff)} bps | líquido c/ custo 2/5/10 bps: ${f2(eff - 2)} / ${f2(eff - 5)} / ${f2(eff - 10)}`);
+        L.push(`     Multiplier x${m}: retorno efetivo ${f2(eff)} bps | stop-out ${pc(so)} | custo de equilíbrio ${f2(eff)} bps | líquido c/ custo ${cfg.costScenarios.join('/')} bps: ${cfg.costScenarios.map(c => f2(eff - c)).join(' / ')}`);
     }
     return L;
 }
 
-export function buildSuperReportText(r: SuperReport, bars: Bars, extraNotes: string[], source?: string): string {
-    const L: string[] = ['[SUPER RELATÓRIO V24]', '='.repeat(60)];
+export function buildSuperReportText(r: SuperReport, extraNotes: string[], source: string | undefined, cfg: ReportCfg = CRYPTO_REPORT_CFG): string {
+    const L: string[] = [cfg.title, '='.repeat(60)];
     const d = (e: number) => new Date(e * 1000).toISOString().slice(0, 10);
     const res = r.results;
-    const frozen = res.find(x => x.rule.id === r.frozenId);
-    const best = [...res].filter(x => x.stats.n >= 30).sort((a, b) => Math.abs(b.stats.z) - Math.abs(a.stats.z))[0];
-    L.push(`FONTE: ${source ?? 'n/d'} | ${d(r.from)} a ${d(r.to)} (${r.days.toFixed(0)} dias, ${r.candles} velas alinhadas de 1 min)`);
+    const frozen = r.frozenId ? res.find(x => x.rule.id === r.frozenId) : undefined;
+    const ranked = [...res].filter(x => x.stats.n >= 30).sort((a, b) => Math.abs(b.stats.z) - Math.abs(a.stats.z));
+    const best = ranked[0];
+    L.push(`FONTE: ${source ?? 'n/d'} | ${d(r.from)} a ${d(r.to)} (${r.days.toFixed(0)} dias, ${r.candles} velas alinhadas de 1 min) | referência: ${cfg.names.ref} | alvo: ${cfg.names.target}`);
     L.push('', '1) RESUMO EXECUTIVO');
     L.push(`- Regras testadas: ${res.length} (famílias A..E). Correção: Holm bilateral sobre ${res.length} testes (z agrupado por dia). Sobrevivente = Holm < 5% + N >= 100 + as duas metades com o mesmo sinal da média.`);
-    L.push(`- SOBREVIVENTES: ${r.survivors}. Regras com p bruto < 5%: ${r.rawSignificant} (esperado só por acaso: ~${r.expectedRawSignificant.toFixed(1)}).`);
-    if (best) L.push(`- Regra mais forte (|z|): ${best.rule.id} [${best.rule.label}] N=${best.stats.n}, retorno ${f2(best.stats.mean)} bps, z=${f2(best.stats.z)}, p ajustado ${fp(best.pAdj)}${best.placebo !== undefined ? `, placebo p=${fp(best.placebo)}` : ''}.`);
+    L.push(`- SOBREVIVENTES: ${r.survivors}. Regras com p bruto < 5%: ${r.rawSignificant} (esperado só por acaso: ~${r.expectedRawSignificant.toFixed(1)}). As regras "desfazer" e "seguir" são gêmeas (mesmo |z|), então o nº efetivo de testes é menor que ${res.length}.`);
+    if (best) L.push(`- Regra mais forte (|z|): ${best.rule.id} [${best.rule.label}] N=${best.stats.n}, retorno ${f2(best.stats.mean)} bps, z=${f2(best.stats.z)}, p ajustado ${fp(best.pAdj)}${best.placebo !== undefined ? `, placebo p=${fp(best.placebo)} (otimista)` : ''}.`);
     if (frozen) L.push(`- Regra congelada H3_ALTA@15m (${r.frozenId}) na amostra inteira: N=${frozen.stats.n}, acerto ${pc(frozen.stats.winRate)}, retorno ${f2(frozen.stats.mean)} bps, z=${f2(frozen.stats.z)}, p ajustado ${fp(frozen.pAdj)}, metades ${f2(frozen.stats.halves[0])} / ${f2(frozen.stats.halves[1])} bps.`);
-    L.push(`- CONCLUSÃO AUTOMÁTICA: ${r.survivors === 0 ? 'nenhuma regra da biblioteca tem retorno bruto distinguível de zero depois da correção para ' + res.length + ' testes. Não há base para executar.' : `${r.survivors} regra(s) passam na correção; são CANDIDATAS (precisam de dados novos à frente no tempo e de custo medido) e não estão confirmadas.`}`);
-    L.push(`- Poder: com os eventos disponíveis, só efeitos grandes (retorno de poucas unidades de bps com N~1000, ou acerto bem acima do breakeven) passam por uma correção de ${res.length} testes. Efeitos pequenos reais podem ficar invisíveis.`);
+    if (r.walkForward) L.push(`- WALK-FORWARD (seleção no treino, confirmação no holdout): ${r.walkForward.selected} regra(s) selecionada(s) no treino; CONFIRMADAS no holdout: ${r.walkForward.confirmed}.`);
+    const wfOk = r.walkForward ? r.walkForward.confirmed > 0 : false;
+    L.push(`- CONCLUSÃO AUTOMÁTICA: ${r.survivors === 0 && !wfOk ? 'nenhuma regra da biblioteca tem retorno bruto distinguível de zero depois da correção para ' + res.length + ' testes' + (r.walkForward ? ' e nenhuma se confirma no holdout' : '') + '. Não há base para executar.' : `${r.survivors} regra(s) passam na correção${r.walkForward ? ` e ${r.walkForward.confirmed} se confirmam no holdout` : ''}; são CANDIDATAS (precisam de dados novos à frente no tempo e de custo medido) e não estão confirmadas.`}`);
+    L.push(`- Poder: com os eventos disponíveis, só efeitos grandes passam por uma correção de ${res.length} testes. Efeitos pequenos reais podem ficar invisíveis.`);
 
     L.push('', `2) RANKING: 25 REGRAS DE MAIOR |z| (de ${res.length})`);
-    [...res].filter(x => x.stats.n >= 30).sort((a, b) => Math.abs(b.stats.z) - Math.abs(a.stats.z)).slice(0, 25).forEach((x, k) => {
+    ranked.slice(0, 25).forEach((x, k) => {
         const s = x.stats;
         L.push(`${String(k + 1).padStart(2)}. ${x.rule.id}${x.flipped ? ' (PUT)' : ''} | N=${s.n} | acerto ${pc(s.winRate)} | ret ${f2(s.mean)} bps | z=${f2(s.z)} | p adj ${fp(x.pAdj)} | metades ${f2(s.halves[0])}/${f2(s.halves[1])}${x.placebo !== undefined ? ` | placebo ${fp(x.placebo)}` : ''}${x.survivor ? ' | SOBREVIVENTE' : ''}`);
     });
@@ -272,25 +323,34 @@ export function buildSuperReportText(r: SuperReport, bars: Bars, extraNotes: str
         L.push(`- Família ${fam}: ${g.length} regras | p<5%: ${sig} (acaso: ~${(0.05 * g.length).toFixed(1)}) | média dos retornos: ${f2(meanOf(g.map(x => x.stats.mean)))} bps`);
     }
 
-    L.push('', '4) H3_ALTA @ 15m: JANELA DE DESCOBERTA x PRÉ-DESCOBERTA (mesma regra, mesma fonte)');
-    L.push(r.windowsText || '(não calculada)');
+    L.push('', '4) REGRA CONGELADA: JANELA DE DESCOBERTA x PRÉ-DESCOBERTA');
+    L.push(r.windowsText || '(não aplicável: não há regra congelada neste laboratório)');
 
-    L.push('', '5) SIMULAÇÃO DE CONTRATOS (regra congelada e 5 mais fortes, amostra inteira)');
-    const picks = [frozen, ...[...res].filter(x => x.stats.n >= 30 && x.rule.id !== r.frozenId).sort((a, b) => Math.abs(b.stats.z) - Math.abs(a.stats.z)).slice(0, 5)].filter((x): x is RuleResult => !!x);
-    for (const x of picks) { L.push(`- ${x.rule.id}${x.flipped ? ' (PUT)' : ''} [${x.rule.label}] N=${x.stats.n}`); contractSim(x).forEach(l => L.push(l)); }
-    L.push('  Nota: o Rise/Fall NÃO é oferecido para cripto nesta conta; as linhas servem de referência (e para Forex). O custo de equilíbrio do Multiplier é o retorno bruto efetivo: a comissão real tem de ser MENOR que ele.');
+    L.push('', `5) SIMULAÇÃO DE CONTRATOS (${frozen ? 'regra congelada e ' : ''}5 mais fortes, amostra inteira)`);
+    const picks = [frozen, ...ranked.filter(x => x.rule.id !== r.frozenId).slice(0, 5)].filter((x): x is RuleResult => !!x);
+    for (const x of picks) { L.push(`- ${x.rule.id}${x.flipped ? ' (PUT)' : ''} [${x.rule.label}] N=${x.stats.n}`); contractSim(x, cfg).forEach(l => L.push(l)); }
+    L.push(`  Nota: ${cfg.assetNote} O custo de equilíbrio do Multiplier é o retorno bruto efetivo: a comissão real tem de ser MENOR que ele.`);
 
     L.push('', '6) MULTIPLIER DA REGRA CONGELADA POR JANELA');
-    L.push(r.multiplierText || '(não calculado)');
+    L.push(r.multiplierText || '(não aplicável)');
 
-    L.push('', '7) ESTABILIDADE MENSAL (retorno médio em bps por mês: regra congelada e 5 mais fortes)');
+    L.push('', `7) ESTABILIDADE MENSAL (retorno médio em bps por mês: ${frozen ? 'regra congelada e ' : ''}5 mais fortes)`);
     for (const x of picks) L.push(`- ${x.rule.id}: ` + x.stats.months.map(m => `${m.month} ${f2(m.mean)} (N=${m.n})`).join(' | '));
 
-    if (extraNotes.length) { L.push('', '8) SONDAS DA DERIV E QUALIDADE DOS DADOS'); extraNotes.forEach(t => { L.push(t); L.push(''); }); }
+    if (r.walkForward) {
+        const w = r.walkForward;
+        L.push('', `8) WALK-FORWARD: treino ${d(w.trainFrom)} a ${d(w.trainTo)} | holdout ${d(w.testFrom)} a ${d(w.testTo)}`);
+        L.push(`- Seleção no treino: Holm(${res.length}) < 10%, retorno > 0, N >= 50. Confirmação no holdout: z unilateral agrupado por dia, Holm sobre as ${w.selected} selecionadas, retorno > 0, N >= 30.`);
+        if (w.rows.length === 0) L.push('- Nenhuma regra passou na seleção do treino.');
+        w.rows.slice(0, 20).forEach(x => L.push(`- ${x.id}${x.flipped ? ' (PUT)' : ''} | treino N=${x.trainN} ret ${f2(x.trainMean)} bps (p adj ${fp(x.trainPAdj)}) | holdout N=${x.testN} ret ${f2(x.testMean)} bps z=${f2(x.testZ)} p adj ${fp(x.testPAdj)}${x.confirmed ? ' | CONFIRMADA' : ''}`));
+    }
+
+    if (extraNotes.length) { L.push('', `${r.walkForward ? '9' : '8'}) SONDAS DA DERIV E QUALIDADE DOS DADOS`); extraNotes.forEach(t => { L.push(t); L.push(''); }); }
 
     L.push('', 'NOTAS E LIMITAÇÕES:',
-        `* ${res.length} regras fixas, avaliadas na MESMA amostra: o Holm controla o risco de falso positivo da lista, mas não o de ter escolhido a janela e a lista depois de ver resultados anteriores (H3_ALTA nasceu assim).`,
-        '* Retornos em bps do ativo, na direção da regra, com entrada no fechamento da vela do sinal; eventos independentes (cooldown = horizonte).',
+        `* ${res.length} regras fixas avaliadas na MESMA amostra: o Holm controla o risco de falso positivo da lista, mas não o de ter escolhido a lista depois de ver resultados anteriores.`,
+        '* Retornos em bps do ativo, na direção da regra, entrada no fechamento da vela do sinal; eventos independentes (cooldown = horizonte).',
+        '* O placebo por deslocamento circular é OTIMISTA (instantes aleatórios têm menos volatilidade que os eventos): use o z agrupado e o Holm, não o placebo.',
         '* Máx/mín de velas de 1 min para o stop-out; sem spread, slippage ou custos de saída. Sem LLM.',
         '* Nada aqui autoriza execução; REAL continua bloqueado. Um candidato só avança com dados posteriores à amostra (shadow à frente no tempo) e custo medido.');
     return L.join('\n');

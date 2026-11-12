@@ -29,6 +29,7 @@ import {
   Calculator,
   Crosshair,
   Zap,
+  Globe,
   RefreshCw,
   Terminal,
   Radar,
@@ -90,6 +91,11 @@ const navItems = [
     href: "/ai-quant-terminal-v4",
     icon: Zap,
     label: "Crypto Lab (V4 - Concorrente)",
+  },
+  {
+    href: "/forex-lab",
+    icon: Globe,
+    label: "Forex Lab (Pesquisa)",
   },
   {
     href: "/analysis",

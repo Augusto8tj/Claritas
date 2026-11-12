@@ -13,7 +13,7 @@ import { unzipEntries, isZipBytes } from './zip-reader';
 
 export interface ParseResult { candles: CandleData[]; rows: number; skipped: number; }
 
-function toEpochSeconds(raw: string): number | null {
+export function toEpochSeconds(raw: string): number | null {
     const s = raw.trim().replace(/^"|"$/g, '');
     if (/^\d+(\.\d+)?$/.test(s)) {
         const t = Number(s);
@@ -50,7 +50,7 @@ export interface FileLike { name: string; arrayBuffer(): Promise<ArrayBuffer>; }
 export interface FileParseResult extends ParseResult { entries: number; fromZip: boolean; }
 
 /** Lê um arquivo .csv OU .zip (com um ou mais .csv dentro, ex.: BTCUSDT-1m-2026-11-01.zip). Detecta zip pelo conteúdo, não só pelo nome. */
-export async function readCandlesFromFile(file: FileLike): Promise<FileParseResult> {
+export async function readCandlesFromFile(file: FileLike, parse: (text: string) => ParseResult = parseKlinesCsv): Promise<FileParseResult> {
     const buf = await file.arrayBuffer();
     const bytes = new Uint8Array(buf);
     const dec = new TextDecoder();
@@ -60,13 +60,13 @@ export async function readCandlesFromFile(file: FileLike): Promise<FileParseResu
         const candles: CandleData[] = [];
         let rows = 0, skipped = 0;
         for (const e of entries) {
-            const r = parseKlinesCsv(dec.decode(e.data));
+            const r = parse(dec.decode(e.data));
             for (const c of r.candles) candles.push(c);
             rows += r.rows; skipped += r.skipped;
         }
         return { candles, rows, skipped, entries: entries.length, fromZip: true };
     }
-    const r = parseKlinesCsv(dec.decode(bytes));
+    const r = parse(dec.decode(bytes));
     return { ...r, entries: 1, fromZip: false };
 }
 
