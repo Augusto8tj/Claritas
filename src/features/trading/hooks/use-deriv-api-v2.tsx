@@ -172,8 +172,8 @@ const getDurationInSeconds = (duration: number, unit: DurationUnit, symbol?: str
 };
 
 export function useDerivApiV2State() {
-  const [demoToken, setDemoToken] = useState<string | null>('pat_f9c5b37e98bcfb92c287b9c11aa5b33b2026af219e90c344b65ea27854fae394');
-  const [realToken, setRealToken] = useState<string | null>('pat_f9c5b37e98bcfb92c287b9c11aa5b33b2026af219e90c344b65ea27854fae394');
+  const [demoToken, setDemoToken] = useState<string | null>(null);
+  const [realToken, setRealToken] = useState<string | null>(null);
   const [accountType, setAccountTypeState] = useState<AccountType>('demo');
   const [accountBalance, setAccountBalance] = useState<AccountBalance>({ balance: null, currency: null, loading: true });
   const [isLoading, setIsLoading] = useState(true);

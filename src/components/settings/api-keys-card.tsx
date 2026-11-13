@@ -106,8 +106,8 @@ export function ApiKeysCard() {
   const ollamaForm = useForm<OllamaFormValues>({
     resolver: zodResolver(ollamaSchema),
     defaultValues: {
-      baseUrl: "https://boxlike-barrack-silencer.ngrok-free.dev",
-      apiKey: "augusto123",
+      baseUrl: "http://localhost:11434",
+      apiKey: "",
       model: "",
       temperature: 0.1,
       keepAlive: "5m",

@@ -1,28 +1,25 @@
-
 #!/bin/bash
 
-# AVISO: Este script irá forçar o envio das suas alterações locais,
-# sobrescrevendo o branch 'main' no GitHub. Use com cuidado.
+# AVISO: operação DESTRUTIVA. Sobrescreve a branch remota com o seu histórico local.
+# ETAPA 29: usa --force-with-lease (recusa se o remoto tiver commits que você não viu) e exige digitar o nome da branch.
 
-echo "🚨 ATENÇÃO: Esta é uma operação destrutiva."
-echo "Isto irá substituir permanentemente o branch 'main' no GitHub com o seu histórico local."
-echo "Qualquer alteração que exista no GitHub mas não na sua máquina será perdida."
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+echo "🚨 ATENÇÃO: você vai SOBRESCREVER 'origin/${BRANCH}' com o histórico local."
+echo "Commits remotos que não estão na sua máquina serão perdidos."
 echo ""
-read -p "Tem a certeza que deseja forçar o push para 'main'? (s/N) " -n 1 -r
-echo    # Move para uma nova linha
+git fetch origin "${BRANCH}" 2>/dev/null
+echo "Diferença (local vs remoto):"
+git log --oneline "origin/${BRANCH}..HEAD" 2>/dev/null | head -20
+echo ""
+read -p "Digite o nome da branch (${BRANCH}) para confirmar: " CONFIRM
 
-if [[ $REPLY =~ ^[Ss]$ ]]
-then
-    echo ""
-    echo "🚀 Forçando o push... (git push origin main --force)"
-    git push origin main --force
-
+if [ "$CONFIRM" = "$BRANCH" ]; then
+    echo "🚀 git push origin ${BRANCH} --force-with-lease"
+    git push origin "${BRANCH}" --force-with-lease
     if [ $? -eq 0 ]; then
-        echo "✅ Push forçado concluído com sucesso!"
-        # Auto-destruição removida para permitir reuso se necessário, 
-        # mas adicionado aviso de conclusão.
+        echo "✅ Push concluído."
     else
-        echo "❌ Falha no push forçado. Verifique se você configurou seu Personal Access Token (PAT)."
+        echo "❌ Falha (o remoto mudou desde o último fetch, ou falta autenticação). Nada foi sobrescrito."
     fi
 else
     echo "Operação cancelada."

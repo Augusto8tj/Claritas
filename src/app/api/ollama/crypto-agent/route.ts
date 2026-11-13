@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { validateOllamaBaseUrl } from '@/lib/ollama-host-guard';
 
 /**
  * GATEWAY DE INFERÊNCIA CRYPTO V4.2
@@ -37,30 +38,21 @@ export async function POST(req: Request) {
 
     if (!config?.baseUrl) return NextResponse.json({ error: 'Config missing' }, { status: 400 });
 
-    // ETAPA 3: Validação de Host contra allowlist configurada
-    const allowedHosts = (process.env.OLLAMA_ALLOWED_HOSTS || "").split(',').map(h => h.trim()).filter(Boolean);
-    try {
-        const urlObj = new URL(config.baseUrl);
-        if (allowedHosts.length > 0 && !allowedHosts.includes(urlObj.host)) {
-            console.error(`[Agent API] Acesso negado para host: ${urlObj.host}`);
-            return NextResponse.json({ 
-                error: 'Host não autorizado. Adicione o domínio na variável OLLAMA_ALLOWED_HOSTS.' 
-            }, { status: 400 });
-        }
-    } catch (e) {
-        return NextResponse.json({ error: 'URL do Gateway Ollama inválida.' }, { status: 400 });
-    }
+    // ETAPA 29: validação centralizada (fail-closed) em src/lib/ollama-host-guard.ts
+    const guard = validateOllamaBaseUrl(config.baseUrl);
+    if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: 400 });
 
-    const url = config.baseUrl.replace(/\/+$/, '') + '/api/generate';
+    const url = guard.url + '/api/generate';
     
     // AbortController estrito para garantir Failover T2T
     const response = await fetch(url, {
       method: 'POST',
       headers: { 
-        'Authorization': `Bearer ${config.apiKey}`,
+        ...(config.apiKey ? { 'Authorization': `Bearer ${config.apiKey}` } : {}),
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
       },
+      redirect: 'error',
       signal: AbortSignal.timeout(14000), // 14s timeout para o agente individual
       body: JSON.stringify({
         model: config.model,

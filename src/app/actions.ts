@@ -7,6 +7,7 @@ import {
 import type { FinancialChatbotInsightsInput, OllamaConfig } from "@/lib/types";
 import WebSocket from 'ws';
 import { generateFinancialInsights } from "@/ai/flows/financial-insights-flow";
+import { validateOllamaBaseUrl } from "@/lib/ollama-host-guard";
 
 const NEW_DERIV_APP_ID = "34lwuJiPbEzxjgEdnEhbX";
 
@@ -74,7 +75,9 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
   try {
-    const url = config.baseUrl.replace(/\/+$/, '') + '/api/chat';
+    const guard = validateOllamaBaseUrl(config.baseUrl);
+    if (!guard.ok) return { error: guard.error };
+    const url = guard.url + '/api/chat';
     const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
 
     const headers = {
@@ -97,6 +100,7 @@ export async function getOllamaResponse(config: OllamaConfig, query: string, his
       method: 'POST',
       headers: headers,
       body: JSON.stringify(payload),
+      redirect: 'error',
       signal: controller.signal
     });
 
@@ -178,7 +182,9 @@ export async function runOllamaBenchmark(config: OllamaConfig, testType: 'speed'
 
 export async function checkOllamaConnection(config: OllamaConfig): Promise<{ success: boolean; error?: string; modelCount?: number }> {
     try {
-        const url = config.baseUrl.replace(/\/+$/, '') + '/api/tags';
+        const guard = validateOllamaBaseUrl(config.baseUrl);
+        if (!guard.ok) return { success: false, error: guard.error };
+        const url = guard.url + '/api/tags';
         const authHeader = config.apiKey?.startsWith('Bearer ') ? config.apiKey : `Bearer ${config.apiKey}`;
 
         const response = await fetch(url, {

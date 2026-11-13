@@ -19,6 +19,7 @@ import { DerivApiProviderV2 as DerivApiProvider } from '@/features/trading/hooks
 import { ApiStatusIndicatorV2 as ApiStatusIndicator } from '@/features/trading/components/deriv-trader/ApiStatusIndicatorV2';
 import { useForexLab, USD_INDEX } from '@/features/trading/hooks/use-forex-lab';
 import { weekendFuseDiagnostics } from '@/features/trading/services/forex-import';
+import { useSkewLogger } from '@/features/trading/hooks/use-skew-logger';
 
 const DEFAULT_PAIRS = 'EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF';
 
@@ -56,6 +57,8 @@ function ForexLabContent() {
     const [durationMin, setDurationMin] = useState('15');
     const [sweepPairs, setSweepPairs] = useState('EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD');
     const [sweepDurs, setSweepDurs] = useState('15,30,60,120,240');
+    const skew = useSkewLogger();
+    const [skewPairs, setSkewPairs] = useState('EURUSD,GBPUSD');
     const [exclRoll, setExclRoll] = useState(true);
     const [bkP, setBkP] = useState('55');
     const [bkPay, setBkPay] = useState('89');
@@ -225,6 +228,33 @@ function ForexLabContent() {
                     </div>
                     <Button size="sm" variant="outline" className="w-full" onClick={() => lab.runBankroll({ p: num(bkP, 50) / 100, payoutPct: num(bkPay, 89), bankroll: num(bkBank, 100), baseStake: num(bkStake, 1) })}>Simular banca</Button>
                     <ReportBox text={lab.bankrollText} file="simulador-banca.txt" h="h-48" />
+                </CardContent>
+            </Card>
+            <Card className="border-teal-300">
+                <CardHeader className="pb-2"><CardTitle className="text-sm">6) Coletor de assimetria de payout (experimento PREREG-SKEW-1; só proposal, NUNCA compra)</CardTitle>
+                    <CardDescription className="text-xs">A cada 5 min (seg–sex, 08–16 UTC) grava o payout CALL/PUT de 15 e 30 min e o spot. A aba precisa ficar aberta e conectada; baixe o CSV de tempos em tempos. Hipótese única: apostar no lado de maior payout (diferença ≥ 10 pp) tem EV &gt; 0. Só analise com N ≥ 300 eventos.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                    <div className="flex items-end gap-2">
+                        <div className="flex-1"><Label className="text-xs">Pares (1–2 por vez)</Label><Input value={skewPairs} onChange={e => setSkewPairs(e.target.value)} className="h-7 text-xs" /></div>
+                        {!skew.running
+                            ? <Button size="sm" disabled={!skew.isConnected} onClick={() => skew.start(skewPairs.split(/[,\s]+/).map(x => x.trim().toUpperCase().replace(/^FRX/, '')).filter(Boolean).slice(0, 2))}>Iniciar coleta</Button>
+                            : <Button size="sm" variant="destructive" onClick={() => skew.stop()}>Parar</Button>}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">Amostras gravadas: {skew.samples.length} · {skew.running ? 'coletando' : 'parado'} · {skew.isConnected ? 'conectado' : 'sem conexão'}</p>
+                    {skew.log.length > 0 && <pre className="text-[10px] font-mono bg-muted rounded p-1 whitespace-pre-wrap">{skew.log.join('\n')}</pre>}
+                    <div className="flex flex-wrap gap-2 items-center">
+                        <Button size="sm" variant="outline" onClick={() => {
+                            const a = document.createElement('a');
+                            a.href = URL.createObjectURL(new Blob([skew.csv()], { type: 'text/csv;charset=utf-8' }));
+                            a.download = `skew-payout-${new Date().toISOString().slice(0, 10)}.csv`;
+                            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        }}>Baixar CSV</Button>
+                        <input type="file" accept=".csv" className="text-xs" onChange={async e => { const f = e.target.files?.[0]; if (f) skew.importCsv(await f.text()); e.target.value = ''; }} />
+                        <Button size="sm" variant="outline" onClick={() => skew.analyze()}>Analisar</Button>
+                        <Button size="sm" variant="ghost" onClick={() => { if (window.confirm('Apagar as amostras locais? (baixe o CSV antes)')) skew.clear(); }}>Apagar local</Button>
+                    </div>
+                    <ReportBox text={skew.report} file="experimento-skew.txt" h="h-64" />
                 </CardContent>
             </Card>
         </div>

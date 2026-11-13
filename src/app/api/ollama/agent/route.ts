@@ -1,5 +1,6 @@
 
 import { NextResponse } from 'next/server';
+import { validateOllamaBaseUrl } from '@/lib/ollama-host-guard';
 
 const VALID_CONTRACTS = ['OPTIONS', 'ACCUMULATORS', 'MULTIPLIERS'];
 const VALID_ACTIONS = ['CALL', 'PUT', 'HOLD'];
@@ -40,7 +41,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Ollama config missing' }, { status: 400 });
     }
 
-    const url = config.baseUrl.replace(/\/+$/, '') + '/api/generate';
+    // ETAPA 29: allowlist de host (anti-SSRF), igual à da crypto-agent, mas fail-closed.
+    const guard = validateOllamaBaseUrl(config.baseUrl);
+    if (!guard.ok) return NextResponse.json({ error: guard.error }, { status: 400 });
+
+    const url = guard.url + '/api/generate';
     const authHeader = config.apiKey ? `Bearer ${config.apiKey}` : '';
 
     const prompt = `
@@ -74,6 +79,7 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
         'ngrok-skip-browser-warning': 'true'
       },
+      redirect: 'error',
       signal: AbortSignal.timeout(13000),
       body: JSON.stringify({
         model: config.model,
