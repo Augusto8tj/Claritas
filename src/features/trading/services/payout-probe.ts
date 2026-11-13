@@ -175,16 +175,21 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 export async function sweepPayouts(
     getContractsFor: Fn, getProposal: Fn, symbols: string[], durationsSec: number[], types: string[] = SWEEP_TYPES_DEFAULT,
     stake = 1, opts: { pauseMs?: number; onProgress?: (msg: string) => void; now?: () => number } = {},
-): Promise<{ rows: SweepRow[]; dumps: string[] }> {
-    const rows: SweepRow[] = [], dumps: string[] = [], now = opts.now ?? Date.now, pause = opts.pauseMs ?? 200;
+): Promise<{ rows: SweepRow[]; dumps: string[]; pending: string[] }> {
+    const rows: SweepRow[] = [], dumps: string[] = [], now = opts.now ?? Date.now, pause = opts.pauseMs ?? 400;
+    const isDown = (m?: string) => /não está conectado|not connected|closed/i.test(m ?? '');
+    let down = false; const pending: string[] = [];
     for (const symbol of symbols) {
+        if (down) { pending.push(symbol); continue; }
         opts.onProgress?.(`contracts_for ${symbol}...`);
         const d = await dumpContractsFor(getContractsFor, symbol);
         dumps.push(d.text);
+        if (!d.ok && isDown(d.error)) { down = true; pending.push(symbol); continue; }
         for (const durationSec of durationsSec) for (const type of types) {
+            if (down) break;
             const at = now(), base = { symbol, durationSec, type, atMs: at, hourUtc: new Date(at).getUTCHours() };
             if (!d.ok) { rows.push({ ...base, ok: false, error: d.error }); continue; }
-            const cover = d.entries.filter(e => e.contract_type === type && e.contract_category === 'callput' && e.start_type !== 'forward' && !e.isTick && e.minSec !== null && e.maxSec !== null && durationSec >= e.minSec && durationSec <= e.maxSec);
+            const cover = d.entries.filter(e => e.contract_type === type && (e.contract_category === 'callput' || e.contract_category === 'callputequal') && e.start_type !== 'forward' && !e.isTick && e.minSec !== null && e.maxSec !== null && durationSec >= e.minSec && durationSec <= e.maxSec);
             if (cover.length === 0) { rows.push({ ...base, ok: false, error: `nenhuma entrada ${type} cobre ${durationSec}s` }); continue; }
             opts.onProgress?.(`${symbol} ${type} ${durationSec}s...`);
             try {
@@ -195,16 +200,17 @@ export async function sweepPayouts(
                     if (!(ask > 0) || !(payout > 0)) rows.push({ ...base, ok: false, error: 'valores inválidos no proposal', expiryType: cover[0].expiry_type });
                     else rows.push({ ...base, ok: true, ask, payout, payoutPct: ((payout - ask) / ask) * 100, breakeven: ask / payout, expiryType: cover[0].expiry_type });
                 }
-            } catch (e: any) { rows.push({ ...base, ok: false, error: e?.message || String(e) }); }
+            } catch (e: any) { rows.push({ ...base, ok: false, error: e?.message || String(e) }); if (isDown(e?.message)) { down = true; pending.push(symbol); } }
+            if (rows.length && isDown(rows[rows.length - 1].error)) { down = true; if (!pending.includes(symbol)) pending.push(symbol); }
             if (pause > 0) await sleep(pause);
         }
     }
-    return { rows, dumps };
+    return { rows, dumps, pending };
 }
 
 const durLabel = (s: number) => (s % 86400 === 0 ? `${s / 86400}d` : s % 3600 === 0 ? `${s / 3600}h` : s % 60 === 0 ? `${s / 60}min` : `${s}s`);
 
-export function buildSweepText(rows: SweepRow[], dumps: string[], target = 0.94): string {
+export function buildSweepText(rows: SweepRow[], dumps: string[], target = 0.94, pending: string[] = []): string {
     const L = ['[VARREDURA DE PAYOUT V26] (proposal; nenhuma compra realizada)', '='.repeat(60)];
     const okRows = rows.filter(r => r.ok);
     const stamp = rows.length ? new Date(rows[0].atMs).toISOString().replace('T', ' ').slice(0, 16) + ' UTC' : 'n/d';
@@ -212,6 +218,7 @@ export function buildSweepText(rows: SweepRow[], dumps: string[], target = 0.94)
     const symbols = Array.from(new Set(rows.map(r => r.symbol)));
     const durs = Array.from(new Set(rows.map(r => r.durationSec))).sort((a, b) => a - b);
     const types = Array.from(new Set(rows.map(r => r.type)));
+    if (pending.length) L.push(`ATENÇÃO: a conexão caiu; varredura INTERROMPIDA. Reconecte e rode de novo só estes símbolos: ${pending.map(x => x.replace(/^frx/, '')).join(', ')}.`);
     L.push('', 'TABELA payout% / breakeven% (linha: símbolo e duração; coluna: tipo)');
     L.push(['símbolo', 'dur', ...types].join(' | '));
     for (const s of symbols) for (const d of durs) {

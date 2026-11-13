@@ -102,7 +102,7 @@ export function useForexLab() {
         setBusy(true);
         try {
             const r = await sweepPayouts(getContractsFor, getProposal, pairs.map(derivForexSymbol), durationsMin.map(m => Math.round(m * 60)), types, 1, { onProgress: setProgress });
-            setSweepText(buildSweepText(r.rows, r.dumps));
+            setSweepText(buildSweepText(r.rows, r.dumps, 0.94, r.pending));
         } catch (e) { setSweepText(`Erro na varredura: ${(e as Error).message}`); }
         finally { setBusy(false); setProgress(''); }
     }, [busy, isConnected, getContractsFor, getProposal, addMsg]);
@@ -154,7 +154,7 @@ export function useForexLab() {
             const payouts = payoutProbe?.ok && payoutProbe.put ? Array.from(new Set([Math.round(payoutProbe.put.payoutPct), 85, 90, 95])).sort((a, b) => a - b) : [85, 90, 95];
             const quality = buildQualityText([datasets[targetPair].quality, ...(refKey === USD_INDEX ? [] : [datasets[refKey].quality])]);
             const rep = runSuperReport(refCandles, target.candles, {
-                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V27]', includeWindows: false, holdoutFraction: 0.4, extended: true, excludeRollover, sidePayouts: sidePayouts(),
+                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V27]', includeWindows: false, holdoutFraction: 0.4, extended: true, excludeRollover, minRiseFallMin: 15, sidePayouts: sidePayouts(),
                 payouts, multipliers: [100, 200, 500], costScenarios: measuredCost !== null ? [Number(measuredCost.toFixed(2)), 0.5, 1, 2] : [0.5, 1, 2],
                 assetNote: 'em Forex a Deriv oferece Rise/Fall: use a linha de payout MEDIDO pela sonda (se disponível); o Multiplier usa a comissão medida (bps do ativo).',
                 source: `${target.source} (alvo ${targetPair}${refKey === USD_INDEX ? ', ref. índice USD' : `, ref. ${refKey}`})`,

@@ -197,7 +197,7 @@ export const FROZEN_LIB_ID = 'A_BTC5_z2.5_ALTA_FADE_h15';
 
 export interface SidePayouts { call: number | null; put: number | null; }
 export interface ReportCfg {
-    sidePayouts?: SidePayouts; title: string; names: { ref: string; target: string }; payouts: number[]; multipliers: number[]; costScenarios: number[]; frozenId: string | null; assetNote: string;
+    sidePayouts?: SidePayouts; minRiseFallMin?: number; title: string; names: { ref: string; target: string }; payouts: number[]; multipliers: number[]; costScenarios: number[]; frozenId: string | null; assetNote: string;
 }
 export const CRYPTO_REPORT_CFG: ReportCfg = {
     title: '[SUPER RELATÓRIO V24]', names: { ref: 'BTC', target: 'ETH' }, payouts: [80, 85, 90], multipliers: [100, 200, 500], costScenarios: [2, 5, 10], frozenId: FROZEN_LIB_ID,
@@ -207,7 +207,7 @@ export const CRYPTO_REPORT_CFG: ReportCfg = {
 export interface SuperOpts {
     includeWindows?: boolean; placeboReps?: number; seed?: number; extraNotes?: string[]; costs?: { multiplier: number; costBps: number | null }[]; source?: string;
     names?: { ref: string; target: string }; frozenId?: string | null; title?: string; payouts?: number[]; multipliers?: number[]; costScenarios?: number[]; assetNote?: string;
-    holdoutFraction?: number; minCandles?: number; extended?: boolean; sidePayouts?: SidePayouts; excludeRollover?: boolean;
+    holdoutFraction?: number; minCandles?: number; extended?: boolean; sidePayouts?: SidePayouts; minRiseFallMin?: number; excludeRollover?: boolean;
 }
 
 function runWalkForward(results: RuleResult[], bars: Bars, holdout: number): WalkForward | undefined {
@@ -239,7 +239,7 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: Super
         ...(opts.names ? { names: opts.names, frozenId: null } : {}),
         ...(opts.frozenId !== undefined ? { frozenId: opts.frozenId } : {}),
         ...(opts.title ? { title: opts.title } : {}), ...(opts.payouts ? { payouts: opts.payouts } : {}), ...(opts.multipliers ? { multipliers: opts.multipliers } : {}),
-        ...(opts.costScenarios ? { costScenarios: opts.costScenarios } : {}), ...(opts.assetNote ? { assetNote: opts.assetNote } : {}), ...(opts.sidePayouts ? { sidePayouts: opts.sidePayouts } : {}),
+        ...(opts.costScenarios ? { costScenarios: opts.costScenarios } : {}), ...(opts.assetNote ? { assetNote: opts.assetNote } : {}), ...(opts.sidePayouts ? { sidePayouts: opts.sidePayouts } : {}), ...(opts.minRiseFallMin ? { minRiseFallMin: opts.minRiseFallMin } : {}),
     };
     const bars = alignBars(btc, eth);
     const n = bars.epochs.length;
@@ -328,14 +328,16 @@ export function sideEv(evs: Ev[], pay: SidePayouts) {
     return { call, put, n, beCall: be(pay.call), bePut: be(pay.put), ev, evLow, known };
 }
 
-function contractSim(r: RuleResult, cfg: ReportCfg): string[] {
+export function contractSim(r: RuleResult, cfg: ReportCfg): string[] {
     const L: string[] = [], evs = r.events, n = evs.length, s = r.stats;
     if (n === 0) return L;
-    if (cfg.sidePayouts && (cfg.sidePayouts.call !== null || cfg.sidePayouts.put !== null)) {
+    const rfBlocked = cfg.minRiseFallMin !== undefined && r.rule.horizon < cfg.minRiseFallMin;
+    if (rfBlocked) L.push(`     Rise/Fall INDISPONÍVEL neste horizonte: ${r.rule.horizon} min < mínimo medido de ${cfg.minRiseFallMin} min (contracts_for da Deriv: sem ticks nem forward-start). Só o Multiplier executa este horizonte.`);
+    if (!rfBlocked && cfg.sidePayouts && (cfg.sidePayouts.call !== null || cfg.sidePayouts.put !== null)) {
         const x = sideEv(evs, cfg.sidePayouts), pcn = (v: number | null) => (v === null ? 'n/d' : pc(v)), sg = (v: number) => (Number.isFinite(v) ? `${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%` : 'n/d');
         L.push(`     Rise/Fall por LADO (payout MEDIDO CALL ${cfg.sidePayouts.call === null ? 'n/d' : cfg.sidePayouts.call.toFixed(1) + '%'} / PUT ${cfg.sidePayouts.put === null ? 'n/d' : cfg.sidePayouts.put.toFixed(1) + '%'}): CALL N=${x.call.n} acerto ${pc(x.call.rate)} (breakeven ${pcn(x.beCall)}) | PUT N=${x.put.n} acerto ${pc(x.put.rate)} (breakeven ${pcn(x.bePut)}) | EV/stake ${sg(x.ev)} | EV conservador (Wilson inf. por lado) ${sg(x.evLow)}${x.known ? '' : ' (payout de um lado ausente)'}`);
     }
-    for (const pay of cfg.payouts) {
+    for (const pay of (rfBlocked ? [] : cfg.payouts)) {
         const be = 1 / (1 + pay / 100), ev = s.winRate * (pay / 100) - (1 - s.winRate);
         L.push(`     Rise/Fall payout único ${pay}% (hipotético): breakeven ${pc(be)} | acerto ${pc(s.winRate)} (Wilson inf. ${pc(s.wilson[0])}) | EV/stake ${ev >= 0 ? '+' : ''}${(ev * 100).toFixed(1)}% | ${s.wilson[0] > be ? 'Wilson acima do breakeven' : 'Wilson NÃO supera o breakeven'}`);
     }

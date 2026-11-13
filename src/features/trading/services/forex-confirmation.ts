@@ -42,7 +42,7 @@ export interface ConfirmResult {
     ok: boolean; reason?: string; target: string; ruleId: string; cutoffEpoch: number;
     pre: WindowStats | null; disc: WindowStats | null; verdict: ConfirmVerdict; why: string; mdeBps: number; economic: string; sideText: string;
 }
-export interface ConfirmOpts { ruleId?: string; names?: { ref: string; target: string }; cutoffEpoch?: number; minN?: number; alpha?: number; sidePayouts?: SidePayouts; costBps?: number | null; excludeRollover?: boolean; }
+export interface ConfirmOpts { ruleId?: string; names?: { ref: string; target: string }; cutoffEpoch?: number; minN?: number; alpha?: number; sidePayouts?: SidePayouts; costBps?: number | null; excludeRollover?: boolean; exploratory?: boolean; }
 
 const ret = (e: Ev) => e.dir * e.retLong;
 
@@ -74,7 +74,7 @@ export function confirmRule(refCandles: CandleData[], targetCandles: CandleData[
     let verdict: ConfirmVerdict, why: string;
     if (pre.n < minN || !(pre.se > 0)) { verdict = 'INCONCLUSIVO'; why = `PRÉ com N=${pre.n} (< ${minN}) ou sem dias suficientes`; }
     else if (pre.mean > 0 && pre.pOne < alpha && pre.halves[0] > 0 && pre.halves[1] > 0) { verdict = 'CONFIRMADO'; why = `retorno médio ${pre.mean.toFixed(2)} bps > 0, p unilateral ${pre.pOne.toFixed(4)} < ${alpha}, as duas metades positivas`; }
-    else if (Number.isFinite(mdeBps) && disc.n > 0 && mdeBps > disc.mean) { verdict = 'INCONCLUSIVO'; why = `sem significância, mas o teste só detectaria efeitos >= ${mdeBps.toFixed(2)} bps (a DESCOBERTA mediu ${disc.mean.toFixed(2)} bps): poder insuficiente`; }
+    else if (!opts.exploratory && Number.isFinite(mdeBps) && disc.n > 0 && mdeBps > disc.mean) { verdict = 'INCONCLUSIVO'; why = `sem significância, mas o teste só detectaria efeitos >= ${mdeBps.toFixed(2)} bps (a DESCOBERTA mediu ${disc.mean.toFixed(2)} bps): poder insuficiente`; }
     else { verdict = 'NÃO CONFIRMADO'; why = `retorno médio ${pre.mean.toFixed(2)} bps, p unilateral ${pre.pOne.toFixed(4)}, metades ${pre.halves[0].toFixed(2)}/${pre.halves[1].toFixed(2)} bps`; }
 
     let economic = 'custo do Multiplier não informado';
@@ -105,7 +105,7 @@ export function runConfirmation(series: Record<string, CandleData[]>, opts: Conf
     for (const pair of pairs) {
         const b = buildUsdBasket(series, pair);
         if (!b) { skipped.push(`${pair} (cesta do USD com menos de 3 pares)`); continue; }
-        const r = confirmRule(b.candles, series[pair], pair, { names: { ref: 'USDX', target: pair }, cutoffEpoch: cutoff, ruleId, alpha: pair === primary ? PREREG_FX.alpha : alphaOthers, sidePayouts: pair === primary ? opts.sidePayouts : undefined, costBps: opts.costBps });
+        const r = confirmRule(b.candles, series[pair], pair, { names: { ref: 'USDX', target: pair }, cutoffEpoch: cutoff, ruleId, alpha: pair === primary ? PREREG_FX.alpha : alphaOthers, exploratory: pair !== primary, sidePayouts: pair === primary ? opts.sidePayouts : undefined, costBps: opts.costBps });
         results.push(r);
     }
     const L = [`[CONFIRMAÇÃO PRÉ-REGISTRADA ${PREREG_FX.id}] regra ${ruleId} | corte ${d(cutoff)} 00:00 UTC (PRÉ = eventos que terminam antes; DESCOBERTA = entradas a partir do corte)`, '='.repeat(60)];
