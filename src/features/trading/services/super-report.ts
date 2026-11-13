@@ -26,6 +26,7 @@
 import type { CandleData } from '@/lib/types';
 import { wilsonInterval, holmAdjust, mulberry32 } from './leadlag-backtest';
 import { alignBars, type Bars } from './horizon-hypotheses';
+import { rolloverMask, ROLL_BEFORE_MIN, ROLL_AFTER_MIN } from './fx-calendar';
 import { normalCdf, compareWindows, buildWindowComparisonReport } from './window-comparison';
 import { evaluateMultiplier, buildMultiplierReport } from './multiplier-economics';
 
@@ -131,15 +132,19 @@ export interface Ev { i: number; day: number; month: string; dir: number; retLon
 const ret = (e: Ev) => e.dir * e.retLong;
 const adv = (e: Ev) => (e.dir === 1 ? e.advLong : e.advShort);
 
-export function collectEvents(bars: Bars, rule: RuleSpec, gc: Int32Array, lb = 750): Ev[] {
+/** `mask` (opcional, ETAPA 27): 1 nas velas da virada diária; descarta o evento se a janela [i-15, i+h] toca a virada (sinal ou saída contaminados pela cotação). */
+export function collectEvents(bars: Bars, rule: RuleSpec, gc: Int32Array, lb = 750, mask?: Uint8Array): Ev[] {
     const n = bars.epochs.length, h = rule.horizon, out: Ev[] = [];
     const le = bars.c.e;
+    let pm: Int32Array | null = null;
+    if (mask) { pm = new Int32Array(n + 1); for (let k = 0; k < n; k++) pm[k + 1] = pm[k] + mask[k]; }
     let next = 0;
     for (let i = SUPER_WARMUP; i < n - h - 1; i++) {
         if (i < next) continue;
         const d = rule.dirAt(i);
         if (!d) continue;
         if (gc[i + h] !== gc[i - lb]) continue;
+        if (pm && pm[i + h + 1] - pm[Math.max(0, i - 15)] > 0) continue;
         let lo = Infinity, hi = -Infinity;
         for (let j = i + 1; j <= i + h; j++) { if (bars.l.e[j] < lo) lo = bars.l.e[j]; if (bars.h.e[j] > hi) hi = bars.h.e[j]; }
         out.push({
@@ -202,7 +207,7 @@ export const CRYPTO_REPORT_CFG: ReportCfg = {
 export interface SuperOpts {
     includeWindows?: boolean; placeboReps?: number; seed?: number; extraNotes?: string[]; costs?: { multiplier: number; costBps: number | null }[]; source?: string;
     names?: { ref: string; target: string }; frozenId?: string | null; title?: string; payouts?: number[]; multipliers?: number[]; costScenarios?: number[]; assetNote?: string;
-    holdoutFraction?: number; minCandles?: number; extended?: boolean; sidePayouts?: SidePayouts;
+    holdoutFraction?: number; minCandles?: number; extended?: boolean; sidePayouts?: SidePayouts; excludeRollover?: boolean;
 }
 
 function runWalkForward(results: RuleResult[], bars: Bars, holdout: number): WalkForward | undefined {
@@ -247,8 +252,10 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: Super
     const gc = new Int32Array(n);
     for (let i = 1; i < n; i++) gc[i] = gc[i - 1] + (bars.epochs[i] - bars.epochs[i - 1] !== 60 ? 1 : 0);
 
+    const rollMask = opts.excludeRollover ? rolloverMask(bars.epochs) : undefined;
+    const rollFlagged = rollMask ? rollMask.reduce((a, x) => a + x, 0) : 0;
     const results: RuleResult[] = rules.map(rule => {
-        const rawEvents = collectEvents(bars, rule, gc);
+        const rawEvents = collectEvents(bars, rule, gc, 750, rollMask);
         let events = rawEvents;
         let stats = summarizeEvents(events), flipped = false;
         if (rule.twoSided && stats.mean < 0) { events = events.map(e => ({ ...e, dir: -e.dir })); stats = summarizeEvents(events); flipped = true; }
@@ -299,7 +306,8 @@ export function runSuperReport(btc: CandleData[], eth: CandleData[], opts: Super
         ok: true, days: (bars.epochs[n - 1] - bars.epochs[0]) / 86400, from: bars.epochs[0], to: bars.epochs[n - 1], candles: n,
         results, survivors, rawSignificant: rawSig, expectedRawSignificant: 0.05 * results.length, frozenId: cfg.frozenId, windowsText, multiplierText, text: '', walkForward,
     };
-    rep.text = buildSuperReportText(rep, opts.extraNotes ?? [], opts.source, cfg);
+    const rollNote = rollMask ? `FILTRO DA VIRADA ATIVO: eventos cuja janela [sinal-15 min, saída] toca [virada-${ROLL_BEFORE_MIN} min, virada+${ROLL_AFTER_MIN} min] (21:00 UTC no verão dos EUA, 22:00 no inverno) foram descartados (${rollFlagged} velas marcadas = ${((rollFlagged / n) * 100).toFixed(1)}% da amostra). Motivo: na virada o spread explode e o bid cai e volta em minutos (artefato de cotação).` : 'FILTRO DA VIRADA DESLIGADO: regras que disparam perto de 17h NY podem refletir só o artefato de cotação da virada.';
+    rep.text = buildSuperReportText(rep, [...(opts.extraNotes ?? []), rollNote], opts.source, cfg);
     return rep;
 }
 

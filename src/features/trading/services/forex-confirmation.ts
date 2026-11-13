@@ -22,6 +22,7 @@ import { alignBars } from './horizon-hypotheses';
 import { computeFeatures, buildRules, collectEvents, summarizeEvents, sideEv, type Ev, type SidePayouts, type RuleStats } from './super-report';
 import { buildUsdBasket } from './usd-basket';
 import { normalCdf } from './window-comparison';
+import { rolloverMask } from './fx-calendar';
 
 export const PREREG_FX = {
     id: 'PREREG-FX-C1',
@@ -41,7 +42,7 @@ export interface ConfirmResult {
     ok: boolean; reason?: string; target: string; ruleId: string; cutoffEpoch: number;
     pre: WindowStats | null; disc: WindowStats | null; verdict: ConfirmVerdict; why: string; mdeBps: number; economic: string; sideText: string;
 }
-export interface ConfirmOpts { ruleId?: string; names?: { ref: string; target: string }; cutoffEpoch?: number; minN?: number; alpha?: number; sidePayouts?: SidePayouts; costBps?: number | null; }
+export interface ConfirmOpts { ruleId?: string; names?: { ref: string; target: string }; cutoffEpoch?: number; minN?: number; alpha?: number; sidePayouts?: SidePayouts; costBps?: number | null; excludeRollover?: boolean; }
 
 const ret = (e: Ev) => e.dir * e.retLong;
 
@@ -65,7 +66,7 @@ export function confirmRule(refCandles: CandleData[], targetCandles: CandleData[
     if (!rule) return { ok: false, reason: `regra ${ruleId} não existe na biblioteca`, why: 'regra inexistente', ...base };
     const gc = new Int32Array(n);
     for (let i = 1; i < n; i++) gc[i] = gc[i - 1] + (bars.epochs[i] - bars.epochs[i - 1] !== 60 ? 1 : 0);
-    const all = collectEvents(bars, rule, gc), h = rule.horizon;
+    const all = collectEvents(bars, rule, gc, 750, opts.excludeRollover === false ? undefined : rolloverMask(bars.epochs)), h = rule.horizon;
     const preEv = all.filter(e => bars.epochs[e.i + h] < cutoff), discEv = all.filter(e => bars.epochs[e.i] >= cutoff);
     const pre = toWindow(preEv), disc = toWindow(discEv);
     const mdeBps = Number.isFinite(pre.se) && pre.se > 0 ? (1.645 + 0.8416) * pre.se : NaN;
@@ -100,10 +101,11 @@ export interface ConfirmAllOpts { sidePayouts?: SidePayouts; costBps?: number | 
 export function runConfirmation(series: Record<string, CandleData[]>, opts: ConfirmAllOpts = {}): { results: ConfirmResult[]; text: string } {
     const primary = opts.primaryTarget ?? PREREG_FX.primaryTarget, cutoff = opts.cutoffEpoch ?? PREREG_FX.cutoffEpoch, ruleId = opts.ruleId ?? PREREG_FX.ruleId;
     const pairs = Object.keys(series).sort(), results: ConfirmResult[] = [], skipped: string[] = [];
+    const alphaOthers = PREREG_FX.alpha / Math.max(1, pairs.length - 1); // Bonferroni nos pares exploratórios
     for (const pair of pairs) {
         const b = buildUsdBasket(series, pair);
         if (!b) { skipped.push(`${pair} (cesta do USD com menos de 3 pares)`); continue; }
-        const r = confirmRule(b.candles, series[pair], pair, { names: { ref: 'USDX', target: pair }, cutoffEpoch: cutoff, ruleId, sidePayouts: pair === primary ? opts.sidePayouts : undefined, costBps: opts.costBps });
+        const r = confirmRule(b.candles, series[pair], pair, { names: { ref: 'USDX', target: pair }, cutoffEpoch: cutoff, ruleId, alpha: pair === primary ? PREREG_FX.alpha : alphaOthers, sidePayouts: pair === primary ? opts.sidePayouts : undefined, costBps: opts.costBps });
         results.push(r);
     }
     const L = [`[CONFIRMAÇÃO PRÉ-REGISTRADA ${PREREG_FX.id}] regra ${ruleId} | corte ${d(cutoff)} 00:00 UTC (PRÉ = eventos que terminam antes; DESCOBERTA = entradas a partir do corte)`, '='.repeat(60)];
@@ -123,7 +125,7 @@ export function runConfirmation(series: Record<string, CandleData[]>, opts: Conf
     }
     const others = results.filter(r => r.target !== primary && r.ok), K = others.length;
     if (K) {
-        L.push('', `REPLICAÇÃO EXPLORATÓRIA nos demais pares (mesma regra; Bonferroni K=${K} sobre p unilateral; NÃO é confirmação pré-registrada):`);
+        L.push('', `REPLICAÇÃO EXPLORATÓRIA nos demais pares (mesma regra; Bonferroni K=${K}: o veredito usa alfa = 5%/${K}; NÃO é confirmação pré-registrada):`);
         others.forEach(r => L.push(`  ${r.target}: PRÉ ${win(r.pre!)} | p ajustado ${Math.min(1, r.pre!.pOne * K).toFixed(4)} | ${r.verdict}`));
     }
     if (skipped.length) L.push('', 'Não executados: ' + skipped.join('; '));

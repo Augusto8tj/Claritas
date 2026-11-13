@@ -56,6 +56,7 @@ function ForexLabContent() {
     const [durationMin, setDurationMin] = useState('15');
     const [sweepPairs, setSweepPairs] = useState('EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF,NZDUSD');
     const [sweepDurs, setSweepDurs] = useState('15,30,60,120,240');
+    const [exclRoll, setExclRoll] = useState(true);
     const [bkP, setBkP] = useState('55');
     const [bkPay, setBkPay] = useState('89');
     const [bkBank, setBkBank] = useState('100');
@@ -173,8 +174,9 @@ function ForexLabContent() {
                             Sondar payout e custo do Multiplier (sem comprar)
                         </Button>
                     </div>
+                    <label className="flex items-center gap-2 text-xs"><Checkbox checked={exclRoll} onCheckedChange={v => setExclRoll(v === true)} /> Excluir a virada de 17h NY (spread explode; recomendado)</label>
                     <Button size="sm" className="w-full bg-sky-700 text-white font-bold" disabled={lab.busy || !effectiveTarget}
-                        onClick={() => lab.generateReport(refKey, effectiveTarget)}>
+                        onClick={() => lab.generateReport(refKey, effectiveTarget, exclRoll)}>
                         {lab.busy ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Gerar SUPER RELATÓRIO FOREX'}
                     </Button>
                     <p className="text-[11px] text-muted-foreground">Cada alvo testado é uma nova rodada de ~150 hipóteses: ao testar vários alvos, o risco de falso positivo acumula (conte as rodadas).</p>

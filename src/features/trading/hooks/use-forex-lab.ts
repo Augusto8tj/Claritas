@@ -127,7 +127,7 @@ export function useForexLab() {
         finally { setBusy(false); setProgress(''); }
     }, [busy, datasets, sidePayouts, measuredCostBps]);
 
-    const generateReport = useCallback(async (refKey: string, targetPair: string) => {
+    const generateReport = useCallback(async (refKey: string, targetPair: string, excludeRollover = true) => {
         if (busy) return;
         const target = datasets[targetPair];
         if (!target) { setReportText('Carregue dados do par-alvo.'); return; }
@@ -154,7 +154,7 @@ export function useForexLab() {
             const payouts = payoutProbe?.ok && payoutProbe.put ? Array.from(new Set([Math.round(payoutProbe.put.payoutPct), 85, 90, 95])).sort((a, b) => a - b) : [85, 90, 95];
             const quality = buildQualityText([datasets[targetPair].quality, ...(refKey === USD_INDEX ? [] : [datasets[refKey].quality])]);
             const rep = runSuperReport(refCandles, target.candles, {
-                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V26]', includeWindows: false, holdoutFraction: 0.4, extended: true, sidePayouts: sidePayouts(),
+                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V27]', includeWindows: false, holdoutFraction: 0.4, extended: true, excludeRollover, sidePayouts: sidePayouts(),
                 payouts, multipliers: [100, 200, 500], costScenarios: measuredCost !== null ? [Number(measuredCost.toFixed(2)), 0.5, 1, 2] : [0.5, 1, 2],
                 assetNote: 'em Forex a Deriv oferece Rise/Fall: use a linha de payout MEDIDO pela sonda (se disponível); o Multiplier usa a comissão medida (bps do ativo).',
                 source: `${target.source} (alvo ${targetPair}${refKey === USD_INDEX ? ', ref. índice USD' : `, ref. ${refKey}`})`,
