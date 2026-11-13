@@ -7,13 +7,14 @@
  *  - HistData M1 ASCII:  "20260601 000000;1.08123;1.08130;1.08120;1.08125;0"  (horário EST fixo = UTC-5, SEM horário de verão => tzOffsetHours = +5)
  *  - Dukascopy:          "01.06.2026 00:00:00.000,1.08123,1.08130,1.08120,1.08125,123.4" (GMT)
  *  - MetaTrader (MT4/5): "2026.06.01,00:00,1.08123,1.08130,1.08120,1.08125,123"          (horário do servidor da corretora: informe o fuso)
+ *  - Forex Strategy Builder (forexsb.com, CSV): "2026-05-01 20:55<TAB>O<TAB>H<TAB>L<TAB>C<TAB>V" (sem segundos, sem cabeçalho, linha inteira entre aspas; GMT/UTC => tzOffsetHours = 0)
  *  - Genérico:           "epoch|YYYY-MM-DD HH:MM[:SS],O,H,L,C[,V]"  (mesmo parser do laboratório cripto)
  * Velas sem O/H/L/C positivos são descartadas. O volume do Forex é volume de ticks (não é negócio real).
  */
 import type { CandleData } from '@/lib/types';
 import { toEpochSeconds, type ParseResult } from './candle-csv-import';
 
-export type FxFormat = 'histdata' | 'dukascopy' | 'metatrader' | 'generico';
+export type FxFormat = 'histdata' | 'dukascopy' | 'metatrader' | 'fsb' | 'generico';
 
 export interface FxParseResult extends ParseResult { formats: Partial<Record<FxFormat, number>>; }
 
@@ -34,7 +35,7 @@ export function parseForexCsv(text: string, opts: { tzOffsetHours?: number } = {
             fmt = 'metatrader'; ohlcAt = 2;
             const hm = c[1].split(':').map(Number);
             epoch = Date.UTC(+m[1], +m[2] - 1, +m[3], hm[0], hm[1], hm[2] ?? 0) / 1000;
-        } else if (c.length >= 5) epoch = toEpochSeconds(c[0]);
+        } else if (c.length >= 5) { epoch = toEpochSeconds(c[0]); if (epoch !== null && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(c[0])) fmt = 'fsb'; }
         if (epoch === null || c.length < ohlcAt + 4) { skipped++; continue; }   // cabeçalho/linha inválida
         rows++;
         const [o, h, l, cl] = [c[ohlcAt], c[ohlcAt + 1], c[ohlcAt + 2], c[ohlcAt + 3]].map(Number);
@@ -78,4 +79,36 @@ export function fillShortGaps(candles: CandleData[], maxFillMin = 5): { candles:
         out.push(cur);
     }
     return { candles: out, filled };
+}
+
+// ---------------- DIAGNÓSTICO DE FUSO PELO FIM DE SEMANA (ETAPA 26) ----------------
+export interface WeekendGap { lastBeforeEpoch: number; firstAfterEpoch: number; gapHours: number; }
+export interface WeekendDiag {
+    gaps: WeekendGap[]; closeHours: Record<string, number>; openHours: Record<string, number>; text: string; suspicious: boolean;
+}
+
+/**
+ * O Forex fecha na sexta ~17h de Nova York e reabre no domingo ~17h NY: em UTC isso é 21h (horário de verão dos EUA) ou 22h (inverno).
+ * Se as velas estão mesmo em UTC, a última vela de sexta cai em 20:59/21:59 e a primeira de domingo em 21:00/22:00 (variação de 1 h conforme o
+ * horário de verão dos EUA). Se a distribuição for outra (ex.: 03h, 04h, 23h), o arquivo NÃO está em UTC e o fuso informado está errado.
+ */
+export function weekendFuseDiagnostics(candles: CandleData[], minGapHours = 24): WeekendDiag {
+    const gaps: WeekendGap[] = [];
+    for (let i = 1; i < candles.length; i++) {
+        const a = candles[i - 1].epoch, b = candles[i].epoch, gh = (b - a) / 3600;
+        if (gh >= minGapHours && gh <= 80) gaps.push({ lastBeforeEpoch: a, firstAfterEpoch: b, gapHours: gh });
+    }
+    const closeHours: Record<string, number> = {}, openHours: Record<string, number> = {};
+    for (const g of gaps) {
+        const ch = String(new Date(g.lastBeforeEpoch * 1000).getUTCHours()), oh = String(new Date(g.firstAfterEpoch * 1000).getUTCHours());
+        closeHours[ch] = (closeHours[ch] ?? 0) + 1; openHours[oh] = (openHours[oh] ?? 0) + 1;
+    }
+    const plausible = (h: string) => h === '20' || h === '21' || h === '22';
+    const okClose = Object.entries(closeHours).filter(([h]) => plausible(h)).reduce((s, [, n]) => s + n, 0);
+    const okOpen = Object.entries(openHours).filter(([h]) => plausible(h)).reduce((s, [, n]) => s + n, 0);
+    const suspicious = gaps.length >= 3 && (okClose / gaps.length < 0.7 || okOpen / gaps.length < 0.7);
+    const fmt = (m: Record<string, number>) => Object.entries(m).sort((a, b) => Number(a[0]) - Number(b[0])).map(([h, n]) => `${h}h x${n}`).join(', ') || 'n/d';
+    const L = [`Diagnóstico de fuso (fins de semana, ${gaps.length} buraco(s) de ${minGapHours}h a 80h): hora UTC da última vela antes do buraco: ${fmt(closeHours)} | da primeira vela depois: ${fmt(openHours)}`];
+    L.push(gaps.length < 3 ? 'Poucos fins de semana para concluir.' : suspicious ? '⚠️ FUSO SUSPEITO: o esperado em UTC é fechar ~20h/21h e reabrir ~21h/22h (17h de Nova York). Revise o campo "horas para somar".' : 'Fuso COMPATÍVEL com UTC (fechamento e reabertura perto de 17h de Nova York).');
+    return { gaps, closeHours, openHours, text: L.join('\n'), suspicious };
 }

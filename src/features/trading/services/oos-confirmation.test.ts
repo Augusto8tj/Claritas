@@ -99,7 +99,7 @@ describe('probePayout', () => {
     const r = await probePayout(async () => cf, async () => { asked++; return {}; }, 'cryETHUSD', 3 * 86400);
     expect(r.ok).toBe(false);
     expect(asked).toBe(0);
-    expect(r.error).toContain('fora do intervalo');
+    expect(r.error).toContain('não cabe em nenhuma entrada');
   });
   it('erro do proposal é reportado sem lançar', async () => {
     const r = await probePayout(async () => cf, async () => ({ error: { message: 'Trading is not offered' } }), 'cryETHUSD', 900);

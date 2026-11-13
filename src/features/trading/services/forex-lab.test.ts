@@ -136,7 +136,7 @@ describe('super relatório FOREX', () => {
         expect(r.results.some(x => x.rule.id.includes('BTC'))).toBe(false);
         expect(r.text).toContain('[SUPER RELATÓRIO FOREX V25]');
         expect(r.text).toContain('referência: USDX | alvo: EURUSD');
-        expect(r.text).toContain('Rise/Fall payout 95%');
+        expect(r.text).toContain('Rise/Fall payout único 95% (hipotético)');
         expect(r.text).toContain('não aplicável');
     });
     it('walk-forward: efeito real é selecionado no treino e confirmado no holdout', () => {

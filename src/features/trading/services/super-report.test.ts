@@ -72,7 +72,7 @@ describe('runSuperReport', () => {
         expect(frozen.survivor).toBe(true);
         expect(frozen.stats.mean).toBeGreaterThan(20);
         expect(r.survivors).toBeGreaterThanOrEqual(1);
-        for (const s of ['1) RESUMO EXECUTIVO', '2) RANKING', '3) EXCESSO DE SINAL', '5) SIMULAÇÃO DE CONTRATOS', '7) ESTABILIDADE MENSAL', 'Rise/Fall payout 85%', 'Multiplier x100']) expect(r.text).toContain(s);
+        for (const s of ['1) RESUMO EXECUTIVO', '2) RANKING', '3) EXCESSO DE SINAL', '5) SIMULAÇÃO DE CONTRATOS', '7) ESTABILIDADE MENSAL', 'Rise/Fall payout único 85% (hipotético)', 'Multiplier x100']) expect(r.text).toContain(s);
         expect(r.results.filter(x => x.placebo !== undefined)).toHaveLength(10);
     });
 

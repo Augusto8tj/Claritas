@@ -9,11 +9,13 @@ import { useState, useCallback } from 'react';
 import type { CandleData } from '@/lib/types';
 import { useDerivApiV2 as useDerivApi } from './use-deriv-api-v2';
 import { readCandlesFromFile, mergeCandles, assessQuality, buildQualityText, type QualityReport } from '../services/candle-csv-import';
-import { parseForexCsv, detectPairFromFilename, derivForexSymbol, fillShortGaps } from '../services/forex-import';
+import { parseForexCsv, detectPairFromFilename, derivForexSymbol, fillShortGaps, weekendFuseDiagnostics } from '../services/forex-import';
 import { buildUsdBasket } from '../services/usd-basket';
 import { fetchDerivCandlesPaged } from '../services/deriv-candle-fetch';
-import { runSuperReport } from '../services/super-report';
-import { probePayout, probeMultiplier, buildPayoutProbeText, buildMultiplierProbeText, type PayoutProbeResult, type MultiplierProbeResult } from '../services/payout-probe';
+import { runSuperReport, type SidePayouts } from '../services/super-report';
+import { probePayout, probeMultiplier, buildPayoutProbeText, buildMultiplierProbeText, sweepPayouts, buildSweepText, SWEEP_TYPES_DEFAULT, type PayoutProbeResult, type MultiplierProbeResult } from '../services/payout-probe';
+import { runBankrollSimulation, DEFAULT_BANKROLL_CFG, type BankrollCfg } from '../services/bankroll-sim';
+import { runConfirmation } from '../services/forex-confirmation';
 
 export interface FxDataset { pair: string; candles: CandleData[]; quality: QualityReport; source: string; files: number; filled: number; }
 export const USD_INDEX = 'USD_INDEX';
@@ -27,6 +29,10 @@ export function useForexLab() {
     const [reportText, setReportText] = useState('');
     const [payoutProbe, setPayoutProbe] = useState<PayoutProbeResult | null>(null);
     const [multiplierProbe, setMultiplierProbe] = useState<MultiplierProbeResult | null>(null);
+    const [sweepText, setSweepText] = useState('');
+    const [bankrollText, setBankrollText] = useState('');
+    const [confirmText, setConfirmText] = useState('');
+    const [rounds, setRounds] = useState(0); // rodadas de ~190 hipóteses nesta sessão (acúmulo de falso positivo)
 
     const addMsg = useCallback((m: string) => setMessages(prev => [...prev.slice(-30), m]), []);
 
@@ -89,6 +95,38 @@ export function useForexLab() {
         } finally { setProgress(''); }
     }, [isConnected, getContractsFor, getProposal, addMsg]);
 
+    /** VARREDURA: pares x durações x lados (CALL/PUT/CALLE/PUTE) via proposal. NUNCA compra. Repita em horários diferentes. */
+    const runSweep = useCallback(async (pairs: string[], durationsMin: number[], types: string[] = SWEEP_TYPES_DEFAULT) => {
+        if (busy) return;
+        if (!isConnected) { addMsg('Conecte-se à Deriv para varrer payouts.'); return; }
+        setBusy(true);
+        try {
+            const r = await sweepPayouts(getContractsFor, getProposal, pairs.map(derivForexSymbol), durationsMin.map(m => Math.round(m * 60)), types, 1, { onProgress: setProgress });
+            setSweepText(buildSweepText(r.rows, r.dumps));
+        } catch (e) { setSweepText(`Erro na varredura: ${(e as Error).message}`); }
+        finally { setBusy(false); setProgress(''); }
+    }, [busy, isConnected, getContractsFor, getProposal, addMsg]);
+
+    const runBankroll = useCallback((cfg: Partial<BankrollCfg>) => {
+        setBankrollText(runBankrollSimulation({ ...DEFAULT_BANKROLL_CFG, ...cfg }).text);
+    }, []);
+
+    const sidePayouts = useCallback((): SidePayouts | undefined => (payoutProbe?.ok ? { call: payoutProbe.call?.payoutPct ?? null, put: payoutProbe.put?.payoutPct ?? null } : undefined), [payoutProbe]);
+    const measuredCostBps = useCallback((): number | null => (multiplierProbe?.ok && multiplierProbe.quotes.length ? multiplierProbe.quotes.reduce((s, q) => s + q.costBps, 0) / multiplierProbe.quotes.length : null), [multiplierProbe]);
+
+    /** TESTE CONFIRMATÓRIO PRÉ-REGISTRADO (m=1): regra C_SPREAD_z2_LIVRE_h60 em AUDUSD antes de 09/10/2026; demais pares = replicação exploratória. */
+    const runPreregistered = useCallback(async () => {
+        if (busy) return;
+        setBusy(true); setProgress('Confirmação pré-registrada...');
+        try {
+            await new Promise(r => setTimeout(r, 20));
+            const series: Record<string, CandleData[]> = {};
+            Object.values(datasets).forEach(d => { series[d.pair] = d.candles; });
+            setConfirmText(runConfirmation(series, { sidePayouts: sidePayouts(), costBps: measuredCostBps() }).text);
+        } catch (e) { setConfirmText(`Erro: ${(e as Error).message}`); }
+        finally { setBusy(false); setProgress(''); }
+    }, [busy, datasets, sidePayouts, measuredCostBps]);
+
     const generateReport = useCallback(async (refKey: string, targetPair: string) => {
         if (busy) return;
         const target = datasets[targetPair];
@@ -111,20 +149,21 @@ export function useForexLab() {
             }
             setProgress('Calculando o super relatório...');
             await new Promise(r => setTimeout(r, 20));
-            const measuredCost = multiplierProbe?.ok && multiplierProbe.quotes.length ? multiplierProbe.quotes.reduce((s, q) => s + q.costBps, 0) / multiplierProbe.quotes.length : null;
+            const measuredCost = measuredCostBps();
+            setRounds(r => r + 1);
             const payouts = payoutProbe?.ok && payoutProbe.put ? Array.from(new Set([Math.round(payoutProbe.put.payoutPct), 85, 90, 95])).sort((a, b) => a - b) : [85, 90, 95];
             const quality = buildQualityText([datasets[targetPair].quality, ...(refKey === USD_INDEX ? [] : [datasets[refKey].quality])]);
             const rep = runSuperReport(refCandles, target.candles, {
-                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V25]', includeWindows: false, holdoutFraction: 0.4,
+                names: { ref: refName, target: targetPair }, title: '[SUPER RELATÓRIO FOREX V26]', includeWindows: false, holdoutFraction: 0.4, extended: true, sidePayouts: sidePayouts(),
                 payouts, multipliers: [100, 200, 500], costScenarios: measuredCost !== null ? [Number(measuredCost.toFixed(2)), 0.5, 1, 2] : [0.5, 1, 2],
                 assetNote: 'em Forex a Deriv oferece Rise/Fall: use a linha de payout MEDIDO pela sonda (se disponível); o Multiplier usa a comissão medida (bps do ativo).',
                 source: `${target.source} (alvo ${targetPair}${refKey === USD_INDEX ? ', ref. índice USD' : `, ref. ${refKey}`})`,
-                extraNotes: [basketNote, payoutProbe ? buildPayoutProbeText(payoutProbe) : '', multiplierProbe ? buildMultiplierProbeText(multiplierProbe) : '', quality].filter(Boolean),
+                extraNotes: [`RODADA nº ${rounds + 1} desta sessão (cada rodada testa ~190 hipóteses: o risco de falso positivo acumula entre alvos).`, weekendFuseDiagnostics(target.candles).text, basketNote, payoutProbe ? buildPayoutProbeText(payoutProbe) : '', multiplierProbe ? buildMultiplierProbeText(multiplierProbe) : '', quality].filter(Boolean),
             });
             setReportText(rep.text);
         } catch (e) { setReportText(`Erro: ${(e as Error).message}`); }
         finally { setBusy(false); setProgress(''); }
-    }, [busy, datasets, payoutProbe, multiplierProbe]);
+    }, [busy, datasets, payoutProbe, multiplierProbe, rounds, sidePayouts, measuredCostBps]);
 
-    return { isConnected, datasets, busy, progress, messages, reportText, payoutProbe, multiplierProbe, loadFiles, downloadFromDeriv, runProbes, generateReport, clear: () => { setDatasets({}); setReportText(''); setMessages([]); } };
+    return { isConnected, datasets, busy, progress, messages, reportText, payoutProbe, multiplierProbe, sweepText, bankrollText, confirmText, rounds, loadFiles, downloadFromDeriv, runProbes, runSweep, runBankroll, runPreregistered, generateReport, clear: () => { setDatasets({}); setReportText(''); setMessages([]); setSweepText(''); setBankrollText(''); setConfirmText(''); setRounds(0); } };
 }
